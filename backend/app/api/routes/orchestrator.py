@@ -8,6 +8,10 @@ POST /orchestrator/mode          → toggle auto / manual mode
 """
 from __future__ import annotations
 
+import threading
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
 from fastapi import APIRouter, Query
 
 from app.models.schemas import (
@@ -76,8 +80,40 @@ def get_orchestrator_status() -> OrchestratorStatusResponse:
 )
 def trigger_scan(
     limit: int = Query(default=15, ge=5, le=50),
+    force_refresh: bool = Query(default=False, description="Force a fresh scan instead of serving recent cache"),
 ) -> OrchestratorScanResponse:
-    result = master_orchestrator.scan(limit=limit)
+    latest = master_orchestrator.latest()
+    now = datetime.now(tz=timezone.utc)
+
+    if not force_refresh and latest is not None:
+        age_seconds = max(0.0, (now - latest.scanned_at).total_seconds())
+        if age_seconds <= 90:
+            return _result_to_response(latest)
+
+    box: dict[str, object] = {}
+
+    def _run_scan() -> None:
+        try:
+            box["result"] = master_orchestrator.scan(limit=limit)
+        except Exception as exc:
+            box["error"] = exc
+
+    thread = threading.Thread(target=_run_scan, daemon=True)
+    thread.start()
+    thread.join(timeout=25)
+
+    if thread.is_alive():
+        if latest is not None:
+            return _result_to_response(latest)
+        raise HTTPException(status_code=503, detail="Scan is still in progress. Retry shortly.")
+
+    if "error" in box:
+        if latest is not None:
+            return _result_to_response(latest)
+        raise HTTPException(status_code=502, detail=f"Scan failed: {box['error']}")
+
+    result = box["result"]
+
     try:
         lightweight_metrics.record_scan([c.strategy_type for c in result.candidates])
     except Exception:
