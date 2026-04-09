@@ -202,15 +202,6 @@ def get_news_sources() -> NewsSourceWhitelistResponse:
 
 
 @router.get(
-    "/news/{symbol}",
-    response_model=NewsSignalResponse,
-    summary="News and event signal for a symbol from public sources",
-)
-def get_news_signal(symbol: str) -> NewsSignalResponse:
-    return NewsSignalResponse(**news_intelligence.analyze_symbol(symbol))
-
-
-@router.get(
     "/news/audit",
     response_model=NewsAuditResponse,
     summary="Recent news-signal audit entries for traceability",
@@ -218,6 +209,15 @@ def get_news_signal(symbol: str) -> NewsSignalResponse:
 def get_news_audit(limit: int = Query(default=50, ge=1, le=500)) -> NewsAuditResponse:
     entries = news_intelligence.recent_audit(limit=limit)
     return NewsAuditResponse(entries=[NewsAuditEntryResponse(**item) for item in entries])
+
+
+@router.get(
+    "/news/{symbol}",
+    response_model=NewsSignalResponse,
+    summary="News and event signal for a symbol from public sources",
+)
+def get_news_signal(symbol: str) -> NewsSignalResponse:
+    return NewsSignalResponse(**news_intelligence.analyze_symbol(symbol))
 
 
 @router.get(
