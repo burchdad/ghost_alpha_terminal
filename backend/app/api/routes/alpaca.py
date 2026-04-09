@@ -73,6 +73,9 @@ def alpaca_config_check() -> dict:
         "alpaca_api_key_present": bool(settings.alpaca_api_key),
         "alpaca_secret_key_present": bool(settings.alpaca_secret_key),
         "alpaca_paper": settings.alpaca_paper,
+        "alpaca_connect_client_id_present": bool(settings.alpaca_connect_client_id),
+        "alpaca_connect_client_secret_present": bool(settings.alpaca_connect_client_secret),
+        "alpaca_connect_redirect_uri": settings.alpaca_connect_redirect_uri,
         "app_env": settings.app_env,
     }
 

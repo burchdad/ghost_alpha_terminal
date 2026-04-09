@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     alpaca_paper: bool = True        # True = paper endpoint, False = live capital
 
     # ---------------------------------------------------------------------------
+    # Alpaca Connect (OAuth app) credentials
+    # ---------------------------------------------------------------------------
+    alpaca_connect_client_id: str = ""
+    alpaca_connect_client_secret: str = ""
+    alpaca_connect_redirect_uri: str = ""
+
+    # ---------------------------------------------------------------------------
     # Misc
     # ---------------------------------------------------------------------------
     request_id_max_entries: int = 100
