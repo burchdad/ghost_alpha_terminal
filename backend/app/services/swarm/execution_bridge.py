@@ -122,7 +122,7 @@ class ExecutionBridge:
                 ),
             }
 
-        routed_broker = broker_router.route_broker(symbol=symbol, liquidity_score=liquidity_score)
+        routed_broker = broker_router.route_broker(symbol=symbol, liquidity_score=liquidity_score, mode=self._mode)
 
         # Gate 3 — credentials not configured for Alpaca routes
         if routed_broker == "alpaca" and (not settings.alpaca_api_key or not settings.alpaca_secret_key):

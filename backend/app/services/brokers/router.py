@@ -25,10 +25,18 @@ class BrokerRouter:
             return "crypto"
         return "equity"
 
-    def route_broker(self, *, symbol: str, liquidity_score: float = 1.0) -> str:
+    def route_broker(self, *, symbol: str, liquidity_score: float = 1.0, mode: str | None = None) -> str:
         del liquidity_score
         asset_type = self.classify_asset_type(symbol)
         if asset_type == "crypto":
+            if (
+                mode == "LIVE_TRADING"
+                and settings.coinbase_live_trading_enabled
+                and settings.coinbase_api_key_name
+                and settings.coinbase_api_private_key
+            ):
+                return "coinbase"
+
             # Prefer Coinbase for explicitly allowlisted crypto products.
             upper = symbol.upper()
             normalized = f"{upper[:-3]}-USD" if upper.endswith("USD") and len(upper) > 3 else upper

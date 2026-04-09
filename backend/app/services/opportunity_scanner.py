@@ -430,8 +430,8 @@ class OpportunityScanner:
         }
 
     def _execution_viability(self, *, symbol: str, asset_class: str, action: str) -> tuple[str, bool, str | None]:
-        broker = broker_router.route_broker(symbol=symbol, liquidity_score=1.0)
         mode = execution_bridge.get_mode()
+        broker = broker_router.route_broker(symbol=symbol, liquidity_score=1.0, mode=mode)
 
         if action == "HOLD":
             return broker, False, "No directional edge."
@@ -451,6 +451,12 @@ class OpportunityScanner:
 
             if mode != "LIVE_TRADING":
                 return broker, False, "Coinbase execution requires LIVE_TRADING mode."
+
+            upper = symbol.upper()
+            normalized = f"{upper[:-3]}-USD" if upper.endswith("USD") and len(upper) > 3 else upper
+            allowlist = {item.strip().upper() for item in settings.coinbase_trade_products.split(",") if item.strip()}
+            if normalized not in allowlist:
+                return broker, False, f"{normalized} is not in COINBASE_TRADE_PRODUCTS allowlist."
 
             return broker, True, None
 
