@@ -19,6 +19,10 @@ import GoalPanel from "../../components/GoalPanel";
 import NewsPanel from "../../components/NewsPanel";
 import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
+import OrchestratorPanel, {
+  type OrchestratorScan,
+  type OrchestratorStatus,
+} from "../../components/OrchestratorPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -410,6 +414,9 @@ export default function DashboardPage() {
   const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
+  const [orchestratorScan, setOrchestratorScan] = useState<OrchestratorScan | null>(null);
+  const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
+  const [orchestratorLoading, setOrchestratorLoading] = useState(false);
 
   const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
 
@@ -436,6 +443,8 @@ export default function DashboardPage() {
         newsRes,
         newsAuditRes,
         auditRes,
+        orchestratorStatusRes,
+        orchestratorScanRes,
       ] = await Promise.all([
         fetch(`${API_BASE}/forecast/${symbol}`),
         fetch(`${API_BASE}/options/${symbol}`),
@@ -465,6 +474,8 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/agents/news/${symbol}`),
         fetch(`${API_BASE}/agents/news/audit?limit=25`),
         fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+        fetch(`${API_BASE}/orchestrator/status`),
+        fetch(`${API_BASE}/orchestrator/scan/latest`),
       ]);
 
       const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -483,6 +494,8 @@ export default function DashboardPage() {
       const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
       const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
       const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+  const orchStatusData = await parseJsonOrNull<OrchestratorStatus>(orchestratorStatusRes);
+  const orchScanData = await parseJsonOrNull<OrchestratorScan>(orchestratorScanRes);
 
       setForecast(fData);
       setOptions(oData);
@@ -502,6 +515,8 @@ export default function DashboardPage() {
       const audits = auditData?.entries ?? [];
       setDecisionAudit(audits);
       const nextSelected = audits[0]?.audit_id ?? null;
+        setOrchestratorStatus(orchStatusData);
+        setOrchestratorScan(orchScanData);
       setSelectedAuditId(nextSelected);
       if (nextSelected) {
         const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${nextSelected}`);
@@ -614,6 +629,35 @@ export default function DashboardPage() {
     await refreshControlAndHistory();
   }
 
+  async function handleOrchestratorScan() {
+    setOrchestratorLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/orchestrator/scan?limit=15`, { method: "POST" });
+      const data = await parseJsonOrNull<OrchestratorScan>(res);
+      setOrchestratorScan(data);
+      const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
+      const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
+      setOrchestratorStatus(statusData);
+    } finally {
+      setOrchestratorLoading(false);
+    }
+  }
+
+  async function handleOrchestratorMode(enabled: boolean) {
+    await fetch(`${API_BASE}/orchestrator/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_mode: enabled }),
+    });
+    const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
+    const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
+    setOrchestratorStatus(statusData);
+  }
+
+  function handleOrchestratorRunSymbol(sym: string) {
+    setSymbol(sym);
+  }
+
   async function handleSelectAudit(auditId: string) {
     setSelectedAuditId(auditId);
     const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
@@ -629,6 +673,15 @@ export default function DashboardPage() {
           Regime: {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
         </span>
       </div>
+
+      <OrchestratorPanel
+        scan={orchestratorScan}
+        status={orchestratorStatus}
+        loading={orchestratorLoading}
+        onScan={handleOrchestratorScan}
+        onToggleAutoMode={handleOrchestratorMode}
+        onRunSymbol={handleOrchestratorRunSymbol}
+      />
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_1fr_320px]">
         <aside className="panel rounded-xl p-4">

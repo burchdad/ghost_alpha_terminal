@@ -662,3 +662,61 @@ class DecisionReplayResponse(BaseModel):
     generated_at: datetime
     replay_steps: list[DecisionReplayStepResponse]
     why_not: list[str] = []
+
+
+# ---------------------------------------------------------------------------
+# GhostAlpha Intelligence Engine — Orchestrator schemas
+# ---------------------------------------------------------------------------
+
+class OrchestratorCandidateItem(BaseModel):
+    rank: int
+    symbol: str
+    asset_class: str
+    region: str
+    composite_score: float
+    strategy_type: Literal["OPTIONS_PLAY", "SWING_TRADE", "DAY_TRADE", "SCALP", "WATCH", "IGNORE"]
+    action_label: Literal["EXECUTE", "SIMULATE", "MONITOR", "SKIP"]
+    regime: str
+    consensus_bias: str
+    consensus_confidence: float
+    momentum_score: float
+    volume_spike: float
+    news_strength: float
+    volatility: float
+    expected_return_pct: float
+    risk_level: str
+    tradable: bool
+    reasoning: str
+
+
+class OrchestratorScanResponse(BaseModel):
+    candidates: list[OrchestratorCandidateItem]
+    market_narrative: str
+    regime_summary: dict[str, int]
+    sector_leaders: list[str]
+    scanned_at: datetime
+    scan_count: int
+    total_scanned: int
+    passed_prefilter: int
+    auto_mode: bool
+
+
+class OrchestratorStatusResponse(BaseModel):
+    auto_mode: bool
+    auto_interval_seconds: int
+    scan_count: int
+    last_scan_at: str | None = None
+    top_pick: dict | None = None
+
+
+class OrchestratorModeRequest(BaseModel):
+    auto_mode: bool
+    interval_seconds: int | None = Field(default=None, ge=60, le=3600)
+
+
+class OrchestratorModeResponse(BaseModel):
+    auto_mode: bool
+    auto_interval_seconds: int
+    scan_count: int
+    last_scan_at: str | None = None
+    top_pick: dict | None = None
