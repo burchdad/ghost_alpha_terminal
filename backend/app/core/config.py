@@ -59,9 +59,9 @@ class Settings(BaseSettings):
     coinbase_api_key_name: str = ""
     coinbase_api_private_key: str = ""
     coinbase_live_trading_enabled: bool = True
-    coinbase_trade_products: str = "BTC-USD,ETH-USD,SOL-USD"
+    coinbase_trade_products: str = "BTC-USD,ETH-USD,SOL-USD,LINK-USD,AVAX-USD,LTC-USD,ADA-USD,XRP-USD,DOGE-USD,BCH-USD"
     coinbase_ws_enabled: bool = True
-    coinbase_ws_products: str = "BTC-USD,ETH-USD,SOL-USD"
+    coinbase_ws_products: str = "BTC-USD,ETH-USD,SOL-USD,LINK-USD,AVAX-USD,LTC-USD,ADA-USD,XRP-USD,DOGE-USD,BCH-USD"
     coinbase_ws_url: str = "wss://advanced-trade-ws.coinbase.com"
 
     # ---------------------------------------------------------------------------
