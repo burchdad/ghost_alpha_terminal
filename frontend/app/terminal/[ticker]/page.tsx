@@ -6,5 +6,5 @@ type Props = {
 
 export default function TerminalTickerPage({ params }: Props) {
   const ticker = (params.ticker ?? "AAPL").toUpperCase();
-  redirect(`/dashboard?symbol=${encodeURIComponent(ticker)}`);
+  redirect(`/terminal?symbol=${encodeURIComponent(ticker)}`);
 }

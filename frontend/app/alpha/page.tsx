@@ -100,7 +100,7 @@ export default function AlphaPage() {
   }
 
   function drillIntoSymbol(symbol: string) {
-    router.push(`/terminal/${encodeURIComponent(symbol)}`);
+    router.push(`/terminal?symbol=${encodeURIComponent(symbol)}`);
   }
 
   return (
@@ -111,10 +111,10 @@ export default function AlphaPage() {
           <p className="text-xs text-slate-400">Layer 1: Discovery and ranking across the full market universe</p>
         </div>
         <Link
-          href="/dashboard"
+          href="/terminal"
           className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
         >
-          Open Legacy Deep Dashboard
+          Open Deep Terminal
         </Link>
       </div>
 

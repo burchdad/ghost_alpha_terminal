@@ -1,0 +1,785 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+import Chart from "../../components/Chart";
+import ControlPanel from "../../components/ControlPanel";
+import ForecastPanel from "../../components/ForecastPanel";
+import AgentPanel from "../../components/AgentPanel";
+import BacktestPanel from "../../components/BacktestPanel";
+import OptionsPanel from "../../components/OptionsPanel";
+import PerformancePanel from "../../components/PerformancePanel";
+import PortfolioPanel from "../../components/PortfolioPanel";
+import SignalPanel from "../../components/SignalPanel";
+import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
+import ContextPanel from "../../components/ContextPanel";
+import DecisionAuditPanel from "../../components/DecisionAuditPanel";
+import DecisionReplayPanel from "../../components/DecisionReplayPanel";
+import GoalPanel from "../../components/GoalPanel";
+import NewsPanel from "../../components/NewsPanel";
+import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
+import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
+import OrchestratorPanel, {
+  type OrchestratorScan,
+  type OrchestratorStatus,
+} from "../../components/OrchestratorPanel";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
+
+type ForecastResponse = {
+  symbol: string;
+  direction: "UP" | "DOWN" | "SIDEWAYS";
+  confidence: number;
+  volatility: "LOW" | "MEDIUM" | "HIGH";
+  range_bound: boolean;
+  forecast_prices: number[];
+};
+
+type OptionContract = {
+  strike: number;
+  option_type: "CALL" | "PUT";
+  iv: number;
+  open_interest: number;
+  volume: number;
+  delta: number;
+  gamma: number;
+  theta: number;
+  vega: number;
+};
+
+type OptionsResponse = {
+  symbol: string;
+  underlying_price: number;
+  avg_iv: number;
+  contracts: OptionContract[];
+};
+
+type SignalResponse = {
+  signal: string;
+  confidence: number;
+  reasoning: string;
+};
+
+type AgentPerformance = {
+  accuracy: number;
+  win_rate: number;
+  avg_return: number;
+  confidence_calibration: number;
+  composite_score: number;
+};
+
+type AgentDecision = {
+  agent_name: string;
+  bias: "BULLISH" | "BEARISH" | "NEUTRAL";
+  confidence: number;
+  raw_confidence: number | null;
+  adjusted_confidence: number | null;
+  suggested_strategy: string;
+  reasoning: string;
+  performance: AgentPerformance | null;
+  weighted_confidence: number | null;
+};
+
+type SwarmResponse = {
+  symbol: string;
+  regime: "TRENDING" | "RANGE_BOUND" | "HIGH_VOLATILITY";
+  regime_confidence: number;
+  consensus: {
+    final_bias: "BULLISH" | "BEARISH" | "NEUTRAL";
+    confidence: number;
+    top_strategy: string;
+  };
+  recommended_trade: string;
+  position_size: number;
+  risk_level: "LOW" | "MEDIUM" | "HIGH";
+  expected_value: number;
+  agent_breakdown: AgentDecision[];
+};
+
+type PerformanceAgentRow = {
+  agent_name: string;
+  accuracy: number;
+  win_rate: number;
+  avg_return: number;
+  confidence_calibration: number;
+  composite_score: number;
+};
+
+type PerformanceStrategyRow = {
+  strategy: string;
+  trades: number;
+  win_rate: number;
+  avg_pnl: number;
+};
+
+type PerformanceResponse = {
+  symbol: string;
+  best_agent: string;
+  agent_leaderboard: PerformanceAgentRow[];
+  top_strategies: PerformanceStrategyRow[];
+  by_regime: Record<string, { win_rate: number; avg_pnl: number; total_trades: number }>;
+};
+
+type BacktestEquityPoint = {
+  timestamp: string;
+  equity: number;
+};
+
+type BacktestTrade = {
+  entry_time: string;
+  exit_time: string;
+  side: "LONG" | "SHORT";
+  strategy: string;
+  entry_price: number;
+  exit_price: number;
+  pnl: number;
+  return_pct: number;
+  outcome: "WIN" | "LOSS";
+};
+
+type BacktestResponse = {
+  symbol: string;
+  timeframe: string;
+  start_date: string;
+  end_date: string;
+  total_trades: number;
+  win_rate: number;
+  total_pnl: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+  equity_curve: BacktestEquityPoint[];
+  trade_history: BacktestTrade[];
+};
+
+type PortfolioActivePosition = {
+  symbol: string;
+  strategy: string;
+  side: string;
+  entry_price: number;
+  units: number;
+  notional: number;
+  sector: string;
+  opened_at: string;
+};
+
+type PortfolioResponse = {
+  account_balance: number;
+  active_positions: PortfolioActivePosition[];
+  total_exposure: number;
+  risk_exposure_pct: number;
+  sector_concentration: Record<string, number>;
+  strategy_exposure: Record<string, number>;
+  available_buying_power: number;
+  max_concurrent_trades: number;
+};
+
+type RejectedTradeLog = {
+  timestamp: string;
+  symbol: string;
+  reason: string;
+};
+
+type ControlResponse = {
+  trading_enabled: boolean;
+  system_status: "ACTIVE" | "PAUSED";
+  mode: "SAFE" | "NORMAL";
+  daily_pnl: number;
+  daily_loss: number;
+  daily_loss_limit: number;
+  rolling_drawdown: number;
+  rolling_drawdown_pct: number;
+  max_drawdown_limit_pct: number;
+  rejected_trades: RejectedTradeLog[];
+  autonomous_enabled: boolean;
+  autonomous_interval_seconds: number;
+  autonomous_symbols: string[];
+  autonomous_cycles_run: number;
+  autonomous_last_run_at: string | null;
+  autonomous_last_error: string | null;
+};
+
+type ExecutionHistoryEntry = {
+  execution_id: string;
+  cycle_id: string;
+  symbol: string;
+  regime: string;
+  action: string;
+  strategy: string;
+  confidence: number;
+  risk_level: string;
+  allocation_pct: number;
+  qty: number;
+  notional: number;
+  mode: string;
+  submitted: boolean;
+  order_id: string | null;
+  reason: string;
+  error: string | null;
+  timestamp: string;
+  outcome_label: string | null;
+  pnl: number | null;
+};
+
+type ExecutionHistoryResponse = {
+  executions: ExecutionHistoryEntry[];
+};
+
+type GoalStatusResponse = {
+  enabled: boolean;
+  start_capital: number | null;
+  target_capital: number | null;
+  timeframe_days: number | null;
+  elapsed_days: number;
+  remaining_days: number | null;
+  required_total_return: number;
+  required_daily_return: number;
+  required_daily_return_remaining: number;
+  trajectory_expected_capital: number | null;
+  trajectory_gap_pct: number;
+  goal_pressure_multiplier: number;
+  success_probability: number;
+  stress_level: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+  target_unrealistic: boolean;
+  suggested_target_capital: number | null;
+  suggested_timeframe_days: number | null;
+  message: string;
+};
+
+type OpportunityRecommendation = {
+  symbol: string;
+  asset_class: string;
+  region: string;
+  regime: string;
+  signal: string;
+  consensus_bias: string;
+  consensus_confidence: number;
+  expected_return_pct: number;
+  expected_value: number;
+  risk_level: string;
+  target_pct: number;
+  recommended_notional: number;
+  tradable: boolean;
+  risk_adjusted_score: number;
+  signal_validation?: {
+    validated_signal_strength?: number;
+    confirmation_count?: number;
+  };
+  market_reaction?: {
+    correlation_score?: number;
+  };
+};
+type CapitalSplitRecommendation = {
+  symbol: string;
+  recommended_notional: number;
+  allocation_weight: number;
+};
+
+type OpportunitiesResponse = {
+  scanned: number;
+  passed_prefilter: number;
+  opportunities: OpportunityRecommendation[];
+  capital_allocation_recommendations: CapitalSplitRecommendation[];
+  goal: GoalStatusResponse;
+};
+
+type ExecutionModeResponse = {
+  mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+};
+
+type ContextSignalResponse = {
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  signal_validation: {
+    recency_decay_factor: number;
+    average_source_weight: number;
+    confirmation_count: number;
+    confirmation_factor: number;
+    confirmation_label: string;
+    validated_signal_strength: number;
+    source_details: Array<{
+      source: string;
+      source_weight: number;
+      age_hours: number;
+      decay_factor: number;
+      effective_weight: number;
+    }>;
+  };
+  market_reaction: {
+    price_reaction_pct: number;
+    volume_spike_ratio: number;
+    breakout: string;
+    expected_direction: string;
+    price_direction: string;
+    correlation_score: number;
+    actionability_multiplier: number;
+  };
+  modifiers: {
+    confidence_modifier: number;
+    risk_modifier: number;
+    opportunity_boost: number;
+  };
+  rationale: string;
+};
+
+type NewsSignalResponse = {
+  symbol: string;
+  timestamp: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  rationale: string;
+};
+
+type NewsAuditEntry = {
+  timestamp: string;
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+};
+
+type NewsAuditResponse = {
+  entries: NewsAuditEntry[];
+};
+
+type DecisionAuditSummary = {
+  audit_id: string;
+  timestamp: string;
+  decision_type: string;
+  symbol: string;
+  status: string;
+  cycle_id: string | null;
+};
+
+type DecisionAuditSummaryListResponse = {
+  entries: DecisionAuditSummary[];
+};
+
+type DecisionReplayStep = {
+  stage: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+};
+
+type DecisionReplayResponse = {
+  audit_id: string;
+  symbol: string;
+  decision_type: string;
+  status: string;
+  generated_at: string;
+  replay_steps: DecisionReplayStep[];
+  why_not: string[];
+};
+
+async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
+  if (!res.ok) {
+    return null;
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export default function DashboardPage() {
+  const [symbol, setSymbol] = useState("AAPL");
+  const [forecast, setForecast] = useState<ForecastResponse | null>(null);
+  const [options, setOptions] = useState<OptionsResponse | null>(null);
+  const [signal, setSignal] = useState<SignalResponse | null>(null);
+  const [swarm, setSwarm] = useState<SwarmResponse | null>(null);
+  const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
+  const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
+  const [control, setControl] = useState<ControlResponse | null>(null);
+  const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
+  const [goal, setGoal] = useState<GoalStatusResponse | null>(null);
+  const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionModeResponse["mode"] | null>(null);
+  const [contextSignal, setContextSignal] = useState<ContextSignalResponse | null>(null);
+  const [newsSignal, setNewsSignal] = useState<NewsSignalResponse | null>(null);
+  const [newsAudit, setNewsAudit] = useState<NewsAuditEntry[] | null>(null);
+  const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
+  const [orchestratorScan, setOrchestratorScan] = useState<OrchestratorScan | null>(null);
+  const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
+  const [orchestratorLoading, setOrchestratorLoading] = useState(false);
+
+  const watchlist = useMemo(() => {
+    const ranked = orchestratorScan?.candidates ?? [];
+    const top = ranked.slice(0, 25).map((item) => item.symbol);
+    const merged = [symbol, ...top];
+    return Array.from(new Set(merged)).slice(0, 30);
+  }, [orchestratorScan, symbol]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const qpSymbol = (new URLSearchParams(window.location.search).get("symbol") ?? "").toUpperCase();
+    if (qpSymbol && qpSymbol !== symbol) {
+      setSymbol(qpSymbol);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("symbol", symbol);
+    window.history.replaceState({}, "", url.toString());
+  }, [symbol]);
+
+  useEffect(() => {
+    async function fetchAll() {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(end.getDate() - 240);
+
+      const [
+        fRes,
+        oRes,
+        sRes,
+        swarmRes,
+        perfRes,
+        backtestRes,
+        portfolioRes,
+        controlRes,
+        historyRes,
+        goalRes,
+        oppRes,
+        execModeRes,
+        contextRes,
+        newsRes,
+        newsAuditRes,
+        auditRes,
+        orchestratorStatusRes,
+        orchestratorScanRes,
+      ] = await Promise.all([
+        fetch(`${API_BASE}/forecast/${symbol}`),
+        fetch(`${API_BASE}/options/${symbol}`),
+        fetch(`${API_BASE}/signal/${symbol}`),
+        fetch(`${API_BASE}/swarm/${symbol}`),
+        fetch(`${API_BASE}/performance/${symbol}`),
+        fetch(`${API_BASE}/backtest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            symbol,
+            timeframe: "1d",
+            start_date: start.toISOString(),
+            end_date: end.toISOString(),
+            take_profit_pct: 0.03,
+            stop_loss_pct: 0.02,
+            max_hold_periods: 5,
+          }),
+        }),
+        fetch(`${API_BASE}/portfolio`),
+        fetch(`${API_BASE}/control`),
+        fetch(`${API_BASE}/agents/execution-history?limit=25`),
+        fetch(`${API_BASE}/agents/goal/status`),
+        fetch(`${API_BASE}/agents/opportunities?limit=10`),
+        fetch(`${API_BASE}/agents/execution-mode`),
+        fetch(`${API_BASE}/agents/context/${symbol}`),
+        fetch(`${API_BASE}/agents/news/${symbol}`),
+        fetch(`${API_BASE}/agents/news/audit?limit=25`),
+        fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+        fetch(`${API_BASE}/orchestrator/status`),
+        fetch(`${API_BASE}/orchestrator/scan/latest`),
+      ]);
+
+      const fData = await parseJsonOrNull<ForecastResponse>(fRes);
+      const oData = await parseJsonOrNull<OptionsResponse>(oRes);
+      const sData = await parseJsonOrNull<SignalResponse>(sRes);
+      const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
+      const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
+      const backtestData = await parseJsonOrNull<BacktestResponse>(backtestRes);
+      const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+      const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+      const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+      const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+      const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+      const execModeData = await parseJsonOrNull<ExecutionModeResponse>(execModeRes);
+      const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+      const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+      const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
+      const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+  const orchStatusData = await parseJsonOrNull<OrchestratorStatus>(orchestratorStatusRes);
+  const orchScanData = await parseJsonOrNull<OrchestratorScan>(orchestratorScanRes);
+
+      setForecast(fData);
+      setOptions(oData);
+      setSignal(sData);
+      setSwarm(swarmData);
+      setPerformance(perfData);
+      setBacktest(backtestData);
+      setPortfolio(portfolioData);
+      setControl(controlData);
+      setExecutionHistory(historyData?.executions ?? []);
+      setGoal(goalData);
+      setOpportunities(oppData);
+      setExecutionMode(execModeData?.mode ?? null);
+      setContextSignal(contextData);
+      setNewsSignal(newsData);
+      setNewsAudit(newsAuditData?.entries ?? []);
+      const audits = auditData?.entries ?? [];
+      setDecisionAudit(audits);
+      const nextSelected = audits[0]?.audit_id ?? null;
+        setOrchestratorStatus(orchStatusData);
+        setOrchestratorScan(orchScanData);
+      setSelectedAuditId(nextSelected);
+      if (nextSelected) {
+        const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${nextSelected}`);
+        const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+        setDecisionReplay(replayData);
+      } else {
+        setDecisionReplay(null);
+      }
+    }
+
+    fetchAll().catch((error: unknown) => {
+      console.error("Failed to fetch dashboard data", error);
+    });
+  }, [symbol]);
+
+  async function handleToggleKillSwitch(enabled: boolean) {
+    await fetch(`${API_BASE}/control/kill-switch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trading_enabled: enabled }),
+    });
+
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = (await controlRes.json()) as ControlResponse;
+    setControl(controlData);
+  }
+
+  async function refreshControlAndHistory() {
+    const [controlRes, historyRes, portfolioRes, modeRes, auditRes] = await Promise.all([
+      fetch(`${API_BASE}/control`),
+      fetch(`${API_BASE}/agents/execution-history?limit=25`),
+      fetch(`${API_BASE}/portfolio`),
+      fetch(`${API_BASE}/agents/execution-mode`),
+      fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+    ]);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+    const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+    const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
+    const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+    const audits = auditData?.entries ?? [];
+    setControl(controlData);
+    setExecutionHistory(historyData?.executions ?? []);
+    setPortfolio(portfolioData);
+    setExecutionMode(modeData?.mode ?? null);
+    setDecisionAudit(audits);
+
+    const preferredId = selectedAuditId && audits.some((entry) => entry.audit_id === selectedAuditId)
+      ? selectedAuditId
+      : (audits[0]?.audit_id ?? null);
+    setSelectedAuditId(preferredId);
+    if (preferredId) {
+      const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${preferredId}`);
+      const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+      setDecisionReplay(replayData);
+    } else {
+      setDecisionReplay(null);
+    }
+  }
+
+  async function refreshGoalAndOpportunities() {
+    const [goalRes, oppRes, contextRes, newsRes, newsAuditRes] = await Promise.all([
+      fetch(`${API_BASE}/agents/goal/status`),
+      fetch(`${API_BASE}/agents/opportunities?limit=10`),
+      fetch(`${API_BASE}/agents/context/${symbol}`),
+      fetch(`${API_BASE}/agents/news/${symbol}`),
+      fetch(`${API_BASE}/agents/news/audit?limit=25`),
+    ]);
+    const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+    const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+    const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+    const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+    const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
+    setGoal(goalData);
+    setOpportunities(oppData);
+    setContextSignal(contextData);
+    setNewsSignal(newsData);
+    setNewsAudit(newsAuditData?.entries ?? []);
+  }
+
+  async function handleToggleAutonomous(enabled: boolean) {
+    await fetch(`${API_BASE}/control/autonomous`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    await refreshControlAndHistory();
+  }
+
+  async function handleRunAutonomousOnce() {
+    await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
+    await refreshControlAndHistory();
+  }
+
+  async function handleSetGoal(payload: { start_capital: number; target_capital: number; timeframe_days: number }) {
+    await fetch(`${API_BASE}/agents/goal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshGoalAndOpportunities();
+  }
+
+  async function handleSetExecutionMode(mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") {
+    await fetch(`${API_BASE}/agents/execution-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    await refreshControlAndHistory();
+  }
+
+  async function handleOrchestratorScan() {
+    setOrchestratorLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/orchestrator/scan?limit=15`, { method: "POST" });
+      const data = await parseJsonOrNull<OrchestratorScan>(res);
+      setOrchestratorScan(data);
+      const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
+      const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
+      setOrchestratorStatus(statusData);
+    } finally {
+      setOrchestratorLoading(false);
+    }
+  }
+
+  async function handleOrchestratorMode(enabled: boolean) {
+    await fetch(`${API_BASE}/orchestrator/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_mode: enabled }),
+    });
+    const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
+    const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
+    setOrchestratorStatus(statusData);
+  }
+
+  function handleOrchestratorRunSymbol(sym: string) {
+    setSymbol(sym);
+  }
+
+  async function handleSelectAudit(auditId: string) {
+    setSelectedAuditId(auditId);
+    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
+    const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+    setDecisionReplay(replayData);
+  }
+
+  return (
+    <main className="min-h-screen p-4 md:p-6">
+      <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
+        <h1 className="text-lg font-semibold md:text-2xl">GHOST ALPHA TERMINAL</h1>
+        <span className="text-xs text-slate-300">
+          Regime: {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
+        </span>
+      </div>
+
+      <OrchestratorPanel
+        scan={orchestratorScan}
+        status={orchestratorStatus}
+        loading={orchestratorLoading}
+        onScan={handleOrchestratorScan}
+        onToggleAutoMode={handleOrchestratorMode}
+        onRunSymbol={handleOrchestratorRunSymbol}
+      />
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_1fr_320px]">
+        <aside className="panel rounded-xl p-4">
+          <h2 className="mb-3 text-sm font-semibold text-terminal-accent">Watchlist</h2>
+          <div className="space-y-2">
+            {watchlist.map((item) => (
+              <button
+                key={item}
+                onClick={() => setSymbol(item)}
+                className={`w-full rounded border px-3 py-2 text-left text-sm transition ${
+                  symbol === item
+                    ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
+                    : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <div className="space-y-4">
+          <Chart
+            symbol={symbol}
+            currentPrice={options?.underlying_price ?? 100}
+            forecastPrices={forecast?.forecast_prices ?? []}
+          />
+          <OptionsPanel options={options} />
+          <AgentPanel swarm={swarm} />
+          <SwarmVisualizationPanel
+            symbol={symbol}
+            regime={swarm?.regime ?? "RANGE_BOUND"}
+            regimeConfidence={swarm?.regime_confidence ?? 0.5}
+            forecastPrices={forecast?.forecast_prices ?? []}
+            currentPrice={options?.underlying_price ?? 100}
+          />
+          <PerformancePanel performance={performance} />
+          <BacktestPanel backtest={backtest} />
+          <OpportunityFeedPanel data={opportunities} />
+        </div>
+
+        <aside className="space-y-4">
+          <ForecastPanel forecast={forecast} />
+          <SignalPanel signal={signal} />
+          <div className="panel rounded-xl p-4 text-sm text-slate-300">
+            <h3 className="mb-3 text-sm font-semibold text-terminal-accent">AI Insights</h3>
+            <p>
+              Regime: {forecast?.volatility ?? "..."} volatility. Directional bias: {forecast?.direction ?? "..."}.
+              Strategy engine prefers {signal?.signal ?? "..."}, while swarm consensus is{" "}
+              {swarm?.consensus?.top_strategy ?? "..."}. Suggested size {swarm?.position_size ?? 0} with {" "}
+              {swarm?.risk_level ?? "MEDIUM"} risk.
+            </p>
+          </div>
+          <PortfolioPanel portfolio={portfolio} />
+          <NewsPanel signal={newsSignal} audit={newsAudit} />
+          <ContextPanel context={contextSignal} />
+          <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
+          <ExecutionHistoryPanel history={executionHistory} />
+          <DecisionAuditPanel
+            entries={decisionAudit}
+            selectedAuditId={selectedAuditId}
+            onSelect={handleSelectAudit}
+          />
+          <DecisionReplayPanel replay={decisionReplay} />
+          <ControlPanel
+            control={control}
+            executionMode={executionMode}
+            onToggleKillSwitch={handleToggleKillSwitch}
+            onToggleAutonomous={handleToggleAutonomous}
+            onRunAutonomousOnce={handleRunAutonomousOnce}
+            onSetExecutionMode={handleSetExecutionMode}
+          />
+        </aside>
+      </section>
+    </main>
+  );
+}
