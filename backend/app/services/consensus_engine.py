@@ -46,9 +46,15 @@ class ConsensusEngine:
             self._bias_to_score(item.bias) * (item.weighted_confidence or 0) for item in scored_outputs
         ) / total_weight
 
-        if bias_score > 0.2:
+        directional_weight = sum(
+            (item.weighted_confidence or 0) for item in scored_outputs if item.bias != "NEUTRAL"
+        ) / total_weight
+
+        # Reduce the neutral dead-zone so the engine can express directional bias
+        # when multiple agents align with moderate confidence.
+        if bias_score > 0.12:
             final_bias = "BULLISH"
-        elif bias_score < -0.2:
+        elif bias_score < -0.12:
             final_bias = "BEARISH"
         else:
             final_bias = "NEUTRAL"
@@ -60,7 +66,17 @@ class ConsensusEngine:
             )
 
         top_strategy = max(strategy_scores, key=strategy_scores.get)
-        confidence = max(0.51, min(0.95, abs(bias_score) * 0.6 + (max(strategy_scores.values()) / total_weight) * 0.5))
+        strategy_concentration = max(strategy_scores.values()) / total_weight
+        base_confidence = (
+            abs(bias_score) * 0.62
+            + strategy_concentration * 0.24
+            + directional_weight * 0.19
+        )
+        if final_bias == "NEUTRAL":
+            confidence = max(0.5, min(0.9, base_confidence))
+        else:
+            directional_floor = 0.54 + min(0.18, directional_weight * 0.12 + abs(bias_score) * 0.28)
+            confidence = max(directional_floor, min(0.95, base_confidence + 0.1))
 
         consensus = ConsensusDecision(
             final_bias=final_bias,

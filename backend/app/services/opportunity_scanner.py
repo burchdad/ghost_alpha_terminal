@@ -527,6 +527,22 @@ class OpportunityScanner:
                 reaction = context.get("market_reaction", {})
                 validated_strength = float(validation.get("validated_signal_strength", 0.0))
                 reaction_score = float(reaction.get("correlation_score", 0.0))
+
+                # If consensus is neutral, allow strong context + expected return to
+                # express a directional preference so opportunities can progress beyond WATCH.
+                directional_edge = (
+                    expected_return_pct * 2.4
+                    + float(news["sentiment_score"]) * 0.55
+                    + (float(news["news_momentum_score"]) - 0.5) * 0.22
+                    + validated_strength * 0.28
+                    + reaction_score * 0.24
+                )
+                if action == "HOLD" and swarm.consensus.confidence >= 0.52:
+                    if directional_edge >= 0.12:
+                        action = "BUY"
+                    elif directional_edge <= -0.12:
+                        action = "SELL"
+
                 news_alpha_boost = (
                     float(news["sentiment_score"]) * 0.06
                     + float(news["news_momentum_score"]) * 0.05
