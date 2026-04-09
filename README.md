@@ -11,6 +11,14 @@ Production-oriented MVP for an AI-powered trading intelligence platform that com
 - Safety and execution control layer
 - Real-time terminal-style dashboard UI
 
+## Current Status
+
+- Backend is deployed and verified on Railway.
+- Frontend is deployed and verified on Vercel.
+- Latest checkpoint commit on `main`: `d63e810`.
+
+For a concise feature inventory, see `CAPABILITIES.md`.
+
 ## Architecture
 
 ### Backend
@@ -39,20 +47,35 @@ backend/
 	app/
 		main.py
 		api/routes/
+			agents.py
+			alpaca.py
+			backtest.py
+			control.py
+			execute.py
 			forecast.py
 			options.py
+			performance.py
+			portfolio.py
 			signals.py
+			swarm.py
+			trade.py
 		services/
+			autonomous_runner.py
+			capital_allocator.py
+			execution_journal.py
 			kronos_service.py
 			options_service.py
+			portfolio_manager.py
 			signal_engine.py
-			advanced.py
+			swarm/
+				swarm_manager.py
 		models/
 			schemas.py
 		core/
 			config.py
-		utils/
-			data_loader.py
+		db/
+			models.py
+			init_db.py
 		celery_app.py
 		tasks.py
 	requirements.txt
@@ -63,9 +86,15 @@ frontend/
 		dashboard/page.tsx
 		globals.css
 	components/
+		AgentPanel.tsx
+		BacktestPanel.tsx
 		Chart.tsx
+		ControlPanel.tsx
+		ExecutionHistoryPanel.tsx
 		ForecastPanel.tsx
 		OptionsPanel.tsx
+		PerformancePanel.tsx
+		PortfolioPanel.tsx
 		SignalPanel.tsx
 	package.json
 ```
@@ -89,13 +118,18 @@ API endpoints:
 - `GET /options/{symbol}`
 - `GET /signal/{symbol}`
 - `GET /swarm/{symbol}`
-- `POST /trade`
-- `GET /performance/{symbol}`
 - `POST /backtest`
-- `GET /portfolio`
+- `POST /trade`
 - `POST /execute`
+- `GET /portfolio`
+- `GET /performance/{symbol}`
 - `GET /control`
 - `POST /control/kill-switch`
+- `GET /control/autonomous`
+- `POST /control/autonomous`
+- `POST /control/autonomous/run-once`
+- `GET /agents/*` (agent settings, scoring, and diagnostics)
+- `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
 
@@ -117,6 +151,12 @@ NEXT_PUBLIC_API_BASE=http://localhost:8000 npm run dev
 ```
 
 Open `http://localhost:3000` and go to `/dashboard`.
+
+## Deployment Notes
+
+- Frontend (Vercel): set `NEXT_PUBLIC_API_BASE` to your backend URL (for example, Railway service URL).
+- Backend (Railway): ensure all required env values are configured in Railway project variables.
+- CORS is controlled via backend settings in `backend/app/core/config.py`.
 
 ## Service Behavior
 
