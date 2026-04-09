@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from sqlalchemy import select
 
@@ -11,6 +12,25 @@ from app.db.session import get_session
 
 
 class DecisionAuditStore:
+    @staticmethod
+    def _json_default(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, set):
+            return list(value)
+
+        # Handle numpy/pandas scalar values without importing optional dependencies.
+        item = getattr(value, "item", None)
+        if callable(item):
+            try:
+                return item()
+            except Exception:  # noqa: BLE001
+                pass
+
+        return str(value)
+
     def record(
         self,
         *,
@@ -35,12 +55,12 @@ class DecisionAuditStore:
                     symbol=symbol.upper(),
                     status=status,
                     cycle_id=cycle_id,
-                    goal_snapshot=json.dumps(goal_snapshot or {}),
-                    context_snapshot=json.dumps(context_snapshot or {}),
-                    allocation_snapshot=json.dumps(allocation_snapshot or {}),
-                    governor_snapshot=json.dumps(governor_snapshot or {}),
-                    execution_snapshot=json.dumps(execution_snapshot or {}),
-                    explainability_snapshot=json.dumps(explainability_snapshot or {}),
+                    goal_snapshot=json.dumps(goal_snapshot or {}, default=self._json_default),
+                    context_snapshot=json.dumps(context_snapshot or {}, default=self._json_default),
+                    allocation_snapshot=json.dumps(allocation_snapshot or {}, default=self._json_default),
+                    governor_snapshot=json.dumps(governor_snapshot or {}, default=self._json_default),
+                    execution_snapshot=json.dumps(execution_snapshot or {}, default=self._json_default),
+                    explainability_snapshot=json.dumps(explainability_snapshot or {}, default=self._json_default),
                 )
             )
         return audit_id
