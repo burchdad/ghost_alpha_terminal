@@ -20,6 +20,11 @@ Production-oriented MVP for an AI-powered trading intelligence platform that com
 
 For a concise feature inventory, see `CAPABILITIES.md`.
 
+Operational launch docs:
+
+- `GO_LIVE_CHECKLIST.md`
+- `OPERATOR_RUNBOOK.md`
+
 ## Architecture
 
 ### Backend
@@ -144,6 +149,7 @@ API endpoints:
 - `GET /agents/audit/decisions?limit=50` (decision audit summary list)
 - `GET /agents/audit/decisions/{audit_id}` (full decision lineage payload)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
+- `GET /metrics/runtime-readiness` (cutover and operator telemetry snapshot)
 
 Example trade outcome payload:
 

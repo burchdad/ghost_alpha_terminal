@@ -229,6 +229,23 @@ type LightweightMetricsResponse = {
   top_strategies: Array<{ strategy: string; count: number }>;
 };
 
+type RuntimeReadinessResponse = {
+  as_of: string;
+  broker_connected: boolean;
+  execution_mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+  trading_enabled: boolean;
+  autonomous_enabled: boolean;
+  autonomous_cycles_run: number;
+  latest_scan_candidates: number;
+  latest_scan_age_seconds: number | null;
+  open_positions: number;
+  submitted_executions_24h: number;
+  rejected_executions_24h: number;
+  decision_audits_24h: number;
+  news_audits_24h: number;
+  lightweight_7d: LightweightMetricsResponse;
+};
+
 type ExecutionHistoryEntry = {
   execution_id: string;
   cycle_id: string | null;
@@ -284,6 +301,7 @@ export default function AlphaPage() {
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
+  const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
   const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
   const seenExecutionIdsRef = useRef<Set<string>>(new Set());
   const executionBaselineReadyRef = useRef(false);
@@ -367,6 +385,12 @@ export default function AlphaPage() {
     const metricsRes = await fetch(`${API_BASE}/metrics/lightweight?days=7`);
     const metricsData = await parseJsonOrNull<LightweightMetricsResponse>(metricsRes);
     setLaunchMetrics(metricsData);
+  }
+
+  async function refreshRuntimeReadiness() {
+    const readinessRes = await fetch(`${API_BASE}/metrics/runtime-readiness`);
+    const readiness = await parseJsonOrNull<RuntimeReadinessResponse>(readinessRes);
+    setRuntimeReadiness(readiness);
   }
 
   function pushRuntimeToast(message: string, tone: RuntimeToast["tone"]) {
@@ -518,6 +542,10 @@ export default function AlphaPage() {
     refreshLaunchMetrics().catch((err: unknown) => {
       console.error("Failed to fetch lightweight metrics", err);
     });
+
+    refreshRuntimeReadiness().catch((err: unknown) => {
+      console.error("Failed to fetch runtime readiness telemetry", err);
+    });
   }, []);
 
   useEffect(() => {
@@ -535,6 +563,7 @@ export default function AlphaPage() {
         refreshRuntimeState(true),
         refreshScanState(false),
         refreshBrokerConnections(),
+        refreshRuntimeReadiness(),
       ]).catch((error: unknown) => {
         console.error("Failed to poll live alpha dashboard state", error);
       });
@@ -643,6 +672,24 @@ export default function AlphaPage() {
   }
 
   const connectedBrokerCount = brokerConnections.filter((broker) => broker.connected).length;
+  const runtimePhase = useMemo(() => {
+    if (!runtimeReadiness) {
+      return { label: "Loading Runtime State", tone: "text-slate-300", panel: "border-terminal-line bg-black/20" };
+    }
+    if (!runtimeReadiness.broker_connected) {
+      return { label: "Broker Not Connected", tone: "text-amber-300", panel: "border-amber-500/40 bg-amber-500/10" };
+    }
+    if (runtimeReadiness.execution_mode === "SIMULATION") {
+      return { label: "Live Data, Simulation Execution", tone: "text-blue-300", panel: "border-blue-500/40 bg-blue-500/10" };
+    }
+    if (runtimeReadiness.execution_mode === "PAPER_TRADING" && runtimeReadiness.submitted_executions_24h === 0) {
+      return { label: "Paper Trading Armed, No Executions Yet", tone: "text-amber-200", panel: "border-amber-500/40 bg-amber-500/10" };
+    }
+    if (runtimeReadiness.execution_mode === "PAPER_TRADING") {
+      return { label: "Paper Trading Active", tone: "text-green-200", panel: "border-green-500/40 bg-green-500/10" };
+    }
+    return { label: "Live Capital Mode", tone: "text-green-100", panel: "border-green-500/40 bg-green-500/10" };
+  }, [runtimeReadiness]);
 
   return (
     <main className="min-h-screen p-4 md:p-6">
@@ -794,6 +841,27 @@ export default function AlphaPage() {
             Last {launchMetrics.window_days}d proof metrics: {launchMetrics.scans_run} scans, {launchMetrics.trades_triggered} trades, top strategy {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}.
           </div>
         )}
+      </section>
+
+      <section className={`mb-4 rounded-xl border p-4 ${runtimePhase.panel}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-terminal-accent">Runtime Truth Panel</h2>
+            <p className="text-xs text-slate-300">Clear operational phase labeling for paper soak and live cutover</p>
+          </div>
+          <div className={`text-sm font-semibold ${runtimePhase.tone}`}>{runtimePhase.label}</div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-200 md:grid-cols-4">
+          <div className="rounded border border-current/20 px-2 py-2">Mode: {runtimeReadiness?.execution_mode ?? "N/A"}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Autonomous: {runtimeReadiness?.autonomous_enabled ? "ON" : "OFF"}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Scans Age: {runtimeReadiness?.latest_scan_age_seconds?.toFixed(0) ?? "-"}s</div>
+          <div className="rounded border border-current/20 px-2 py-2">Candidates: {runtimeReadiness?.latest_scan_candidates ?? 0}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Submitted 24h: {runtimeReadiness?.submitted_executions_24h ?? 0}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Rejected 24h: {runtimeReadiness?.rejected_executions_24h ?? 0}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Decision Audits 24h: {runtimeReadiness?.decision_audits_24h ?? 0}</div>
+          <div className="rounded border border-current/20 px-2 py-2">News Audits 24h: {runtimeReadiness?.news_audits_24h ?? 0}</div>
+        </div>
       </section>
 
       <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">
