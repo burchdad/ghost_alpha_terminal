@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Lock
+
+import httpx
 
 from app.services.alpaca_client import alpaca_client
 from app.services.news.coinbase_ws_service import coinbase_ws_service
@@ -27,6 +29,9 @@ class NewsIntelligenceService:
         self._lock = Lock()
         self._audit: list[NewsAuditEntry] = []
         self._max_audit = 1000
+        self._cache_ttl_seconds = 20
+        self._cache: dict[str, tuple[datetime, dict]] = {}
+        self._alpaca_news_cooldown_until: datetime | None = None
         self._source_whitelist = [
             "SEC_FILINGS",
             "REUTERS_PUBLIC",
@@ -41,12 +46,44 @@ class NewsIntelligenceService:
 
     def analyze_symbol(self, symbol: str) -> dict:
         upper = symbol.upper()
+        now = datetime.now(tz=timezone.utc)
+
+        with self._lock:
+            cached = self._cache.get(upper)
+            if cached and (now - cached[0]).total_seconds() <= self._cache_ttl_seconds:
+                return dict(cached[1])
+
         selected_sources = ["ALPACA_NEWS"]
-        articles = alpaca_client.get_news(symbol=upper, limit=10)
+        articles: list[dict] = []
         sentiment_score = 0.0
         news_momentum_score = 0.0
         event_strength = 0.0
         event_flags: list[str] = []
+
+        cooldown_active = False
+        with self._lock:
+            if self._alpaca_news_cooldown_until and now < self._alpaca_news_cooldown_until:
+                cooldown_active = True
+
+        if cooldown_active:
+            event_flags.append("ALPACA_NEWS_COOLDOWN")
+        else:
+            try:
+                articles = alpaca_client.get_news(symbol=upper, limit=10)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    with self._lock:
+                        self._alpaca_news_cooldown_until = datetime.now(tz=timezone.utc).replace(microsecond=0)
+                    event_flags.append("ALPACA_NEWS_RATE_LIMITED")
+                else:
+                    event_flags.append("ALPACA_NEWS_HTTP_ERROR")
+            except Exception:
+                event_flags.append("ALPACA_NEWS_UNAVAILABLE")
+
+        # If we set cooldown due to 429, skip Alpaca for 2 minutes.
+        if "ALPACA_NEWS_RATE_LIMITED" in event_flags:
+            with self._lock:
+                self._alpaca_news_cooldown_until = datetime.now(tz=timezone.utc) + timedelta(seconds=120)
 
         if articles:
             article_scores = [self._score_article(article) for article in articles]
@@ -63,7 +100,8 @@ class NewsIntelligenceService:
                 if article_flag and article_flag not in event_flags:
                     event_flags.append(article_flag)
         else:
-            event_flags.append("NO_RECENT_ALPACA_NEWS")
+            if "ALPACA_NEWS_RATE_LIMITED" not in event_flags:
+                event_flags.append("NO_RECENT_ALPACA_NEWS")
 
         ws_signal = coinbase_ws_service.symbol_signal(upper)
         if ws_signal:
@@ -81,6 +119,18 @@ class NewsIntelligenceService:
             "no private channels or restricted datasets included."
         )
 
+        analysis = {
+            "symbol": upper,
+            "timestamp": datetime.now(tz=timezone.utc),
+            "data_classification": data_classification,
+            "sources_used": selected_sources,
+            "sentiment_score": round(sentiment_score, 6),
+            "news_momentum_score": round(news_momentum_score, 6),
+            "event_strength": round(event_strength, 6),
+            "event_flags": event_flags,
+            "rationale": rationale,
+        }
+
         self._record(
             NewsAuditEntry(
                 timestamp=datetime.now(tz=timezone.utc),
@@ -94,17 +144,10 @@ class NewsIntelligenceService:
             )
         )
 
-        return {
-            "symbol": upper,
-            "timestamp": datetime.now(tz=timezone.utc),
-            "data_classification": data_classification,
-            "sources_used": selected_sources,
-            "sentiment_score": round(sentiment_score, 6),
-            "news_momentum_score": round(news_momentum_score, 6),
-            "event_strength": round(event_strength, 6),
-            "event_flags": event_flags,
-            "rationale": rationale,
-        }
+        with self._lock:
+            self._cache[upper] = (datetime.now(tz=timezone.utc), analysis)
+
+        return analysis
 
     def _score_article(self, article: dict) -> tuple[float, str | None]:
         headline = f"{article.get('headline', '')} {article.get('summary', '')}".lower()
