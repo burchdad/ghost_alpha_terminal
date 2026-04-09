@@ -5,6 +5,7 @@ from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
 from app.services.control_engine import control_engine
+from app.services.explainability import build_explainability
 from app.services.goal_engine import goal_engine
 from app.services.kronos_service import kronos_service
 from app.services.agent_scorer import agent_scorer
@@ -86,6 +87,22 @@ def get_swarm(symbol: str) -> SwarmResponse:
             "position_size": allocation["recommended_qty"],
             "risk_level": risk["risk_level"],
             "expected_value": risk["expected_value"],
+            "explainability": build_explainability(
+                reasoning=(
+                    f"Consensus={swarm.consensus.final_bias} ({swarm.consensus.confidence:.2f}), "
+                    f"trade={swarm.recommended_trade}, allocation_accept={allocation['accepted']}."
+                ),
+                confidence=swarm.consensus.confidence,
+                risk_level=risk["risk_level"],
+                expected_value=risk["expected_value"],
+                accepted=bool(allocation["accepted"]),
+                safeguards=["risk_engine", "capital_allocator", "goal_pressure"],
+                inputs={
+                    "goal_pressure_multiplier": goal_pressure,
+                    "realized_volatility_pct": realized_volatility,
+                    "target_pct": allocation["target_pct"],
+                },
+            ),
         }
     )
 

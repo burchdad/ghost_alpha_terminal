@@ -48,6 +48,8 @@ This document is a quick reference for what the platform can currently do.
     - `SIMULATION` for insight-only workflows
     - `PAPER_TRADING`
     - `LIVE_TRADING`
+- `GET /agents/brokers/capabilities`
+  - Returns broker capability matrix used by the execution router.
 - `GET /control`
   - Returns current system status and risk gate state.
 - `POST /control/kill-switch`
@@ -126,6 +128,31 @@ This document is a quick reference for what the platform can currently do.
   - momentum
   - realized volatility
 - Detailed ranking combines consensus confidence, expected value, and allocation quality.
+
+## Broker Abstraction and Routing
+
+- Broker abstraction interface supports plug-and-play adapters.
+- Active adapters:
+  - Alpaca adapter (order submission)
+  - Coinbase adapter (stub for staged rollout)
+- Execution router chooses broker by asset class and liquidity-aware route rules.
+
+## Swarm Expansion
+
+- Added `goal_alignment_agent`:
+  - adjusts directional pressure in line with target trajectory demands.
+- Added `execution_risk_agent`:
+  - applies execution-quality veto logic before order submission.
+
+## Explainability Standard
+
+- Core recommendation and execution payloads include explainability blocks with:
+  - reasoning
+  - confidence
+  - risk level
+  - expected value
+  - safeguards
+  - decision inputs
 
 ## Safety and Risk Controls
 

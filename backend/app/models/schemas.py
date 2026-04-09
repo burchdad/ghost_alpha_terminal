@@ -97,6 +97,7 @@ class SwarmResponse(BaseModel):
     position_size: float = 0
     risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "MEDIUM"
     expected_value: float = 0
+    explainability: dict | None = None
     generated_at: datetime
 
 
@@ -211,6 +212,7 @@ class ExecuteTradeResponse(BaseModel):
     risk_reward_ratio: float = 0
     target_pct: float = 0
     position_notional: float = 0
+    explainability: dict | None = None
 
 
 class ActivePosition(BaseModel):
@@ -365,6 +367,7 @@ class SwarmCycleResponse(BaseModel):
     execution_result: dict | None = None
     vetoed: bool
     veto_reason: str
+    explainability: dict | None = None
     allocation: AllocationDecision | None = None
     outcome: DecisionOutcome | None = None
     agent_attribution: list[AgentAttribution] = []
@@ -394,6 +397,10 @@ class ExecutionModeUpdateRequest(BaseModel):
 
 class ExecutionModeResponse(BaseModel):
     mode: Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"]
+
+
+class BrokerCapabilitiesResponse(BaseModel):
+    capabilities: dict[str, dict]
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +538,7 @@ class OpportunityRecommendation(BaseModel):
     tradable: bool
     risk_adjusted_score: float
     opportunity_score: float
+    explainability: dict | None = None
 
 
 class CapitalSplitRecommendation(BaseModel):

@@ -136,6 +136,7 @@ API endpoints:
 - `GET /agents/goal/status` (trajectory and pressure tracking)
 - `GET /agents/opportunities?limit=10` (top opportunities + allocation split)
 - `GET /agents/execution-mode` and `POST /agents/execution-mode` (insight-only/paper/live)
+- `GET /agents/brokers/capabilities` (broker capability matrix used by router)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
@@ -247,6 +248,32 @@ Swarm agent breakdown now exposes both:
 	- `PAPER_TRADING`
 	- `LIVE_TRADING`
 - Dashboard exposes this as a control-plane setting so execution is never forced.
+
+### Broker Router + Adapter Layer
+
+- Execution path now uses a broker abstraction with pluggable adapters.
+- Current adapters:
+	- `alpaca` (active)
+	- `coinbase` (stubbed interface for next integration)
+- Router selects execution venue by asset class and liquidity score.
+- Capability map exposes support for equities/crypto/options/fractional/leverage.
+
+### Swarm Role Expansion
+
+- Added `goal_alignment_agent`:
+	- adjusts directional aggression based on goal pressure and trajectory gap.
+- Added `execution_risk_agent`:
+	- vetoes trades under unstable fill conditions (volatility/volume anomalies).
+
+### Explainability Layer
+
+- Recommendation and execution responses now include structured explainability:
+	- reasoning summary
+	- confidence
+	- risk level
+	- expected value
+	- safeguards applied
+	- decision inputs used
 
 ### Market Regime Detection
 

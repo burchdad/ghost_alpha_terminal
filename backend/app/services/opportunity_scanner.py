@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
+from app.services.explainability import build_explainability
 from app.services.kronos_service import kronos_service
 from app.services.options_service import options_service
 from app.services.regime_detector import regime_detector
@@ -246,6 +247,22 @@ class OpportunityScanner:
                     "tradable": tradable,
                     "risk_adjusted_score": round(risk_adjusted_score, 6),
                     "opportunity_score": round(risk_adjusted_score, 6),
+                    "explainability": build_explainability(
+                        reasoning=(
+                            f"Consensus={swarm.consensus.final_bias} ({swarm.consensus.confidence:.2f}), "
+                            f"signal={signal.signal}, regime={regime.regime}."
+                        ),
+                        confidence=swarm.consensus.confidence,
+                        risk_level=risk["risk_level"],
+                        expected_value=risk["expected_value"],
+                        accepted=tradable,
+                        safeguards=["prefilter", "risk_engine", "capital_allocator"],
+                        inputs={
+                            "expected_return_pct": round(expected_return_pct, 6),
+                            "target_pct": allocation["target_pct"],
+                            "goal_pressure_multiplier": goal_pressure_multiplier,
+                        },
+                    ),
                 }
             )
 

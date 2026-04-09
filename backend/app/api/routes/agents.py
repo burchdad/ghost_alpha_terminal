@@ -19,6 +19,7 @@ from app.models.schemas import (
     AgentWeightSnapshot,
     AgentWeightEntry,
     AgentWeightsResponse,
+    BrokerCapabilitiesResponse,
     CapitalSplitRecommendation,
     DecisionOutcome,
     DecisionOutcomeUpdateRequest,
@@ -82,6 +83,15 @@ def get_execution_mode() -> ExecutionModeResponse:
 def update_execution_mode(payload: ExecutionModeUpdateRequest) -> ExecutionModeResponse:
     mode = execution_bridge.set_mode(payload.mode)
     return ExecutionModeResponse(mode=mode)
+
+
+@router.get(
+    "/brokers/capabilities",
+    response_model=BrokerCapabilitiesResponse,
+    summary="Broker capability matrix used by execution router",
+)
+def get_broker_capabilities() -> BrokerCapabilitiesResponse:
+    return BrokerCapabilitiesResponse(capabilities=execution_bridge.broker_capabilities())
 
 
 @router.post(
@@ -331,6 +341,7 @@ def _to_response(r) -> SwarmCycleResponse:  # type: ignore[return]
         execution_result=r.execution_result,
         vetoed=r.vetoed,
         veto_reason=r.veto_reason or "",
+        explainability=(r.execution_result or {}).get("explainability"),
         allocation=AllocationDecision(**r.allocation) if r.allocation else None,
         outcome=DecisionOutcome(**r.outcome) if r.outcome else None,
         agent_attribution=[AgentAttribution(**item) for item in (r.agent_attribution or [])],

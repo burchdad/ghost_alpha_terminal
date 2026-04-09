@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.control_engine import control_engine
+from app.services.explainability import build_explainability
 from app.models.schemas import ExecuteTradeRequest, ExecuteTradeResponse
 from app.services.goal_engine import goal_engine
 from app.services.historical_data_service import historical_data_service
@@ -89,6 +90,19 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
 
     if not risk["approved"] or not allocation["accepted"]:
         reason = risk["reason"] if not risk["approved"] else allocation["reason"]
+        explainability = build_explainability(
+            reasoning=reason,
+            confidence=payload.confidence,
+            risk_level=risk["risk_level"],
+            expected_value=risk["expected_value"],
+            accepted=False,
+            safeguards=["risk_engine", "capital_allocator"],
+            inputs={
+                "regime": inferred_regime,
+                "goal_pressure_multiplier": goal_pressure,
+                "realized_volatility_pct": realized_volatility_pct,
+            },
+        )
         return ExecuteTradeResponse(
             accepted=False,
             reason=reason,
@@ -99,6 +113,7 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            explainability=explainability,
         )
 
     control_ok, control_reason = control_engine.validate_trade(
@@ -111,6 +126,19 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
         account_balance=payload.account_balance,
     )
     if not control_ok:
+        explainability = build_explainability(
+            reasoning=control_reason,
+            confidence=payload.confidence,
+            risk_level=risk["risk_level"],
+            expected_value=risk["expected_value"],
+            accepted=False,
+            safeguards=["control_engine", "kill_switch", "drawdown_limits"],
+            inputs={
+                "regime": inferred_regime,
+                "goal_pressure_multiplier": goal_pressure,
+                "realized_volatility_pct": realized_volatility_pct,
+            },
+        )
         return ExecuteTradeResponse(
             accepted=False,
             reason=control_reason,
@@ -121,6 +149,7 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            explainability=explainability,
         )
 
     opened = portfolio_manager.open_position(
@@ -132,6 +161,19 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
     )
 
     if not opened["accepted"]:
+        explainability = build_explainability(
+            reasoning=opened["reason"],
+            confidence=payload.confidence,
+            risk_level=risk["risk_level"],
+            expected_value=risk["expected_value"],
+            accepted=False,
+            safeguards=["portfolio_concentration_limits"],
+            inputs={
+                "regime": inferred_regime,
+                "goal_pressure_multiplier": goal_pressure,
+                "realized_volatility_pct": realized_volatility_pct,
+            },
+        )
         return ExecuteTradeResponse(
             accepted=False,
             reason=opened["reason"],
@@ -142,7 +184,23 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            explainability=explainability,
         )
+
+    explainability = build_explainability(
+        reasoning="Trade approved by risk, control, and portfolio gates.",
+        confidence=payload.confidence,
+        risk_level=risk["risk_level"],
+        expected_value=risk["expected_value"],
+        accepted=True,
+        safeguards=["risk_engine", "control_engine", "portfolio_manager"],
+        inputs={
+            "regime": inferred_regime,
+            "goal_pressure_multiplier": goal_pressure,
+            "realized_volatility_pct": realized_volatility_pct,
+            "position_notional": round(bounded_notional, 2),
+        },
+    )
 
     return ExecuteTradeResponse(
         accepted=True,
@@ -154,4 +212,5 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
         risk_reward_ratio=risk["risk_reward_ratio"],
         target_pct=float(allocation["target_pct"]),
         position_notional=round(bounded_notional, 2),
+        explainability=explainability,
     )

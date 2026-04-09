@@ -21,12 +21,15 @@ from typing import Literal
 
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.control_engine import control_engine
+from app.services.explainability import build_explainability
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.base_agent import MarketSnapshot, SwarmSignal
 from app.services.swarm.decision_store import AgentCycleRecord, swarm_decision_store
+from app.services.swarm.execution_risk_agent import ExecutionRiskAgent
 from app.services.swarm.execution_bridge import execution_bridge
+from app.services.swarm.goal_alignment_agent import GoalAlignmentAgent
 from app.services.swarm.mean_reversion_agent import MeanReversionAgent
 from app.services.swarm.momentum_agent import MomentumAgent
 from app.services.swarm.risk_agent import RiskAgent
@@ -43,8 +46,15 @@ class AgentSwarmManager:
         self._momentum = MomentumAgent()
         self._mean_reversion = MeanReversionAgent()
         self._sentiment = SentimentAgent()
+        self._goal_alignment = GoalAlignmentAgent()
         self._risk = RiskAgent()
-        self._signal_agents = [self._momentum, self._mean_reversion, self._sentiment]
+        self._execution_risk = ExecutionRiskAgent()
+        self._signal_agents = [
+            self._momentum,
+            self._mean_reversion,
+            self._sentiment,
+            self._goal_alignment,
+        ]
 
     # ------------------------------------------------------------------
     # Public API
@@ -90,6 +100,8 @@ class AgentSwarmManager:
             final_action = "HOLD"
             consensus_reasoning = veto_reason
 
+        self._execution_risk.analyze_market(snapshot)
+
         portfolio_state = portfolio_manager.snapshot()
         control_state = control_engine.status()
         goal_pressure = goal_engine.current_pressure(
@@ -120,6 +132,15 @@ class AgentSwarmManager:
                 allocation["accepted"] = False
                 allocation["reason"] = open_reason
 
+        exec_vetoed, exec_veto_reason = self._execution_risk.veto(
+            action=final_action,
+            qty=float(allocation.get("recommended_qty", default_qty)),
+            confidence=final_confidence,
+        )
+        if exec_vetoed:
+            allocation["accepted"] = False
+            allocation["reason"] = exec_veto_reason
+
         # 4. Submit to Alpaca / simulation
         if final_action != "HOLD" and not allocation["accepted"]:
             exec_result = {
@@ -138,7 +159,28 @@ class AgentSwarmManager:
                 qty=allocation["recommended_qty"] if allocation["accepted"] else default_qty,
                 confidence=final_confidence,
                 client_order_id=f"swarm-{symbol.upper()}-{uuid.uuid4().hex[:12]}",
+                liquidity_score=self._liquidity_score(snapshot.volumes),
             )
+
+        explainability = build_explainability(
+            reasoning=consensus_reasoning,
+            confidence=final_confidence,
+            risk_level=risk_level,
+            expected_value=float(allocation.get("max_risk_amount", 0.0)),
+            accepted=bool(allocation.get("accepted", False)),
+            safeguards=[
+                "risk_agent_veto",
+                "execution_risk_veto",
+                "portfolio_constraints",
+                "kill_switch",
+            ],
+            inputs={
+                "regime": regime,
+                "goal_pressure": round(goal_pressure, 4),
+                "realized_volatility_pct": round(realized_vol, 6),
+                "agent_agreement": round(agreement, 4),
+            },
+        )
 
         if final_action != "HOLD" and allocation["accepted"] and exec_result.get("track_position"):
             opened = portfolio_manager.open_position(
@@ -176,7 +218,7 @@ class AgentSwarmManager:
             final_confidence=round(final_confidence, 3),
             consensus_reasoning=consensus_reasoning,
             execution_submitted=exec_result.get("submitted", False),
-            execution_result=exec_result,
+            execution_result={**exec_result, "explainability": explainability},
             vetoed=vetoed,
             veto_reason=veto_reason,
             allocation=allocation,
@@ -226,7 +268,7 @@ class AgentSwarmManager:
         return {
             "agents": [
                 {"name": a.name, "confidence_score": a.confidence_score}
-                for a in [*self._signal_agents, self._risk]
+                for a in [*self._signal_agents, self._risk, self._execution_risk]
             ],
             "total_cycles": swarm_decision_store.total_cycles,
             "execution_mode": execution_bridge.get_mode(),
@@ -246,6 +288,14 @@ class AgentSwarmManager:
             return 0.0
         agreeing = sum(1 for sig in signals if sig.action == final_action)
         return agreeing / len(signals)
+
+    def _liquidity_score(self, volumes: list[float]) -> float:
+        if len(volumes) < 2:
+            return 0.5
+        avg = sum(volumes[:-1]) / max(len(volumes[:-1]), 1)
+        latest = volumes[-1]
+        ratio = (latest / avg) if avg > 0 else 1.0
+        return max(0.1, min(ratio / 2.0, 1.0))
 
     def _realized_volatility_pct(self, close_prices: list[float]) -> float:
         if len(close_prices) < 3:

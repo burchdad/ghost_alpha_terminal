@@ -16,10 +16,10 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-import httpx
-
 from app.core.config import settings
-from app.services.alpaca_client import alpaca_client
+from app.services.brokers.base import BrokerOrderRequest
+from app.services.brokers.router import broker_router
+from app.services.explainability import build_explainability
 from app.services.kill_switch import kill_switch
 
 logger = logging.getLogger(__name__)
@@ -40,6 +40,9 @@ class ExecutionBridge:
     def get_mode(self) -> ExecutionMode:
         return self._mode
 
+    def broker_capabilities(self) -> dict[str, dict]:
+        return broker_router.capabilities_map()
+
     def submit(
         self,
         *,
@@ -48,6 +51,7 @@ class ExecutionBridge:
         qty: float,
         confidence: float,
         client_order_id: str | None = None,
+        liquidity_score: float = 1.0,
     ) -> dict:
         """
         Submit to Alpaca if all gates pass.
@@ -66,6 +70,8 @@ class ExecutionBridge:
             "error": None,
             "mode": self._mode,
             "track_position": False,
+            "broker": None,
+            "explainability": None,
         }
 
         if self._mode == "SIMULATION":
@@ -73,81 +79,139 @@ class ExecutionBridge:
                 **base,
                 "track_position": action != "HOLD",
                 "reason": "Execution mode is SIMULATION — decision logged only.",
+                "explainability": build_explainability(
+                    reasoning="Insight-only mode is active; order not sent to broker.",
+                    confidence=confidence,
+                    risk_level="N/A",
+                    expected_value=0.0,
+                    accepted=action != "HOLD",
+                    safeguards=["human_in_the_loop_default", "execution_mode_simulation"],
+                    inputs={"symbol": symbol, "action": action, "qty": qty},
+                ),
             }
 
         # Gate 1 — HOLD: nothing to do
         if action == "HOLD":
-            return {**base, "reason": "Action is HOLD — no order placed."}
+            return {
+                **base,
+                "reason": "Action is HOLD — no order placed.",
+                "explainability": build_explainability(
+                    reasoning="No directional edge; execution intentionally skipped.",
+                    confidence=confidence,
+                    risk_level="LOW",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["hold_gate"],
+                    inputs={"symbol": symbol, "action": action},
+                ),
+            }
 
         # Gate 2 — kill switch
         if not kill_switch.is_enabled():
-            return {**base, "reason": "Kill switch is active — trading disabled."}
+            return {
+                **base,
+                "reason": "Kill switch is active — trading disabled.",
+                "explainability": build_explainability(
+                    reasoning="Global risk stop blocked execution.",
+                    confidence=confidence,
+                    risk_level="HIGH",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["kill_switch"],
+                    inputs={"symbol": symbol, "action": action},
+                ),
+            }
 
-        # Gate 3 — credentials not configured (dev/paper mode without keys)
-        if not settings.alpaca_api_key or not settings.alpaca_secret_key:
+        routed_broker = broker_router.route_broker(symbol=symbol, liquidity_score=liquidity_score)
+
+        # Gate 3 — credentials not configured for Alpaca routes
+        if routed_broker == "alpaca" and (not settings.alpaca_api_key or not settings.alpaca_secret_key):
             return {
                 **base,
                 "reason": (
                     "Alpaca credentials not configured. "
                     "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in .env to enable execution."
                 ),
+                "explainability": build_explainability(
+                    reasoning="Execution blocked because broker credentials are unavailable.",
+                    confidence=confidence,
+                    risk_level="MEDIUM",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["credential_gate"],
+                    inputs={"symbol": symbol, "action": action},
+                ),
             }
 
-        # Map to Alpaca side
+        # Map side and enforce mode-broker consistency checks
         side = "buy" if action == "BUY" else "sell"
         if self._mode == "LIVE_TRADING" and settings.alpaca_paper:
             return {
                 **base,
                 "reason": "LIVE_TRADING selected but ALPACA_PAPER=true. Disable paper mode to place live orders.",
+                "explainability": build_explainability(
+                    reasoning="Environment is paper-configured; live orders are blocked by policy.",
+                    confidence=confidence,
+                    risk_level="HIGH",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["mode_config_guard"],
+                    inputs={"symbol": symbol, "mode": self._mode},
+                ),
             }
 
         if self._mode == "PAPER_TRADING" and not settings.alpaca_paper:
             return {
                 **base,
                 "reason": "PAPER_TRADING selected but ALPACA_PAPER=false. Enable paper mode before trading.",
+                "explainability": build_explainability(
+                    reasoning="Paper mode requested while broker is configured for live endpoint.",
+                    confidence=confidence,
+                    risk_level="HIGH",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["mode_config_guard"],
+                    inputs={"symbol": symbol, "mode": self._mode},
+                ),
             }
 
-        order_payload = {
-            "symbol": symbol,
-            "qty": str(qty),
-            "side": side,
-            "type": "market",
-            "time_in_force": "day",
-        }
-        if client_order_id:
-            order_payload["client_order_id"] = client_order_id
-
-        try:
-            response = alpaca_client.post(
-                "/v2/orders",
-                body=order_payload,
+        broker_result = broker_router.submit(
+            request=BrokerOrderRequest(
                 symbol=symbol,
-            )
-            order_id = response.get("id", "")
-            logger.info(
-                "alpaca_order_submitted symbol=%s side=%s qty=%s order_id=%s",
-                symbol,
-                side,
-                qty,
-                order_id,
-            )
-            return {
-                **base,
-                "submitted": True,
-                "track_position": True,
-                "order_id": order_id,
-                "reason": f"Order submitted: {side.upper()} {qty} {symbol} @ market.",
-            }
+                side=side,
+                qty=max(qty, 0.0001),
+                order_type="market",
+                time_in_force="day",
+                client_order_id=client_order_id,
+            ),
+            liquidity_score=liquidity_score,
+        )
 
-        except httpx.HTTPStatusError as exc:
-            err = f"Alpaca HTTP {exc.response.status_code}: {exc.response.text[:200]}"
-            logger.error("alpaca_order_failed symbol=%s error=%s", symbol, err)
-            return {**base, "error": err, "reason": "Alpaca rejected the order."}
-
-        except httpx.RequestError as exc:
-            err = f"Network error: {exc}"
-            logger.error("alpaca_order_network_error symbol=%s error=%s", symbol, err)
-            return {**base, "error": err, "reason": "Network error reaching Alpaca."}
+        logger.info(
+            "broker_order_result symbol=%s broker=%s submitted=%s reason=%s",
+            symbol,
+            broker_result.broker,
+            broker_result.submitted,
+            broker_result.reason,
+        )
+        return {
+            **base,
+            "submitted": broker_result.submitted,
+            "track_position": broker_result.submitted,
+            "broker": broker_result.broker,
+            "order_id": broker_result.order_id,
+            "error": broker_result.error,
+            "reason": broker_result.reason,
+            "explainability": build_explainability(
+                reasoning=broker_result.reason,
+                confidence=confidence,
+                risk_level="MEDIUM",
+                expected_value=0.0,
+                accepted=broker_result.submitted,
+                safeguards=["broker_router", "kill_switch", "mode_guard"],
+                inputs={"symbol": symbol, "action": action, "qty": qty, "broker": broker_result.broker},
+            ),
+        }
 
 
 execution_bridge = ExecutionBridge()
