@@ -1,0 +1,31 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-main: #06141b;
+  --bg-grid: radial-gradient(circle at 10% 0%, rgba(34, 211, 238, 0.14) 0%, transparent 40%),
+    radial-gradient(circle at 90% 20%, rgba(245, 158, 11, 0.12) 0%, transparent 35%),
+    linear-gradient(180deg, #071019 0%, #06141b 100%);
+  --txt-main: #ddf4ff;
+  --txt-soft: #8db3c7;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-grid);
+  color: var(--txt-main);
+  font-family: "IBM Plex Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.panel {
+  @apply border border-terminal-line bg-terminal-panel/80 backdrop-blur-sm;
+}
