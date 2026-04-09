@@ -17,13 +17,29 @@ export default function HomePage() {
       />
 
       <section className="relative mx-auto flex max-w-6xl flex-col gap-6 rounded-3xl border border-terminal-line bg-[#05121ab8] p-6 shadow-glow md:p-8">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-widest">
-          <span className="rounded-full border border-terminal-accent/70 bg-terminal-accent/10 px-3 py-1 text-terminal-accent">
-            GhostAlpha OS
-          </span>
-          <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-emerald-300">
-            Market Brain Online
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-terminal-line/40 pb-4">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-widest">
+            <span className="rounded-full border border-terminal-accent/70 bg-terminal-accent/10 px-3 py-1 text-terminal-accent">
+              GhostAlpha OS
+            </span>
+            <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-emerald-300">
+              Market Brain Online
+            </span>
+          </div>
+          <nav className="flex items-center gap-4 text-xs text-slate-300">
+            <Link href="/alpha" className="transition hover:text-terminal-accent">
+              Market Dashboard
+            </Link>
+            <Link href="/terminal" className="transition hover:text-terminal-accent">
+              Deep Terminal
+            </Link>
+            <Link href="/privacy-policy" className="transition hover:text-terminal-accent">
+              Privacy
+            </Link>
+            <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
+              Terms
+            </Link>
+          </nav>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
@@ -106,6 +122,42 @@ export default function HomePage() {
             URL Model: /alpha -&gt; /terminal?symbol=TSLA.
           </div>
         </div>
+
+        <div className="grid gap-3 border-t border-terminal-line/40 pt-4 md:grid-cols-3">
+          <div className="rounded-xl border border-terminal-line/60 bg-black/20 p-4">
+            <h3 className="text-sm font-semibold text-terminal-accent">Why Traders Use It</h3>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">
+              Instead of manually jumping between tickers, the orchestrator continuously surfaces the highest-quality
+              opportunities and routes them by strategy fit.
+            </p>
+          </div>
+          <div className="rounded-xl border border-terminal-line/60 bg-black/20 p-4">
+            <h3 className="text-sm font-semibold text-terminal-accent">What You Keep</h3>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">
+              Your existing execution stack is unchanged: context intelligence, risk guardrails, control panel,
+              execution history, and decision replay are all preserved.
+            </p>
+          </div>
+          <div className="rounded-xl border border-terminal-line/60 bg-black/20 p-4">
+            <h3 className="text-sm font-semibold text-terminal-accent">Go Live Fast</h3>
+            <p className="mt-2 text-xs leading-relaxed text-slate-300">
+              Start in Market Intelligence, pick a ranked setup, and jump into deep ticker analysis with one click.
+              Built for operator speed and iterative model tuning.
+            </p>
+          </div>
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-terminal-line/40 pt-4 text-xs text-slate-400">
+          <p>Ghost Alpha Terminal - AI-driven market operating system</p>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy-policy" className="transition hover:text-terminal-accent">
+              Privacy Policy
+            </Link>
+            <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
+              Terms of Use
+            </Link>
+          </div>
+        </footer>
       </section>
     </main>
   );
