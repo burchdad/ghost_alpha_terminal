@@ -112,9 +112,10 @@ def get_control_status() -> ControlStatusResponse:
     # Keep payload bounded while preserving chronological order for UI slice(-5).
     deduped = deduped[-200:]
 
+    status_payload = {**status, "rejected_trades": deduped}
+
     return ControlStatusResponse(
-        **status,
-        rejected_trades=deduped,
+        **status_payload,
         autonomous_enabled=auto["enabled"],
         autonomous_interval_seconds=auto["interval_seconds"],
         autonomous_symbols=auto["symbols"],
