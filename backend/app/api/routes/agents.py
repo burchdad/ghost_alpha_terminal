@@ -166,6 +166,7 @@ def get_broker_connections() -> BrokerConnectionsResponse:
         connected = bool(connection and connection.connected and connection.access_token)
         coinbase_keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
         if provider == "coinbase":
+            coinbase_live_enabled = bool(settings.coinbase_live_trading_enabled)
             brokers.append(
                 BrokerConnectionEntryResponse(
                     provider=provider,
@@ -175,15 +176,22 @@ def get_broker_connections() -> BrokerConnectionsResponse:
                     disconnect_supported=False,
                     auth_type="api_key",
                     permissions="Crypto Trading (API Key Configured)" if coinbase_keys_present else "API Key Not Configured",
-                    mode="Crypto",
-                    status_label="Configured (Activation Pending)" if coinbase_keys_present else "Ready for API Key",
+                    mode="Live Trading" if coinbase_live_enabled else "Configured but Disabled",
+                    status_label=(
+                        "Live Ready"
+                        if coinbase_keys_present and coinbase_live_enabled
+                        else "Configured (Disabled by Env)"
+                        if coinbase_keys_present
+                        else "Ready for API Key"
+                    ),
                     connect_path=None,
                     disconnect_path=None,
                     updated_at=connection.updated_at if connection else None,
                     last_error=connection.last_error if connection else None,
                     notes=(
-                        "API key presence is detected. Order signing/execution adapter activation is still required "
-                        "before Coinbase orders can be submitted."
+                        "Coinbase order signing/execution is active. Orders can route in LIVE_TRADING mode."
+                        if coinbase_keys_present and coinbase_live_enabled
+                        else "Coinbase keys are configured, but COINBASE_LIVE_TRADING_ENABLED is false."
                         if coinbase_keys_present
                         else "Add COINBASE_API_KEY_NAME and COINBASE_API_PRIVATE_KEY in backend environment variables."
                     ),

@@ -145,7 +145,7 @@ class ExecutionBridge:
 
         # Map side and enforce mode-broker consistency checks
         side = "buy" if action == "BUY" else "sell"
-        if self._mode == "LIVE_TRADING" and settings.alpaca_paper:
+        if routed_broker == "alpaca" and self._mode == "LIVE_TRADING" and settings.alpaca_paper:
             return {
                 **base,
                 "reason": "LIVE_TRADING selected but ALPACA_PAPER=true. Disable paper mode to place live orders.",
@@ -160,7 +160,7 @@ class ExecutionBridge:
                 ),
             }
 
-        if self._mode == "PAPER_TRADING" and not settings.alpaca_paper:
+        if routed_broker == "alpaca" and self._mode == "PAPER_TRADING" and not settings.alpaca_paper:
             return {
                 **base,
                 "reason": "PAPER_TRADING selected but ALPACA_PAPER=false. Enable paper mode before trading.",
@@ -172,6 +172,21 @@ class ExecutionBridge:
                     accepted=False,
                     safeguards=["mode_config_guard"],
                     inputs={"symbol": symbol, "mode": self._mode},
+                ),
+            }
+
+        if routed_broker == "coinbase" and self._mode != "LIVE_TRADING":
+            return {
+                **base,
+                "reason": "Coinbase execution requires LIVE_TRADING mode.",
+                "explainability": build_explainability(
+                    reasoning="Coinbase routes are blocked outside live mode to avoid ambiguous paper behavior.",
+                    confidence=confidence,
+                    risk_level="HIGH",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["mode_config_guard"],
+                    inputs={"symbol": symbol, "mode": self._mode, "broker": routed_broker},
                 ),
             }
 
