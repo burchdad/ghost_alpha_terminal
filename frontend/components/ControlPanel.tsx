@@ -101,13 +101,13 @@ export default function ControlPanel({
         </div>
 
         <div className="mb-2 flex items-center justify-between">
-          <span className="font-semibold text-slate-400">Autonomous Paper Mode</span>
+          <span className="font-semibold text-slate-400">Autonomous Execution</span>
           <span className={control.autonomous_enabled ? "text-terminal-bull" : "text-slate-400"}>
             {control.autonomous_enabled ? "ENABLED" : "DISABLED"}
           </span>
         </div>
         <p>Interval: {control.autonomous_interval_seconds}s</p>
-        <p>Symbols: {control.autonomous_symbols.join(", ") || "-"}</p>
+        <p>Universe source: top-ranked live scan candidates</p>
         <p>Cycles run: {control.autonomous_cycles_run}</p>
         <p>Last run: {control.autonomous_last_run_at ? new Date(control.autonomous_last_run_at).toLocaleString() : "Never"}</p>
         {control.autonomous_last_error && <p className="mt-1 text-terminal-bear">{control.autonomous_last_error}</p>}

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from statistics import mean
 
-from app.utils.data_loader import load_mock_ohlcv
+from app.services.historical_data_service import historical_data_service
 
 
 class SignalValidationEngine:
@@ -104,7 +105,14 @@ class SignalValidationEngine:
         news_momentum_score: float,
         event_strength: float,
     ) -> dict:
-        candles = load_mock_ohlcv(symbol.upper(), timeframe="1d", periods=90)
+        end = datetime.now(tz=timezone.utc)
+        start = end - timedelta(days=120)
+        candles = historical_data_service.load_historical_data(
+            symbol=symbol.upper(),
+            timeframe="1d",
+            start_date=start,
+            end_date=end,
+        )
         close = [float(v) for v in candles["close"].tolist() if float(v) > 0]
         volume = [float(v) for v in candles["volume"].tolist() if float(v) > 0]
 

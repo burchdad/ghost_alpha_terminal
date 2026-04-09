@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import math
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
+from app.services.historical_data_service import historical_data_service
+from app.services.live_portfolio_service import live_portfolio_service
+from app.services.master_orchestrator import master_orchestrator
+from app.services.portfolio_manager import portfolio_manager
+from app.services.regime_detector import regime_detector
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
 
@@ -14,7 +18,7 @@ class AutonomousRunner:
         self._lock = threading.Lock()
         self._enabled = False
         self._interval_seconds = 300
-        self._symbols = ["AAPL", "TSLA", "NVDA", "SPY"]
+        self._symbols: list[str] = []
         self._thread: threading.Thread | None = None
         self._last_run_at: datetime | None = None
         self._last_error: str | None = None
@@ -45,14 +49,33 @@ class AutonomousRunner:
         return self.status()
 
     def run_once(self) -> dict:
-        if execution_bridge.get_mode() != "PAPER_TRADING":
+        if execution_bridge.get_mode() == "SIMULATION":
             with self._lock:
-                self._last_error = "Autonomous mode requires PAPER_TRADING execution mode."
+                self._last_error = "Autonomous mode requires PAPER_TRADING or LIVE_TRADING execution mode."
             return self.status()
 
         try:
-            for symbol in self.status()["symbols"]:
-                close_prices, volumes, regime = self._mock_market(symbol)
+            portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
+            scan = master_orchestrator.scan(limit=8)
+            candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:4]
+            selected_symbols = [c.symbol for c in candidates]
+            with self._lock:
+                self._symbols = selected_symbols
+
+            for symbol in selected_symbols:
+                end = datetime.now(tz=timezone.utc)
+                start = end - timedelta(days=120)
+                df = historical_data_service.load_historical_data(
+                    symbol=symbol,
+                    timeframe="1d",
+                    start_date=start,
+                    end_date=end,
+                )
+                close_prices = [float(v) for v in df["close"].tolist() if float(v) > 0]
+                volumes = [float(v) for v in df["volume"].tolist() if float(v) > 0]
+                if len(close_prices) < 30 or len(volumes) < 30:
+                    continue
+                regime = regime_detector.detect_from_dataframe(df).regime
                 swarm_manager.run_cycle(
                     symbol=symbol,
                     close_prices=close_prices,
@@ -78,20 +101,5 @@ class AutonomousRunner:
                 interval = self._interval_seconds
             self.run_once()
             time.sleep(interval)
-
-    def _mock_market(self, symbol: str) -> tuple[list[float], list[float], str]:
-        seeds = {"AAPL": 185.0, "TSLA": 170.0, "NVDA": 905.0, "SPY": 510.0}
-        base = seeds.get(symbol.upper(), 100.0)
-        minute = int(time.time() // 60)
-        prices: list[float] = []
-        volumes: list[float] = []
-        for idx in range(30):
-            drift = math.sin((minute + idx) / 3.0) * (base * 0.0025)
-            oscillation = math.cos((minute + idx) / 5.0) * (base * 0.0015)
-            prices.append(round(base + drift + oscillation + idx * 0.03, 4))
-            volumes.append(1_000_000 + ((minute + idx) % 15) * 25_000)
-        regime = ["TRENDING", "RANGE_BOUND", "HIGH_VOLATILITY"][minute % 3]
-        return prices, volumes, regime
-
 
 autonomous_runner = AutonomousRunner()

@@ -4,12 +4,21 @@ import numpy as np
 import pandas as pd
 
 from app.models.schemas import RegimeResponse
-from app.utils.data_loader import load_mock_ohlcv
+from app.services.historical_data_service import historical_data_service
 
 
 class RegimeDetector:
     def detect(self, symbol: str, timeframe: str = "1d") -> RegimeResponse:
-        df = load_mock_ohlcv(symbol=symbol, timeframe=timeframe, periods=140)
+        from datetime import datetime, timedelta, timezone
+
+        end = datetime.now(tz=timezone.utc)
+        start = end - timedelta(days=160)
+        df = historical_data_service.load_historical_data(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start,
+            end_date=end,
+        )
         return self.detect_from_dataframe(df)
 
     def detect_from_dataframe(self, df: pd.DataFrame) -> RegimeResponse:

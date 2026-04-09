@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # AI / ML
     # ---------------------------------------------------------------------------
     kronos_model_id: str = "NeoQuasar/Kronos-tiny"
-    use_mock_data: bool = True
+    use_mock_data: bool = False
 
     # ---------------------------------------------------------------------------
     # Alpaca credentials — set via Railway environment variables, never committed

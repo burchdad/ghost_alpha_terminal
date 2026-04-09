@@ -6,6 +6,7 @@ import math
 import numpy as np
 
 from app.models.schemas import OptionContract, OptionsChainResponse
+from app.services.historical_data_service import historical_data_service
 
 
 class OptionsService:
@@ -46,15 +47,25 @@ class OptionsService:
         symbol = symbol.upper()
         seed = abs(hash(symbol)) % (2**32)
         rng = np.random.default_rng(seed)
-
-        underlying = round(float(rng.normal(180, 20)), 2)
+        end = datetime.now(tz=timezone.utc)
+        start = end - timedelta(days=120)
+        candles = historical_data_service.load_historical_data(
+            symbol=symbol,
+            timeframe="1d",
+            start_date=start,
+            end_date=end,
+        )
+        closes = candles["close"].to_numpy(dtype=float) if not candles.empty else np.array([])
+        returns = np.diff(closes) / closes[:-1] if len(closes) > 1 else np.array([])
+        underlying = round(float(closes[-1]), 2) if len(closes) else round(float(rng.normal(180, 20)), 2)
+        base_iv = float(np.std(returns) * np.sqrt(252)) if len(returns) else 0.35
         strikes = [round(underlying + x, 2) for x in range(-25, 30, 5)]
         expiration = (datetime.now(tz=timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
 
         contracts: list[OptionContract] = []
         for strike in strikes:
             for option_type in ("CALL", "PUT"):
-                iv = float(max(0.08, min(1.2, rng.normal(0.35, 0.12))))
+                iv = float(max(0.08, min(1.2, rng.normal(max(base_iv, 0.12), 0.08))))
                 ttm = 30 / 365
                 greeks = self.calculate_greeks(
                     spot=underlying,

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.services.alpaca_client import alpaca_client
+
 
 @dataclass
 class NewsAuditEntry:
@@ -38,33 +40,33 @@ class NewsIntelligenceService:
 
     def analyze_symbol(self, symbol: str) -> dict:
         upper = symbol.upper()
-        # Deterministic pseudo-signal for stable behavior in mock mode.
-        seed = abs(hash(f"news:{upper}"))
-
-        sentiment_raw = ((seed % 2001) - 1000) / 1000.0
-        sentiment_score = max(-1.0, min(sentiment_raw * 0.85, 1.0))
-
-        momentum_raw = ((seed // 97) % 1000) / 1000.0
-        news_momentum_score = max(0.0, min(momentum_raw, 1.0))
-
-        event_raw = ((seed // 193) % 1000) / 1000.0
-        event_strength = max(0.0, min(event_raw, 1.0))
-
+        selected_sources = ["ALPACA_NEWS"]
+        articles = alpaca_client.get_news(symbol=upper, limit=10)
+        sentiment_score = 0.0
+        news_momentum_score = 0.0
+        event_strength = 0.0
         event_flags: list[str] = []
-        if event_strength > 0.82:
-            event_flags.append("HIGH_IMPACT_HEADLINE_CLUSTER")
-        if news_momentum_score > 0.75:
-            event_flags.append("NEWS_VELOCITY_SPIKE")
-        if abs(sentiment_score) > 0.65:
-            event_flags.append("SENTIMENT_EXTREME")
-        if not event_flags:
-            event_flags.append("NO_MAJOR_EVENT")
 
-        selected_sources = self._source_whitelist[: (3 + (seed % 3))]
+        if articles:
+            article_scores = [self._score_article(article) for article in articles]
+            sentiment_score = sum(score for score, _ in article_scores) / len(article_scores)
+            news_momentum_score = min(1.0, len(articles) / 10.0)
+            event_strength = max(abs(sentiment_score), news_momentum_score)
+            if len(articles) >= 6:
+                event_flags.append("HEADLINE_CLUSTER")
+            if news_momentum_score >= 0.7:
+                event_flags.append("NEWS_VELOCITY_SPIKE")
+            if abs(sentiment_score) >= 0.45:
+                event_flags.append("SENTIMENT_EXTREME")
+            for _, article_flag in article_scores:
+                if article_flag and article_flag not in event_flags:
+                    event_flags.append(article_flag)
+        else:
+            event_flags.append("NO_RECENT_ALPACA_NEWS")
 
         data_classification = "PUBLIC"
         rationale = (
-            "Signals derived from whitelisted public sources only; "
+            "Signals derived from Alpaca public news data only; "
             "no private channels or restricted datasets included."
         )
 
@@ -92,6 +94,25 @@ class NewsIntelligenceService:
             "event_flags": event_flags,
             "rationale": rationale,
         }
+
+    def _score_article(self, article: dict) -> tuple[float, str | None]:
+        headline = f"{article.get('headline', '')} {article.get('summary', '')}".lower()
+        positive_terms = ["beats", "surge", "growth", "upgrade", "wins", "record", "profit"]
+        negative_terms = ["misses", "drop", "lawsuit", "downgrade", "cuts", "loss", "probe"]
+        event_terms = {
+            "earnings": "EARNINGS_EVENT",
+            "guidance": "GUIDANCE_UPDATE",
+            "merger": "CORPORATE_ACTION",
+            "acquisition": "CORPORATE_ACTION",
+            "fed": "MACRO_EVENT",
+            "sec": "REGULATORY_EVENT",
+        }
+
+        positive_hits = sum(term in headline for term in positive_terms)
+        negative_hits = sum(term in headline for term in negative_terms)
+        score = 0.18 * positive_hits - 0.18 * negative_hits
+        flag = next((value for term, value in event_terms.items() if term in headline), None)
+        return max(-1.0, min(score, 1.0)), flag
 
     def recent_audit(self, limit: int = 50) -> list[dict]:
         with self._lock:

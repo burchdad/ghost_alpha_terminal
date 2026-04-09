@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import ControlPanel from "../../components/ControlPanel";
 import ContextPanel from "../../components/ContextPanel";
@@ -207,6 +207,29 @@ type LightweightMetricsResponse = {
   top_strategies: Array<{ strategy: string; count: number }>;
 };
 
+type ExecutionHistoryEntry = {
+  execution_id: string;
+  cycle_id: string | null;
+  symbol: string;
+  action: string;
+  mode: string;
+  submitted: boolean;
+  order_id: string | null;
+  reason: string | null;
+  error: string | null;
+  timestamp: string;
+};
+
+type ExecutionHistoryResponse = {
+  entries: ExecutionHistoryEntry[];
+};
+
+type RuntimeToast = {
+  id: string;
+  tone: "success" | "warning" | "error";
+  message: string;
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -239,6 +262,10 @@ export default function AlphaPage() {
   const [brokerConnection, setBrokerConnection] = useState<AlpacaOauthStatusResponse | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
+  const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
+  const seenExecutionIdsRef = useRef<Set<string>>(new Set());
+  const executionBaselineReadyRef = useRef(false);
+  const autonomousCycleBaselineRef = useRef<number | null>(null);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -320,30 +347,142 @@ export default function AlphaPage() {
     setLaunchMetrics(metricsData);
   }
 
+  function pushRuntimeToast(message: string, tone: RuntimeToast["tone"]) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setRuntimeToasts((current) => [...current.slice(-2), { id, tone, message }]);
+    window.setTimeout(() => {
+      setRuntimeToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 6000);
+  }
+
+  async function refreshScanState(triggerScan = false) {
+    const [statusRes, latestRes] = await Promise.all([
+      fetch(`${API_BASE}/orchestrator/status`),
+      fetch(`${API_BASE}/orchestrator/scan/latest`),
+    ]);
+    const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
+    const latestData = await parseJsonOrNull<OrchestratorScan>(latestRes);
+    setStatus(statusData);
+    if (latestData) {
+      setScan(latestData);
+      return;
+    }
+    if (!triggerScan) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=25`, { method: "POST" });
+      const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
+      setScan(scanData);
+      const refreshed = await fetch(`${API_BASE}/orchestrator/status`);
+      const refreshedStatus = await parseJsonOrNull<OrchestratorStatus>(refreshed);
+      setStatus(refreshedStatus);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshRuntimeState(announceExecutions = false) {
+    const [portfolioRes, controlRes, executionModeRes, goalRes, historyRes] = await Promise.all([
+      fetch(`${API_BASE}/portfolio`),
+      fetch(`${API_BASE}/control`),
+      fetch(`${API_BASE}/agents/execution-mode`),
+      fetch(`${API_BASE}/agents/goal/status`),
+      fetch(`${API_BASE}/agents/execution-history?limit=10`),
+    ]);
+
+    const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    const executionModeData = await parseJsonOrNull<ExecutionModeResponse>(executionModeRes);
+    const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+    const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+
+    setPortfolio(portfolioData);
+    setControl(controlData);
+    setExecutionMode(executionModeData?.mode ?? null);
+    setGoal(goalData);
+
+    if (controlData) {
+      if (autonomousCycleBaselineRef.current === null) {
+        autonomousCycleBaselineRef.current = controlData.autonomous_cycles_run;
+      } else if (announceExecutions && controlData.autonomous_cycles_run > autonomousCycleBaselineRef.current) {
+        autonomousCycleBaselineRef.current = controlData.autonomous_cycles_run;
+        pushRuntimeToast(`Autonomous cycle ${controlData.autonomous_cycles_run} completed.`, "success");
+      } else {
+        autonomousCycleBaselineRef.current = controlData.autonomous_cycles_run;
+      }
+    }
+
+    if (!historyData) {
+      return;
+    }
+
+    const latestEntries = historyData.entries ?? [];
+    if (!executionBaselineReadyRef.current) {
+      seenExecutionIdsRef.current = new Set(latestEntries.map((entry) => entry.execution_id));
+      executionBaselineReadyRef.current = true;
+      return;
+    }
+
+    if (!announceExecutions) {
+      return;
+    }
+
+    for (const entry of [...latestEntries].reverse()) {
+      if (seenExecutionIdsRef.current.has(entry.execution_id)) {
+        continue;
+      }
+      seenExecutionIdsRef.current.add(entry.execution_id);
+      if (entry.error) {
+        pushRuntimeToast(`${entry.symbol} ${entry.action.toLowerCase()} failed: ${entry.error}`, "error");
+      } else if (entry.submitted) {
+        pushRuntimeToast(`${entry.symbol} ${entry.action.toLowerCase()} submitted in ${entry.mode.toLowerCase().replaceAll("_", " ")}.`, "success");
+      } else {
+        pushRuntimeToast(`${entry.symbol} ${entry.action.toLowerCase()} logged without broker submission.`, "warning");
+      }
+    }
+  }
+
+  async function refreshSymbolIntel(currentFocusSymbol: string, preferredAuditId: string | null = selectedAuditId) {
+    const [contextRes, newsRes, newsAuditRes, auditRes] = await Promise.all([
+      fetch(`${API_BASE}/agents/context/${currentFocusSymbol}`),
+      fetch(`${API_BASE}/agents/news/${currentFocusSymbol}`),
+      fetch(`${API_BASE}/agents/news/audit?limit=25`),
+      fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+    ]);
+
+    const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+    const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+    const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
+    const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+
+    setContextSignal(contextData);
+    setNewsSignal(newsData);
+    setNewsAudit(newsAuditData?.entries ?? []);
+
+    const audits = auditData?.entries ?? [];
+    setDecisionAudit(audits);
+    const nextAuditId = preferredAuditId && audits.some((entry) => entry.audit_id === preferredAuditId)
+      ? preferredAuditId
+      : (audits[0]?.audit_id ?? null);
+    setSelectedAuditId(nextAuditId);
+
+    if (!nextAuditId) {
+      setDecisionReplay(null);
+      return;
+    }
+
+    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${nextAuditId}`);
+    const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+    setDecisionReplay(replayData);
+  }
+
   useEffect(() => {
     async function boot() {
-      const [statusRes, latestRes] = await Promise.all([
-        fetch(`${API_BASE}/orchestrator/status`),
-        fetch(`${API_BASE}/orchestrator/scan/latest`),
-      ]);
-      const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
-      const latestData = await parseJsonOrNull<OrchestratorScan>(latestRes);
-      setStatus(statusData);
-      if (latestData) {
-        setScan(latestData);
-        return;
-      }
-      setLoading(true);
-      try {
-        const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=25`, { method: "POST" });
-        const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
-        setScan(scanData);
-        const refreshed = await fetch(`${API_BASE}/orchestrator/status`);
-        const refreshedStatus = await parseJsonOrNull<OrchestratorStatus>(refreshed);
-        setStatus(refreshedStatus);
-      } finally {
-        setLoading(false);
-      }
+      await refreshScanState(true);
+      await refreshRuntimeState(false);
+      await refreshSymbolIntel(focusSymbol, selectedAuditId);
     }
 
     boot().catch((err: unknown) => {
@@ -360,78 +499,33 @@ export default function AlphaPage() {
   }, []);
 
   useEffect(() => {
-    async function fetchOperationalData() {
-      const [
-        portfolioRes,
-        controlRes,
-        executionModeRes,
-        goalRes,
-        contextRes,
-        newsRes,
-        newsAuditRes,
-        auditRes,
-      ] = await Promise.all([
-        fetch(`${API_BASE}/portfolio`),
-        fetch(`${API_BASE}/control`),
-        fetch(`${API_BASE}/agents/execution-mode`),
-        fetch(`${API_BASE}/agents/goal/status`),
-        fetch(`${API_BASE}/agents/context/${focusSymbol}`),
-        fetch(`${API_BASE}/agents/news/${focusSymbol}`),
-        fetch(`${API_BASE}/agents/news/audit?limit=25`),
-        fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
-      ]);
-
-      const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
-      const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
-      const executionModeData = await parseJsonOrNull<ExecutionModeResponse>(executionModeRes);
-      const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
-      const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
-      const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
-      const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
-      const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
-
-      setPortfolio(portfolioData);
-      setControl(controlData);
-      setExecutionMode(executionModeData?.mode ?? null);
-      setGoal(goalData);
-      setContextSignal(contextData);
-      setNewsSignal(newsData);
-      setNewsAudit(newsAuditData?.entries ?? []);
-
-      const audits = auditData?.entries ?? [];
-      setDecisionAudit(audits);
-      const preferredId = selectedAuditId && audits.some((entry) => entry.audit_id === selectedAuditId)
-        ? selectedAuditId
-        : (audits[0]?.audit_id ?? null);
-      setSelectedAuditId(preferredId);
-
-      if (preferredId) {
-        const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${preferredId}`);
-        const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
-        setDecisionReplay(replayData);
-      } else {
-        setDecisionReplay(null);
-      }
-    }
-
-    fetchOperationalData().catch((error: unknown) => {
+    Promise.all([
+      refreshRuntimeState(false),
+      refreshSymbolIntel(focusSymbol, selectedAuditId),
+    ]).catch((error: unknown) => {
       console.error("Failed to fetch market operations data", error);
     });
-  }, [focusSymbol]);
+  }, [focusSymbol, selectedAuditId]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      Promise.all([
+        refreshRuntimeState(true),
+        refreshScanState(false),
+        refreshBrokerConnection(),
+      ]).catch((error: unknown) => {
+        console.error("Failed to poll live alpha dashboard state", error);
+      });
+    }, 10000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   async function handleScan() {
-    setLoading(true);
-    try {
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=25`, { method: "POST" });
-      const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
-      setScan(scanData);
-      const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
-      const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
-      setStatus(statusData);
-      await refreshLaunchMetrics();
-    } finally {
-      setLoading(false);
-    }
+    await refreshScanState(true);
+    await refreshLaunchMetrics();
   }
 
   async function handleToggleAuto(enabled: boolean) {
@@ -454,6 +548,7 @@ export default function AlphaPage() {
     const controlRes = await fetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
+    pushRuntimeToast(enabled ? "Trading re-enabled." : "Kill switch engaged.", enabled ? "success" : "warning");
   }
 
   async function handleToggleAutonomous(enabled: boolean) {
@@ -465,13 +560,12 @@ export default function AlphaPage() {
     const controlRes = await fetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
+    pushRuntimeToast(enabled ? "Autonomous execution enabled." : "Autonomous execution stopped.", enabled ? "success" : "warning");
   }
 
   async function handleRunAutonomousOnce() {
     await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
-    const controlRes = await fetch(`${API_BASE}/control`);
-    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
-    setControl(controlData);
+    await Promise.all([refreshRuntimeState(true), refreshScanState(false)]);
   }
 
   async function handleSetExecutionMode(mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") {
@@ -483,6 +577,7 @@ export default function AlphaPage() {
     const modeRes = await fetch(`${API_BASE}/agents/execution-mode`);
     const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
     setExecutionMode(modeData?.mode ?? null);
+    pushRuntimeToast(`Execution mode set to ${mode.replaceAll("_", " ").toLowerCase()}.`, "success");
   }
 
   async function handleSetGoal(payload: { start_capital: number; target_capital: number; timeframe_days: number }) {
@@ -513,8 +608,8 @@ export default function AlphaPage() {
       await fetch(`${API_BASE}/alpaca/oauth/disconnect`, { method: "POST" });
       setOauthStatus("idle");
       setOauthReason("");
-      await refreshBrokerConnection();
-      await refreshLaunchMetrics();
+      await Promise.all([refreshBrokerConnection(), refreshLaunchMetrics(), refreshRuntimeState(false)]);
+      pushRuntimeToast("Alpaca connection removed.", "warning");
     } finally {
       setDisconnecting(false);
     }
@@ -526,6 +621,24 @@ export default function AlphaPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-6">
+      {runtimeToasts.length > 0 && (
+        <div className="fixed right-4 top-4 z-50 flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
+          {runtimeToasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`rounded-lg border px-3 py-2 text-xs shadow-lg backdrop-blur ${
+                toast.tone === "success"
+                  ? "border-green-500/40 bg-green-500/15 text-green-100"
+                  : toast.tone === "warning"
+                    ? "border-amber-500/40 bg-amber-500/15 text-amber-100"
+                    : "border-red-500/40 bg-red-500/15 text-red-100"
+              }`}
+            >
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
         <div>
           <h1 className="text-lg font-semibold md:text-2xl">MARKET INTELLIGENCE DASHBOARD</h1>

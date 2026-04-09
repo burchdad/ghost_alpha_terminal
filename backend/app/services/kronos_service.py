@@ -7,6 +7,7 @@ import numpy as np
 
 from app.core.config import settings
 from app.models.schemas import ForecastResponse
+from app.services.historical_data_service import historical_data_service
 from app.utils.data_loader import load_mock_ohlcv
 
 
@@ -35,7 +36,18 @@ class KronosService:
     def generate_forecast(self, symbol: str, timeframe: str = "1d") -> ForecastResponse:
         self._load_model()
 
-        df = load_mock_ohlcv(symbol=symbol, timeframe=timeframe)
+        end = datetime.now(tz=timezone.utc)
+        start = end.replace(year=end.year - 1)
+        df = historical_data_service.load_historical_data(
+            symbol=symbol,
+            timeframe=timeframe,
+            start_date=start,
+            end_date=end,
+        )
+        if df.empty and settings.use_mock_data:
+            df = load_mock_ohlcv(symbol=symbol, timeframe=timeframe)
+        if df.empty:
+            raise RuntimeError(f"No live Alpaca bar data available for {symbol.upper()}")
         closes = df["close"].to_numpy(dtype=float)
         returns = np.diff(closes) / closes[:-1]
 

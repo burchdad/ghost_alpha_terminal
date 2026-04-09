@@ -26,6 +26,7 @@ from typing import Literal
 
 from app.services.control_engine import control_engine
 from app.services.goal_engine import goal_engine
+from app.services.live_portfolio_service import live_portfolio_service
 from app.services.opportunity_scanner import opportunity_scanner
 from app.services.portfolio_manager import portfolio_manager
 
@@ -214,7 +215,7 @@ class MasterOrchestrator:
         Full market scan: calls opportunity_scanner, then layers strategy
         selection, action routing, and narrative generation on top.
         """
-        portfolio = portfolio_manager.snapshot()
+        portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
         ctrl = control_engine.status()
         goal = goal_engine.status(current_capital=float(portfolio["account_balance"]))
 
