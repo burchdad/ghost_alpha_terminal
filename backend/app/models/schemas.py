@@ -499,7 +499,11 @@ class GoalStatusResponse(BaseModel):
     trajectory_expected_capital: float | None = None
     trajectory_gap_pct: float = 0
     goal_pressure_multiplier: float = 1.0
+    success_probability: float = Field(default=0.5, ge=0, le=1)
+    stress_level: Literal["LOW", "MEDIUM", "HIGH", "EXTREME"] = "LOW"
     target_unrealistic: bool = False
+    suggested_target_capital: float | None = None
+    suggested_timeframe_days: int | None = None
     message: str = ""
 
 
@@ -513,6 +517,7 @@ class OpportunityRecommendation(BaseModel):
     recommended_trade: str
     consensus_bias: str
     consensus_confidence: float
+    expected_return_pct: float
     risk_level: str
     expected_value: float
     target_pct: float
@@ -524,6 +529,7 @@ class OpportunityRecommendation(BaseModel):
     spread_proxy: float
     prefilter_score: float
     tradable: bool
+    risk_adjusted_score: float
     opportunity_score: float
 
 

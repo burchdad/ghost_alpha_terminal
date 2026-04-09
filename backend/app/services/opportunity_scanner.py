@@ -40,6 +40,63 @@ UNIVERSE: list[UniverseTicker] = [
     UniverseTicker("SOLUSD", "crypto", "GLOBAL"),
     UniverseTicker("ADAUSD", "crypto", "GLOBAL"),
     UniverseTicker("DOGEUSD", "crypto", "GLOBAL"),
+    UniverseTicker("JPM", "equity", "US"),
+    UniverseTicker("BAC", "equity", "US"),
+    UniverseTicker("WFC", "equity", "US"),
+    UniverseTicker("GS", "equity", "US"),
+    UniverseTicker("MS", "equity", "US"),
+    UniverseTicker("UNH", "equity", "US"),
+    UniverseTicker("LLY", "equity", "US"),
+    UniverseTicker("JNJ", "equity", "US"),
+    UniverseTicker("PFE", "equity", "US"),
+    UniverseTicker("MRK", "equity", "US"),
+    UniverseTicker("KO", "equity", "US"),
+    UniverseTicker("PEP", "equity", "US"),
+    UniverseTicker("PG", "equity", "US"),
+    UniverseTicker("WMT", "equity", "US"),
+    UniverseTicker("COST", "equity", "US"),
+    UniverseTicker("HD", "equity", "US"),
+    UniverseTicker("MCD", "equity", "US"),
+    UniverseTicker("NKE", "equity", "US"),
+    UniverseTicker("XOM", "equity", "US"),
+    UniverseTicker("CVX", "equity", "US"),
+    UniverseTicker("COP", "equity", "US"),
+    UniverseTicker("SLB", "equity", "US"),
+    UniverseTicker("BA", "equity", "US"),
+    UniverseTicker("CAT", "equity", "US"),
+    UniverseTicker("DE", "equity", "US"),
+    UniverseTicker("GE", "equity", "US"),
+    UniverseTicker("RTX", "equity", "US"),
+    UniverseTicker("LMT", "equity", "US"),
+    UniverseTicker("PLTR", "equity", "US"),
+    UniverseTicker("SNOW", "equity", "US"),
+    UniverseTicker("CRM", "equity", "US"),
+    UniverseTicker("ORCL", "equity", "US"),
+    UniverseTicker("INTC", "equity", "US"),
+    UniverseTicker("CSCO", "equity", "US"),
+    UniverseTicker("NFLX", "equity", "US"),
+    UniverseTicker("DIS", "equity", "US"),
+    UniverseTicker("T", "equity", "US"),
+    UniverseTicker("VZ", "equity", "US"),
+    UniverseTicker("V", "equity", "US"),
+    UniverseTicker("MA", "equity", "US"),
+    UniverseTicker("IWM", "etf", "US"),
+    UniverseTicker("DIA", "etf", "US"),
+    UniverseTicker("XLY", "etf", "US"),
+    UniverseTicker("XLV", "etf", "US"),
+    UniverseTicker("XLI", "etf", "US"),
+    UniverseTicker("XLK", "etf", "US"),
+    UniverseTicker("SMH", "etf", "US"),
+    UniverseTicker("ARKK", "etf", "US"),
+    UniverseTicker("TLT", "etf", "US"),
+    UniverseTicker("GLD", "etf", "US"),
+    UniverseTicker("SLV", "etf", "US"),
+    UniverseTicker("USO", "etf", "US"),
+    UniverseTicker("DOTUSD", "crypto", "GLOBAL"),
+    UniverseTicker("XRPUSD", "crypto", "GLOBAL"),
+    UniverseTicker("AVAXUSD", "crypto", "GLOBAL"),
+    UniverseTicker("MATICUSD", "crypto", "GLOBAL"),
+    UniverseTicker("LTCUSD", "crypto", "GLOBAL"),
 ]
 
 
@@ -60,7 +117,12 @@ class OpportunityScanner:
         spread_proxy = sum((h - l) / max(c, 1e-6) for h, l, c in zip(high[-30:], low[-30:], close[-30:])) / max(len(close[-30:]), 1)
         momentum_20d = (close[-1] / close[-20]) - 1.0
 
-        min_liquidity = 2_000_000 if ticker.asset_class == "crypto" else 10_000_000
+        if ticker.asset_class == "crypto":
+            min_liquidity = 2_000_000
+        elif ticker.asset_class == "etf":
+            min_liquidity = 7_000_000
+        else:
+            min_liquidity = 10_000_000
         if avg_dollar_volume < min_liquidity:
             return None
         if spread_proxy > 0.08:
@@ -111,6 +173,9 @@ class OpportunityScanner:
             )
             signal = signal_engine.generate_signal(symbol=symbol, forecast=forecast, options_data=options_data)
             swarm = consensus_engine.generate_consensus(symbol=symbol, outputs=outputs)
+            expected_return_pct = 0.0
+            if forecast.forecast_prices:
+                expected_return_pct = (forecast.forecast_prices[-1] / options_data.underlying_price) - 1.0
 
             action = {
                 "BULLISH": "BUY",
@@ -149,7 +214,7 @@ class OpportunityScanner:
             )
 
             tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
-            score = (
+            risk_adjusted_score = (
                 swarm.consensus.confidence * 0.45
                 + max(0.0, risk["expected_value"]) * 8.0 * 0.2
                 + float(allocation["target_pct"]) * 3.0 * 0.2
@@ -167,6 +232,7 @@ class OpportunityScanner:
                     "recommended_trade": swarm.recommended_trade,
                     "consensus_bias": swarm.consensus.final_bias,
                     "consensus_confidence": swarm.consensus.confidence,
+                    "expected_return_pct": round(expected_return_pct, 6),
                     "risk_level": risk["risk_level"],
                     "expected_value": risk["expected_value"],
                     "target_pct": allocation["target_pct"],
@@ -178,7 +244,8 @@ class OpportunityScanner:
                     "spread_proxy": round(candidate["spread_proxy"], 6),
                     "prefilter_score": round(candidate["prefilter_score"], 6),
                     "tradable": tradable,
-                    "opportunity_score": round(score, 6),
+                    "risk_adjusted_score": round(risk_adjusted_score, 6),
+                    "opportunity_score": round(risk_adjusted_score, 6),
                 }
             )
 

@@ -12,6 +12,8 @@ import PerformancePanel from "../../components/PerformancePanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
 import SignalPanel from "../../components/SignalPanel";
 import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
+import GoalPanel from "../../components/GoalPanel";
+import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
@@ -214,6 +216,62 @@ type ExecutionHistoryResponse = {
   executions: ExecutionHistoryEntry[];
 };
 
+type GoalStatusResponse = {
+  enabled: boolean;
+  start_capital: number | null;
+  target_capital: number | null;
+  timeframe_days: number | null;
+  elapsed_days: number;
+  remaining_days: number | null;
+  required_total_return: number;
+  required_daily_return: number;
+  required_daily_return_remaining: number;
+  trajectory_expected_capital: number | null;
+  trajectory_gap_pct: number;
+  goal_pressure_multiplier: number;
+  success_probability: number;
+  stress_level: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+  target_unrealistic: boolean;
+  suggested_target_capital: number | null;
+  suggested_timeframe_days: number | null;
+  message: string;
+};
+
+type OpportunityRecommendation = {
+  symbol: string;
+  asset_class: string;
+  region: string;
+  regime: string;
+  signal: string;
+  consensus_bias: string;
+  consensus_confidence: number;
+  expected_return_pct: number;
+  expected_value: number;
+  risk_level: string;
+  target_pct: number;
+  recommended_notional: number;
+  tradable: boolean;
+  risk_adjusted_score: number;
+};
+
+type CapitalSplitRecommendation = {
+  symbol: string;
+  recommended_notional: number;
+  allocation_weight: number;
+};
+
+type OpportunitiesResponse = {
+  scanned: number;
+  passed_prefilter: number;
+  opportunities: OpportunityRecommendation[];
+  capital_allocation_recommendations: CapitalSplitRecommendation[];
+  goal: GoalStatusResponse;
+};
+
+type ExecutionModeResponse = {
+  mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -236,6 +294,9 @@ export default function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [control, setControl] = useState<ControlResponse | null>(null);
   const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
+  const [goal, setGoal] = useState<GoalStatusResponse | null>(null);
+  const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionModeResponse["mode"] | null>(null);
 
   const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
 
@@ -245,7 +306,7 @@ export default function DashboardPage() {
       const start = new Date();
       start.setDate(end.getDate() - 240);
 
-      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes] = await Promise.all([
+      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes, goalRes, oppRes, execModeRes] = await Promise.all([
         fetch(`${API_BASE}/forecast/${symbol}`),
         fetch(`${API_BASE}/options/${symbol}`),
         fetch(`${API_BASE}/signal/${symbol}`),
@@ -267,6 +328,9 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/portfolio`),
         fetch(`${API_BASE}/control`),
         fetch(`${API_BASE}/agents/execution-history?limit=25`),
+        fetch(`${API_BASE}/agents/goal/status`),
+        fetch(`${API_BASE}/agents/opportunities?limit=10`),
+        fetch(`${API_BASE}/agents/execution-mode`),
       ]);
 
       const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -278,6 +342,9 @@ export default function DashboardPage() {
       const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
       const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
       const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+      const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+      const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+      const execModeData = await parseJsonOrNull<ExecutionModeResponse>(execModeRes);
 
       setForecast(fData);
       setOptions(oData);
@@ -288,6 +355,9 @@ export default function DashboardPage() {
       setPortfolio(portfolioData);
       setControl(controlData);
       setExecutionHistory(historyData?.executions ?? []);
+      setGoal(goalData);
+      setOpportunities(oppData);
+      setExecutionMode(execModeData?.mode ?? null);
     }
 
     fetchAll().catch((error: unknown) => {
@@ -308,17 +378,31 @@ export default function DashboardPage() {
   }
 
   async function refreshControlAndHistory() {
-    const [controlRes, historyRes, portfolioRes] = await Promise.all([
+    const [controlRes, historyRes, portfolioRes, modeRes] = await Promise.all([
       fetch(`${API_BASE}/control`),
       fetch(`${API_BASE}/agents/execution-history?limit=25`),
       fetch(`${API_BASE}/portfolio`),
+      fetch(`${API_BASE}/agents/execution-mode`),
     ]);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
     const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+    const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
     setControl(controlData);
     setExecutionHistory(historyData?.executions ?? []);
     setPortfolio(portfolioData);
+    setExecutionMode(modeData?.mode ?? null);
+  }
+
+  async function refreshGoalAndOpportunities() {
+    const [goalRes, oppRes] = await Promise.all([
+      fetch(`${API_BASE}/agents/goal/status`),
+      fetch(`${API_BASE}/agents/opportunities?limit=10`),
+    ]);
+    const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+    const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+    setGoal(goalData);
+    setOpportunities(oppData);
   }
 
   async function handleToggleAutonomous(enabled: boolean) {
@@ -332,6 +416,24 @@ export default function DashboardPage() {
 
   async function handleRunAutonomousOnce() {
     await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
+    await refreshControlAndHistory();
+  }
+
+  async function handleSetGoal(payload: { start_capital: number; target_capital: number; timeframe_days: number }) {
+    await fetch(`${API_BASE}/agents/goal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshGoalAndOpportunities();
+  }
+
+  async function handleSetExecutionMode(mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") {
+    await fetch(`${API_BASE}/agents/execution-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
     await refreshControlAndHistory();
   }
 
@@ -381,6 +483,7 @@ export default function DashboardPage() {
           />
           <PerformancePanel performance={performance} />
           <BacktestPanel backtest={backtest} />
+          <OpportunityFeedPanel data={opportunities} />
         </div>
 
         <aside className="space-y-4">
@@ -396,12 +499,15 @@ export default function DashboardPage() {
             </p>
           </div>
           <PortfolioPanel portfolio={portfolio} />
+          <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
           <ExecutionHistoryPanel history={executionHistory} />
           <ControlPanel
             control={control}
+            executionMode={executionMode}
             onToggleKillSwitch={handleToggleKillSwitch}
             onToggleAutonomous={handleToggleAutonomous}
             onRunAutonomousOnce={handleRunAutonomousOnce}
+            onSetExecutionMode={handleSetExecutionMode}
           />
         </aside>
       </section>

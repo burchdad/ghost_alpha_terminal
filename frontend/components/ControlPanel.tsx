@@ -27,12 +27,21 @@ type ControlStatus = {
 
 type Props = {
   control: ControlStatus | null;
+  executionMode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING" | null;
   onToggleKillSwitch: (enabled: boolean) => void;
   onToggleAutonomous: (enabled: boolean) => void;
   onRunAutonomousOnce: () => void;
+  onSetExecutionMode: (mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") => void;
 };
 
-export default function ControlPanel({ control, onToggleKillSwitch, onToggleAutonomous, onRunAutonomousOnce }: Props) {
+export default function ControlPanel({
+  control,
+  executionMode,
+  onToggleKillSwitch,
+  onToggleAutonomous,
+  onRunAutonomousOnce,
+  onSetExecutionMode,
+}: Props) {
   if (!control) {
     return <div className="panel rounded-xl p-4 text-sm text-slate-300">Loading control status...</div>;
   }
@@ -69,6 +78,28 @@ export default function ControlPanel({ control, onToggleKillSwitch, onToggleAuto
       </button>
 
       <div className="mb-3 rounded border border-terminal-line bg-black/20 p-3 text-xs text-slate-300">
+        <div className="mb-3 border-b border-terminal-line pb-3">
+          <p className="mb-2 font-semibold text-slate-400">Execution Mode (Optional)</p>
+          <div className="flex flex-wrap gap-2">
+            {(["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => onSetExecutionMode(mode)}
+                className={`rounded border px-2 py-1 text-[11px] font-semibold transition ${
+                  executionMode === mode
+                    ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
+                    : "border-terminal-line bg-black/20 text-slate-300"
+                }`}
+              >
+                {mode === "SIMULATION" ? "INSIGHT ONLY" : mode === "PAPER_TRADING" ? "PAPER" : "LIVE"}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">
+            Insight-only mode logs recommendations without broker submission.
+          </p>
+        </div>
+
         <div className="mb-2 flex items-center justify-between">
           <span className="font-semibold text-slate-400">Autonomous Paper Mode</span>
           <span className={control.autonomous_enabled ? "text-terminal-bull" : "text-slate-400"}>

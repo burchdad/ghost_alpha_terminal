@@ -135,6 +135,7 @@ API endpoints:
 - `POST /agents/goal` (set target capital + timeframe)
 - `GET /agents/goal/status` (trajectory and pressure tracking)
 - `GET /agents/opportunities?limit=10` (top opportunities + allocation split)
+- `GET /agents/execution-mode` and `POST /agents/execution-mode` (insight-only/paper/live)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
@@ -227,6 +228,10 @@ Swarm agent breakdown now exposes both:
 - System computes required return, remaining required pace, and trajectory gap.
 - A bounded goal-pressure multiplier is produced and injected into allocation sizing.
 - When trajectory falls behind, sizing pressure can increase within hard risk limits.
+- Reality Check outputs include:
+	- success probability estimate
+	- stress level (`LOW`, `MEDIUM`, `HIGH`, `EXTREME`)
+	- adjusted goal/timeframe suggestions for unrealistic targets
 
 ### Opportunity Scanner + Pre-Filter
 
@@ -234,6 +239,14 @@ Swarm agent breakdown now exposes both:
 - Pre-filter pipeline evaluates liquidity, spread proxy, momentum, and realized volatility.
 - Scanner returns ranked opportunities with risk-adjusted allocation recommendations.
 - API includes capital split suggestions for top tradable setups.
+
+### Optional Execution Layer
+
+- Swarm execution mode is explicitly selectable:
+	- `SIMULATION` (insight-only/manual copy)
+	- `PAPER_TRADING`
+	- `LIVE_TRADING`
+- Dashboard exposes this as a control-plane setting so execution is never forced.
 
 ### Market Regime Detection
 

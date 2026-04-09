@@ -12,6 +12,7 @@ This document is a quick reference for what the platform can currently do.
 - Web dashboard for monitoring, controls, and simulation workflows.
 - Target-seeking goal engine with trajectory-aware pressure control.
 - Broad-universe opportunity scanner with allocation recommendations.
+- Reality-check layer with success-probability and adjusted-goal guidance.
 
 ## Backend Capabilities
 
@@ -42,6 +43,11 @@ This document is a quick reference for what the platform can currently do.
   - Execution path gated by safety checks and control status.
   - Regime and realized volatility are system-derived from recent candles.
   - Allocation sizing is goal-pressure aware when a target is active.
+- `GET /agents/execution-mode` + `POST /agents/execution-mode`
+  - Explicit execution mode selection:
+    - `SIMULATION` for insight-only workflows
+    - `PAPER_TRADING`
+    - `LIVE_TRADING`
 - `GET /control`
   - Returns current system status and risk gate state.
 - `POST /control/kill-switch`
@@ -106,6 +112,10 @@ This document is a quick reference for what the platform can currently do.
 - Output:
   - bounded `goal_pressure_multiplier` injected into allocator.
   - risk-aware adaptation when behind or ahead of trajectory.
+  - reality-check diagnostics:
+    - success probability estimate
+    - stress classification
+    - suggested target and/or timeframe when goal is likely unrealistic
 
 ## Market Scanner Layer
 

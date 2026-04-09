@@ -56,7 +56,11 @@ class GoalEngine:
                 "trajectory_expected_capital": None,
                 "trajectory_gap_pct": 0.0,
                 "goal_pressure_multiplier": 1.0,
+                "success_probability": 0.5,
+                "stress_level": "LOW",
                 "target_unrealistic": False,
+                "suggested_target_capital": None,
+                "suggested_timeframe_days": None,
                 "message": "No active goal. Pressure multiplier defaults to 1.0.",
             }
 
@@ -88,6 +92,38 @@ class GoalEngine:
         pressure = max(0.5, min(pressure_from_requirement * trajectory_multiplier, 2.5))
 
         target_unrealistic = required_daily_remaining > 0.035
+        if required_daily_remaining <= 0:
+            success_probability = 0.99
+        else:
+            annualized_vol = 0.28
+            horizon_scale = max(0.45, min((remaining_days / 30.0) ** 0.5, 1.75))
+            difficulty = required_daily_remaining / max(0.0015 * horizon_scale, 1e-6)
+            trajectory_penalty = max(0.0, trajectory_gap_pct) * 1.5
+            pressure_penalty = max(0.0, pressure - 1.0) * 0.25
+            vol_penalty = max(0.0, annualized_vol - 0.22) * 0.35
+            raw_prob = 1.15 - (difficulty * 0.42) - trajectory_penalty - pressure_penalty - vol_penalty
+            success_probability = max(0.01, min(raw_prob, 0.99))
+
+        if pressure >= 1.8 or success_probability < 0.20:
+            stress_level = "EXTREME"
+        elif pressure >= 1.4 or success_probability < 0.40:
+            stress_level = "HIGH"
+        elif pressure >= 1.0 or success_probability < 0.65:
+            stress_level = "MEDIUM"
+        else:
+            stress_level = "LOW"
+
+        suggested_target_capital = None
+        suggested_timeframe_days = None
+        if target_unrealistic or success_probability < 0.25:
+            conservative_daily = 0.004
+            suggested_target_capital = current * ((1.0 + conservative_daily) ** max(remaining_days, 1.0))
+            needed_days = 30.0
+            if target > current:
+                needed_days = max(30.0, (target / current))
+                needed_days *= 42.0
+            suggested_timeframe_days = int(min(max(round(needed_days), 30), 1460))
+
         message = "Goal pressure active."
         if target_unrealistic:
             message = "Target appears aggressive for remaining time; system will optimize probability, not guarantee outcomes."
@@ -105,7 +141,11 @@ class GoalEngine:
             "trajectory_expected_capital": round(trajectory_expected, 2),
             "trajectory_gap_pct": round(trajectory_gap_pct, 6),
             "goal_pressure_multiplier": round(pressure, 4),
+            "success_probability": round(success_probability, 4),
+            "stress_level": stress_level,
             "target_unrealistic": target_unrealistic,
+            "suggested_target_capital": round(suggested_target_capital, 2) if suggested_target_capital is not None else None,
+            "suggested_timeframe_days": suggested_timeframe_days,
             "message": message,
         }
 
