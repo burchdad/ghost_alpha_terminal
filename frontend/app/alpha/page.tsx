@@ -394,7 +394,7 @@ export default function AlphaPage() {
     }
     setLoading(true);
     try {
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=25`, { method: "POST" });
+      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=12`, { method: "POST" });
       const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
       setScan(scanData);
       const refreshed = await fetch(`${API_BASE}/orchestrator/status`);

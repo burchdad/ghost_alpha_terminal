@@ -271,9 +271,9 @@ export default function TerminalPage() {
         return;
       }
 
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=50`, { method: "POST" });
+      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=15`, { method: "POST" });
       const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
-      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 50).map((c) => c.symbol));
+      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 30).map((c) => c.symbol));
     }
 
     hydrateWatchlist().catch((error: unknown) => {
