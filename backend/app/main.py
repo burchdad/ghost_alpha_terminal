@@ -18,6 +18,7 @@ from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.signals import router as signals_router
 from app.api.routes.swarm import router as swarm_router
 from app.api.routes.trade import router as trade_router
+from app.api.routes.metrics import router as metrics_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
 
@@ -58,6 +59,7 @@ app.include_router(control_router)
 app.include_router(alpaca_router)
 app.include_router(agents_router)
 app.include_router(orchestrator_router)
+app.include_router(metrics_router)
 
 
 @app.on_event("startup")

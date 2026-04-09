@@ -200,6 +200,13 @@ type AlpacaOauthStatusResponse = {
   oauth_ready: boolean;
 };
 
+type LightweightMetricsResponse = {
+  window_days: number;
+  scans_run: number;
+  trades_triggered: number;
+  top_strategies: Array<{ strategy: string; count: number }>;
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -231,6 +238,7 @@ export default function AlphaPage() {
   const [oauthReason, setOauthReason] = useState<string>("");
   const [brokerConnection, setBrokerConnection] = useState<AlpacaOauthStatusResponse | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -249,6 +257,10 @@ export default function AlphaPage() {
 
   const topSymbols = useMemo(() => {
     return (scan?.candidates ?? []).slice(0, 12).map((c) => c.symbol);
+  }, [scan]);
+
+  const wowTopThree = useMemo(() => {
+    return (scan?.candidates ?? []).slice(0, 3);
   }, [scan]);
 
   const compactStats = useMemo(() => {
@@ -302,6 +314,12 @@ export default function AlphaPage() {
     setBrokerConnection(brokerData);
   }
 
+  async function refreshLaunchMetrics() {
+    const metricsRes = await fetch(`${API_BASE}/metrics/lightweight?days=7`);
+    const metricsData = await parseJsonOrNull<LightweightMetricsResponse>(metricsRes);
+    setLaunchMetrics(metricsData);
+  }
+
   useEffect(() => {
     async function boot() {
       const [statusRes, latestRes] = await Promise.all([
@@ -334,6 +352,10 @@ export default function AlphaPage() {
 
     refreshBrokerConnection().catch((err: unknown) => {
       console.error("Failed to fetch broker connection status", err);
+    });
+
+    refreshLaunchMetrics().catch((err: unknown) => {
+      console.error("Failed to fetch lightweight metrics", err);
     });
   }, []);
 
@@ -406,6 +428,7 @@ export default function AlphaPage() {
       const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
       const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
       setStatus(statusData);
+      await refreshLaunchMetrics();
     } finally {
       setLoading(false);
     }
@@ -491,6 +514,7 @@ export default function AlphaPage() {
       setOauthStatus("idle");
       setOauthReason("");
       await refreshBrokerConnection();
+      await refreshLaunchMetrics();
     } finally {
       setDisconnecting(false);
     }
@@ -560,6 +584,29 @@ export default function AlphaPage() {
             {oauthStatus === "connected"
               ? "Alpaca OAuth connected successfully."
               : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
+          </div>
+        )}
+
+        {isConnected && (
+          <div className="mt-3 rounded border border-terminal-accent/40 bg-terminal-accent/10 px-3 py-3 text-xs text-terminal-accent">
+            <div className="font-semibold">Top 3 Opportunities Right Now</div>
+            {wowTopThree.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {wowTopThree.map((candidate) => (
+                  <li key={candidate.symbol}>
+                    {candidate.symbol} {"->"} {candidate.strategy_type.replaceAll("_", " ")} ({Math.round(candidate.composite_score * 100)}%)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-2 text-slate-300">Run a market scan to generate your top opportunities.</div>
+            )}
+          </div>
+        )}
+
+        {launchMetrics && (
+          <div className="mt-3 rounded border border-terminal-line bg-black/20 px-3 py-2 text-[11px] text-slate-300">
+            Last {launchMetrics.window_days}d proof metrics: {launchMetrics.scans_run} scans, {launchMetrics.trades_triggered} trades, top strategy {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}.
           </div>
         )}
       </section>

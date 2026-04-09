@@ -15,6 +15,7 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.portfolio_risk_governor import portfolio_risk_governor
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
+from app.services.lightweight_metrics import lightweight_metrics
 
 router = APIRouter(prefix="/execute", tags=["execute"])
 
@@ -281,6 +282,12 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
         execution_snapshot={"submitted": True, "reason": "Order accepted in execute route."},
         explainability_snapshot=explainability,
     )
+
+    try:
+        lightweight_metrics.record_trade(payload.strategy)
+    except Exception:
+        # Logging must stay non-blocking for the execution path.
+        pass
 
     return ExecuteTradeResponse(
         accepted=True,

@@ -18,6 +18,7 @@ from app.models.schemas import (
     OrchestratorStatusResponse,
 )
 from app.services.master_orchestrator import OrchestratorCandidate, master_orchestrator
+from app.services.lightweight_metrics import lightweight_metrics
 
 router = APIRouter(prefix="/orchestrator", tags=["orchestrator"])
 
@@ -77,6 +78,11 @@ def trigger_scan(
     limit: int = Query(default=15, ge=5, le=50),
 ) -> OrchestratorScanResponse:
     result = master_orchestrator.scan(limit=limit)
+    try:
+        lightweight_metrics.record_scan([c.strategy_type for c in result.candidates])
+    except Exception:
+        # Lightweight metrics should never interrupt scan availability.
+        pass
     return _result_to_response(result)
 
 
