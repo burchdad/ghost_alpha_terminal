@@ -69,6 +69,36 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
   responseHeaders.delete("transfer-encoding");
   responseHeaders.set("x-proxy-target", backendUrl);
 
+  // Graceful degradation for transient scan backend outages.
+  // This keeps dashboard polling stable and avoids noisy failed-resource errors in the browser.
+  if (
+    request.method === "POST"
+    && targetPath === "orchestrator/scan"
+    && (upstream.status === 502 || upstream.status === 503)
+  ) {
+    const nowIso = new Date().toISOString();
+    return NextResponse.json(
+      {
+        candidates: [],
+        market_narrative: "Scan temporarily unavailable; using fallback response.",
+        regime_summary: {},
+        sector_leaders: [],
+        scanned_at: nowIso,
+        scan_count: 0,
+        total_scanned: 0,
+        passed_prefilter: 0,
+        auto_mode: false,
+      },
+      {
+        status: 200,
+        headers: {
+          "x-proxy-target": backendUrl,
+          "x-proxy-fallback": "orchestrator-scan",
+        },
+      },
+    );
+  }
+
   return new NextResponse(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,
