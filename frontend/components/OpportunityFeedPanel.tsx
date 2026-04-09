@@ -15,8 +15,14 @@ type Opportunity = {
   recommended_notional: number;
   tradable: boolean;
   risk_adjusted_score: number;
+  signal_validation?: {
+    validated_signal_strength?: number;
+    confirmation_count?: number;
+  };
+  market_reaction?: {
+    correlation_score?: number;
+  };
 };
-
 type CapitalSplit = {
   symbol: string;
   recommended_notional: number;
@@ -52,6 +58,8 @@ export default function OpportunityFeedPanel({ data }: { data: OpportunitiesPayl
               <th className="px-2 py-1">Exp Ret</th>
               <th className="px-2 py-1">Risk Adj</th>
               <th className="px-2 py-1">EV</th>
+              <th className="px-2 py-1">Valid</th>
+              <th className="px-2 py-1">React</th>
               <th className="px-2 py-1">Risk</th>
               <th className="px-2 py-1">Target %</th>
             </tr>
@@ -59,7 +67,7 @@ export default function OpportunityFeedPanel({ data }: { data: OpportunitiesPayl
           <tbody>
             {data.opportunities.length === 0 && (
               <tr>
-                <td className="px-2 py-2 text-slate-400" colSpan={6}>
+                <td className="px-2 py-2 text-slate-400" colSpan={8}>
                   No candidates right now.
                 </td>
               </tr>
@@ -77,6 +85,8 @@ export default function OpportunityFeedPanel({ data }: { data: OpportunitiesPayl
                 </td>
                 <td className="px-2 py-2">{item.risk_adjusted_score.toFixed(3)}</td>
                 <td className="px-2 py-2">{item.expected_value.toFixed(4)}</td>
+                <td className="px-2 py-2">{(item.signal_validation?.validated_signal_strength ?? 0).toFixed(2)}</td>
+                <td className="px-2 py-2">{(item.market_reaction?.correlation_score ?? 0).toFixed(2)}</td>
                 <td className="px-2 py-2">{item.risk_level}</td>
                 <td className="px-2 py-2">{(item.target_pct * 100).toFixed(2)}%</td>
               </tr>

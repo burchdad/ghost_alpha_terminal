@@ -536,6 +536,8 @@ class OpportunityRecommendation(BaseModel):
     sources_used: list[str]
     event_flags: list[str]
     context_modifiers: dict | None = None
+    signal_validation: dict | None = None
+    market_reaction: dict | None = None
     risk_level: str
     expected_value: float
     target_pct: float
@@ -611,6 +613,8 @@ class ContextSignalResponse(BaseModel):
     news_momentum_score: float
     event_strength: float
     event_flags: list[str]
+    signal_validation: dict
+    market_reaction: dict
     modifiers: ContextModifiersResponse
     rationale: str
 
@@ -641,3 +645,20 @@ class DecisionAuditDetailResponse(BaseModel):
     governor_snapshot: dict
     execution_snapshot: dict
     explainability_snapshot: dict
+
+
+class DecisionReplayStepResponse(BaseModel):
+    stage: str
+    title: str
+    summary: str
+    payload: dict
+
+
+class DecisionReplayResponse(BaseModel):
+    audit_id: str
+    symbol: str
+    decision_type: str
+    status: str
+    generated_at: datetime
+    replay_steps: list[DecisionReplayStepResponse]
+    why_not: list[str] = []

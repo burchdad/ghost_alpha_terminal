@@ -14,7 +14,9 @@ import SignalPanel from "../../components/SignalPanel";
 import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
 import ContextPanel from "../../components/ContextPanel";
 import DecisionAuditPanel from "../../components/DecisionAuditPanel";
+import DecisionReplayPanel from "../../components/DecisionReplayPanel";
 import GoalPanel from "../../components/GoalPanel";
+import NewsPanel from "../../components/NewsPanel";
 import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
 
@@ -254,8 +256,14 @@ type OpportunityRecommendation = {
   recommended_notional: number;
   tradable: boolean;
   risk_adjusted_score: number;
+  signal_validation?: {
+    validated_signal_strength?: number;
+    confirmation_count?: number;
+  };
+  market_reaction?: {
+    correlation_score?: number;
+  };
 };
-
 type CapitalSplitRecommendation = {
   symbol: string;
   recommended_notional: number;
@@ -282,12 +290,63 @@ type ContextSignalResponse = {
   news_momentum_score: number;
   event_strength: number;
   event_flags: string[];
+  signal_validation: {
+    recency_decay_factor: number;
+    average_source_weight: number;
+    confirmation_count: number;
+    confirmation_factor: number;
+    confirmation_label: string;
+    validated_signal_strength: number;
+    source_details: Array<{
+      source: string;
+      source_weight: number;
+      age_hours: number;
+      decay_factor: number;
+      effective_weight: number;
+    }>;
+  };
+  market_reaction: {
+    price_reaction_pct: number;
+    volume_spike_ratio: number;
+    breakout: string;
+    expected_direction: string;
+    price_direction: string;
+    correlation_score: number;
+    actionability_multiplier: number;
+  };
   modifiers: {
     confidence_modifier: number;
     risk_modifier: number;
     opportunity_boost: number;
   };
   rationale: string;
+};
+
+type NewsSignalResponse = {
+  symbol: string;
+  timestamp: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  rationale: string;
+};
+
+type NewsAuditEntry = {
+  timestamp: string;
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+};
+
+type NewsAuditResponse = {
+  entries: NewsAuditEntry[];
 };
 
 type DecisionAuditSummary = {
@@ -301,6 +360,23 @@ type DecisionAuditSummary = {
 
 type DecisionAuditSummaryListResponse = {
   entries: DecisionAuditSummary[];
+};
+
+type DecisionReplayStep = {
+  stage: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+};
+
+type DecisionReplayResponse = {
+  audit_id: string;
+  symbol: string;
+  decision_type: string;
+  status: string;
+  generated_at: string;
+  replay_steps: DecisionReplayStep[];
+  why_not: string[];
 };
 
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
@@ -329,7 +405,11 @@ export default function DashboardPage() {
   const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
   const [executionMode, setExecutionMode] = useState<ExecutionModeResponse["mode"] | null>(null);
   const [contextSignal, setContextSignal] = useState<ContextSignalResponse | null>(null);
+  const [newsSignal, setNewsSignal] = useState<NewsSignalResponse | null>(null);
+  const [newsAudit, setNewsAudit] = useState<NewsAuditEntry[] | null>(null);
   const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
 
   const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
 
@@ -339,7 +419,24 @@ export default function DashboardPage() {
       const start = new Date();
       start.setDate(end.getDate() - 240);
 
-      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes, goalRes, oppRes, execModeRes, contextRes, auditRes] = await Promise.all([
+      const [
+        fRes,
+        oRes,
+        sRes,
+        swarmRes,
+        perfRes,
+        backtestRes,
+        portfolioRes,
+        controlRes,
+        historyRes,
+        goalRes,
+        oppRes,
+        execModeRes,
+        contextRes,
+        newsRes,
+        newsAuditRes,
+        auditRes,
+      ] = await Promise.all([
         fetch(`${API_BASE}/forecast/${symbol}`),
         fetch(`${API_BASE}/options/${symbol}`),
         fetch(`${API_BASE}/signal/${symbol}`),
@@ -365,6 +462,8 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/agents/opportunities?limit=10`),
         fetch(`${API_BASE}/agents/execution-mode`),
         fetch(`${API_BASE}/agents/context/${symbol}`),
+        fetch(`${API_BASE}/agents/news/${symbol}`),
+        fetch(`${API_BASE}/agents/news/audit?limit=25`),
         fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
       ]);
 
@@ -381,6 +480,8 @@ export default function DashboardPage() {
       const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
       const execModeData = await parseJsonOrNull<ExecutionModeResponse>(execModeRes);
       const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+      const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+      const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
       const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
 
       setForecast(fData);
@@ -396,7 +497,19 @@ export default function DashboardPage() {
       setOpportunities(oppData);
       setExecutionMode(execModeData?.mode ?? null);
       setContextSignal(contextData);
-      setDecisionAudit(auditData?.entries ?? []);
+      setNewsSignal(newsData);
+      setNewsAudit(newsAuditData?.entries ?? []);
+      const audits = auditData?.entries ?? [];
+      setDecisionAudit(audits);
+      const nextSelected = audits[0]?.audit_id ?? null;
+      setSelectedAuditId(nextSelected);
+      if (nextSelected) {
+        const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${nextSelected}`);
+        const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+        setDecisionReplay(replayData);
+      } else {
+        setDecisionReplay(null);
+      }
     }
 
     fetchAll().catch((error: unknown) => {
@@ -429,25 +542,44 @@ export default function DashboardPage() {
     const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
     const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
     const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+    const audits = auditData?.entries ?? [];
     setControl(controlData);
     setExecutionHistory(historyData?.executions ?? []);
     setPortfolio(portfolioData);
     setExecutionMode(modeData?.mode ?? null);
-    setDecisionAudit(auditData?.entries ?? []);
+    setDecisionAudit(audits);
+
+    const preferredId = selectedAuditId && audits.some((entry) => entry.audit_id === selectedAuditId)
+      ? selectedAuditId
+      : (audits[0]?.audit_id ?? null);
+    setSelectedAuditId(preferredId);
+    if (preferredId) {
+      const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${preferredId}`);
+      const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+      setDecisionReplay(replayData);
+    } else {
+      setDecisionReplay(null);
+    }
   }
 
   async function refreshGoalAndOpportunities() {
-    const [goalRes, oppRes, contextRes] = await Promise.all([
+    const [goalRes, oppRes, contextRes, newsRes, newsAuditRes] = await Promise.all([
       fetch(`${API_BASE}/agents/goal/status`),
       fetch(`${API_BASE}/agents/opportunities?limit=10`),
       fetch(`${API_BASE}/agents/context/${symbol}`),
+      fetch(`${API_BASE}/agents/news/${symbol}`),
+      fetch(`${API_BASE}/agents/news/audit?limit=25`),
     ]);
     const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
     const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
     const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+    const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+    const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
     setGoal(goalData);
     setOpportunities(oppData);
     setContextSignal(contextData);
+    setNewsSignal(newsData);
+    setNewsAudit(newsAuditData?.entries ?? []);
   }
 
   async function handleToggleAutonomous(enabled: boolean) {
@@ -480,6 +612,13 @@ export default function DashboardPage() {
       body: JSON.stringify({ mode }),
     });
     await refreshControlAndHistory();
+  }
+
+  async function handleSelectAudit(auditId: string) {
+    setSelectedAuditId(auditId);
+    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
+    const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+    setDecisionReplay(replayData);
   }
 
   return (
@@ -544,10 +683,16 @@ export default function DashboardPage() {
             </p>
           </div>
           <PortfolioPanel portfolio={portfolio} />
+          <NewsPanel signal={newsSignal} audit={newsAudit} />
           <ContextPanel context={contextSignal} />
           <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
           <ExecutionHistoryPanel history={executionHistory} />
-          <DecisionAuditPanel entries={decisionAudit} />
+          <DecisionAuditPanel
+            entries={decisionAudit}
+            selectedAuditId={selectedAuditId}
+            onSelect={handleSelectAudit}
+          />
+          <DecisionReplayPanel replay={decisionReplay} />
           <ControlPanel
             control={control}
             executionMode={executionMode}

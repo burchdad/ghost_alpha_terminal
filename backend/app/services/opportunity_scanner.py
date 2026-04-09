@@ -219,10 +219,16 @@ class OpportunityScanner:
             )
 
             tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
+            validation = context.get("signal_validation", {})
+            reaction = context.get("market_reaction", {})
+            validated_strength = float(validation.get("validated_signal_strength", 0.0))
+            reaction_score = float(reaction.get("correlation_score", 0.0))
             news_alpha_boost = (
-                float(news["sentiment_score"]) * 0.10
-                + float(news["news_momentum_score"]) * 0.08
-                + float(news["event_strength"]) * 0.07
+                float(news["sentiment_score"]) * 0.06
+                + float(news["news_momentum_score"]) * 0.05
+                + float(news["event_strength"]) * 0.04
+                + validated_strength * 0.08
+                + max(0.0, reaction_score) * 0.06
             )
             risk_adjusted_score = (
                 (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
@@ -252,6 +258,8 @@ class OpportunityScanner:
                     "sources_used": news["sources_used"],
                     "event_flags": news["event_flags"],
                     "context_modifiers": context["modifiers"],
+                    "signal_validation": context.get("signal_validation", {}),
+                    "market_reaction": context.get("market_reaction", {}),
                     "risk_level": risk["risk_level"],
                     "expected_value": risk["expected_value"],
                     "target_pct": allocation["target_pct"],
@@ -283,6 +291,8 @@ class OpportunityScanner:
                             "news_momentum_score": news["news_momentum_score"],
                             "event_strength": news["event_strength"],
                             "context_modifiers": context["modifiers"],
+                            "signal_validation": context.get("signal_validation", {}),
+                            "market_reaction": context.get("market_reaction", {}),
                         },
                     ),
                 }

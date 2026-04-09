@@ -25,6 +25,8 @@ from app.models.schemas import (
     DecisionAuditDetailResponse,
     DecisionAuditSummaryListResponse,
     DecisionAuditSummaryResponse,
+    DecisionReplayResponse,
+    DecisionReplayStepResponse,
     DecisionOutcome,
     DecisionOutcomeUpdateRequest,
     ExecutionHistoryEntry,
@@ -166,6 +168,70 @@ def get_decision_audit(audit_id: str) -> DecisionAuditDetailResponse:
     if row is None:
         raise HTTPException(status_code=404, detail=f"Decision audit not found: {audit_id}")
     return DecisionAuditDetailResponse(**row)
+
+
+@router.get(
+    "/audit/replay/{audit_id}",
+    response_model=DecisionReplayResponse,
+    summary="Replay a decision step-by-step from persisted lineage",
+)
+def get_decision_replay(audit_id: str) -> DecisionReplayResponse:
+    row = decision_audit_store.get_by_id(audit_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Decision audit not found: {audit_id}")
+
+    explainability = row.get("explainability_snapshot") or {}
+    replay_steps = [
+        DecisionReplayStepResponse(
+            stage="CONTEXT",
+            title="Context Inputs",
+            summary="News/sentiment/event inputs after validation and correlation checks.",
+            payload=row.get("context_snapshot") or {},
+        ),
+        DecisionReplayStepResponse(
+            stage="ALLOCATION",
+            title="Allocation Decision",
+            summary="Sizing and notional recommendation after allocator + constraints.",
+            payload=row.get("allocation_snapshot") or {},
+        ),
+        DecisionReplayStepResponse(
+            stage="GOVERNOR",
+            title="Risk Governor",
+            summary="Portfolio-level override layer (allow/resize/block).",
+            payload=row.get("governor_snapshot") or {},
+        ),
+        DecisionReplayStepResponse(
+            stage="EXECUTION",
+            title="Execution Result",
+            summary="Final action submitted (or rejected) with execution details.",
+            payload=row.get("execution_snapshot") or {},
+        ),
+        DecisionReplayStepResponse(
+            stage="EXPLAINABILITY",
+            title="Explainability Envelope",
+            summary="Human-readable reasoning and safeguards used for traceability.",
+            payload=explainability,
+        ),
+    ]
+
+    why_not: list[str] = []
+    if row.get("status") != "ACCEPTED":
+        reason = str((row.get("execution_snapshot") or {}).get("reason") or "").strip()
+        if reason:
+            why_not.append(reason)
+        exp_reason = str(explainability.get("reasoning") or "").strip()
+        if exp_reason and exp_reason not in why_not:
+            why_not.append(exp_reason)
+
+    return DecisionReplayResponse(
+        audit_id=row["audit_id"],
+        symbol=row["symbol"],
+        decision_type=row["decision_type"],
+        status=row["status"],
+        generated_at=row["timestamp"],
+        replay_steps=replay_steps,
+        why_not=why_not,
+    )
 
 
 @router.post(
