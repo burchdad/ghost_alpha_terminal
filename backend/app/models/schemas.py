@@ -275,6 +275,35 @@ class AlpacaRequestIdsResponse(BaseModel):
     total_captured: int
 
 
+class AlpacaAccountPnlResponse(BaseModel):
+    equity: float
+    last_equity: float
+    balance_change: float
+
+
+class AlpacaOrderRequest(BaseModel):
+    symbol: str
+    side: Literal["buy", "sell"]
+    type: Literal["market", "limit", "stop", "stop_limit", "trailing_stop"] = "market"
+    time_in_force: Literal["day", "gtc", "opg", "cls", "ioc", "fok"] = "day"
+    qty: str | None = None
+    notional: str | None = None
+    limit_price: str | None = None
+    stop_price: str | None = None
+    trail_price: str | None = None
+    trail_percent: str | None = None
+    order_class: Literal["simple", "bracket", "oco", "oto"] | None = None
+    take_profit: dict | None = None
+    stop_loss: dict | None = None
+    client_order_id: str | None = None
+    extended_hours: bool | None = None
+
+
+class AlpacaAssetsQuery(BaseModel):
+    status: Literal["active", "inactive"] = "active"
+    asset_class: Literal["us_equity", "crypto"] = "us_equity"
+
+
 # ---------------------------------------------------------------------------
 # Agent Swarm Layer schemas
 # ---------------------------------------------------------------------------
