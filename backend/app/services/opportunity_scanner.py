@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from app.core.config import settings
 from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
@@ -365,6 +366,20 @@ UNIVERSE: list[UniverseTicker] = [
 
 
 class OpportunityScanner:
+    def _coinbase_priority_symbols(self) -> set[str]:
+        symbols: set[str] = set()
+        for product in settings.coinbase_trade_products.split(","):
+            cleaned = product.strip().upper()
+            if not cleaned:
+                continue
+            if "-" in cleaned:
+                base, quote = cleaned.split("-", 1)
+                if quote == "USD" and base:
+                    symbols.add(f"{base}USD")
+            else:
+                symbols.add(cleaned)
+        return symbols
+
     def _prefilter(self, ticker: UniverseTicker) -> dict | None:
         end = datetime.now(tz=timezone.utc)
         start = end - timedelta(days=180)
@@ -434,6 +449,21 @@ class OpportunityScanner:
         prefiltered = sorted(prefiltered, key=lambda item: item["prefilter_score"], reverse=True)
         candidate_window = min(max(limit * 2, 10), 30)
         candidates = prefiltered[:candidate_window]
+
+        # Ensure Coinbase-priority crypto symbols are always evaluated if available.
+        priority_symbols = self._coinbase_priority_symbols()
+        existing_symbols = {item["symbol"] for item in candidates}
+        for item in prefiltered:
+            if item["symbol"] in priority_symbols and item["symbol"] not in existing_symbols:
+                candidates.append(item)
+                existing_symbols.add(item["symbol"])
+
+        # Add a small crypto tail so crypto ideas are not drowned out by equities/ETFs.
+        crypto_tail = [item for item in prefiltered if item["asset_class"] == "crypto"][:8]
+        for item in crypto_tail:
+            if item["symbol"] not in existing_symbols:
+                candidates.append(item)
+                existing_symbols.add(item["symbol"])
 
         opportunities: list[dict] = []
         for candidate in candidates:
@@ -576,7 +606,29 @@ class OpportunityScanner:
             )
 
         ranked = sorted(opportunities, key=lambda item: item["opportunity_score"], reverse=True)
-        top = ranked[:limit]
+
+        # Keep score ordering, but reserve slots for crypto diversity when available.
+        crypto_quota = min(max(2, limit // 4), limit)
+        selected: list[dict] = []
+        selected_symbols: set[str] = set()
+
+        for item in ranked:
+            if len(selected) >= crypto_quota:
+                break
+            if item["asset_class"] != "crypto":
+                continue
+            selected.append(item)
+            selected_symbols.add(item["symbol"])
+
+        for item in ranked:
+            if len(selected) >= limit:
+                break
+            if item["symbol"] in selected_symbols:
+                continue
+            selected.append(item)
+            selected_symbols.add(item["symbol"])
+
+        top = selected[:limit]
 
         tradable = [item for item in top if item["tradable"]]
         total_notional = sum(float(item["recommended_notional"]) for item in tradable)

@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
 
+from app.core.config import settings
 from app.services.control_engine import control_engine
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
@@ -128,14 +129,36 @@ class MasterOrchestrator:
         return "IGNORE"
 
     def _select_action(
-        self, strategy: StrategyType, tradable: bool, composite_score: float
+        self,
+        strategy: StrategyType,
+        tradable: bool,
+        composite_score: float,
+        *,
+        asset_class: str,
+        symbol: str,
     ) -> ActionLabel:
         if strategy == "IGNORE":
             return "SKIP"
-        if not tradable or composite_score < self.SCORE_THRESHOLD_SIMULATE:
-            return "MONITOR"
-        if composite_score >= self.SCORE_THRESHOLD_EXECUTE:
+        if tradable and composite_score >= self.SCORE_THRESHOLD_EXECUTE:
             return "EXECUTE"
+
+        if composite_score < self.SCORE_THRESHOLD_SIMULATE:
+            return "MONITOR"
+
+        # Keep high-quality crypto flowing through swarm even when strict tradable gate is false.
+        if asset_class == "crypto":
+            priority = {
+                p.strip().upper().replace("-", "")
+                for p in settings.coinbase_trade_products.split(",")
+                if p.strip()
+            }
+            normalized = symbol.upper().replace("-", "")
+            if normalized in priority:
+                return "SIMULATE"
+
+        if not tradable:
+            return "MONITOR"
+
         return "SIMULATE"
 
     # ── Market Narrative ───────────────────────────────────────────────────
@@ -258,7 +281,13 @@ class MasterOrchestrator:
                 asset_class=opp.get("asset_class", "equity"),
                 composite_score=norm_score,
             )
-            action = self._select_action(strategy, bool(opp.get("tradable", False)), norm_score)
+            action = self._select_action(
+                strategy,
+                bool(opp.get("tradable", False)),
+                norm_score,
+                asset_class=opp.get("asset_class", "equity"),
+                symbol=opp["symbol"],
+            )
 
             reasoning_parts: list[str] = [
                 f"Regime: {regime}",
