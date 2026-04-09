@@ -4,11 +4,19 @@ from app.models.schemas import (
     AutonomousModeStatusResponse,
     AutonomousModeUpdateRequest,
     ControlStatusResponse,
+    GoalMissionRequest,
+    GoalMissionResponse,
+    GoalStatusResponse,
+    GoalTargetRequest,
     KillSwitchUpdateRequest,
     KillSwitchUpdateResponse,
 )
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
+from app.services.goal_engine import goal_engine
+from app.services.live_portfolio_service import live_portfolio_service
+from app.services.portfolio_manager import portfolio_manager
+from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
 
@@ -56,3 +64,67 @@ def update_autonomous(payload: AutonomousModeUpdateRequest) -> AutonomousModeSta
 @router.post("/autonomous/run-once", response_model=AutonomousModeStatusResponse)
 def run_autonomous_once() -> AutonomousModeStatusResponse:
     return AutonomousModeStatusResponse(**autonomous_runner.trigger_run_once())
+
+
+def _current_capital() -> float:
+    portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
+    return float(portfolio.get("account_balance", 0.0) or 0.0)
+
+
+@router.get("/goal", response_model=GoalStatusResponse)
+def get_goal_status() -> GoalStatusResponse:
+    return GoalStatusResponse(**goal_engine.status(current_capital=_current_capital()))
+
+
+@router.post("/goal", response_model=GoalStatusResponse)
+def set_goal(payload: GoalTargetRequest) -> GoalStatusResponse:
+    status = goal_engine.configure(
+        start_capital=payload.start_capital,
+        target_capital=payload.target_capital,
+        timeframe_days=payload.timeframe_days,
+    )
+    return GoalStatusResponse(**status)
+
+
+@router.delete("/goal", response_model=GoalStatusResponse)
+def clear_goal() -> GoalStatusResponse:
+    goal_engine.clear()
+    return GoalStatusResponse(**goal_engine.status(current_capital=_current_capital()))
+
+
+@router.post("/mission", response_model=GoalMissionResponse)
+def start_goal_mission(payload: GoalMissionRequest) -> GoalMissionResponse:
+    current_capital = _current_capital()
+    start_capital = float(payload.start_capital) if payload.start_capital is not None else current_capital
+
+    goal_status = goal_engine.configure(
+        start_capital=start_capital,
+        target_capital=payload.target_capital,
+        timeframe_days=payload.timeframe_days,
+    )
+
+    if payload.execution_mode is not None:
+        execution_mode = execution_bridge.set_mode(payload.execution_mode)
+    else:
+        execution_mode = execution_bridge.get_mode()
+
+    trading_enabled = control_engine.set_kill_switch(payload.trading_enabled)
+
+    autonomous_status = autonomous_runner.configure(
+        enabled=payload.autonomous_enabled,
+        interval_seconds=payload.interval_seconds,
+        symbols=payload.symbols,
+    )
+    if payload.autonomous_enabled and payload.trigger_initial_cycle:
+        autonomous_status = autonomous_runner.trigger_run_once()
+
+    return GoalMissionResponse(
+        message=(
+            "Mission configured. Goal engine, execution mode, and autonomous runner are now synchronized. "
+            "Ghost Alpha will handle opportunity discovery, strategy selection, and execution gating internally."
+        ),
+        execution_mode=execution_mode,
+        trading_enabled=trading_enabled,
+        goal=goal_status,
+        autonomous=autonomous_status,
+    )

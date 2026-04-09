@@ -519,6 +519,26 @@ class GoalTargetRequest(BaseModel):
     timeframe_days: int = Field(ge=1, le=3650)
 
 
+class GoalMissionRequest(BaseModel):
+    target_capital: float = Field(gt=0)
+    timeframe_days: int = Field(ge=1, le=3650)
+    start_capital: float | None = Field(default=None, gt=0)
+    execution_mode: Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"] | None = None
+    interval_seconds: int = Field(default=300, ge=60, le=3600)
+    symbols: list[str] | None = None
+    trading_enabled: bool = True
+    autonomous_enabled: bool = True
+    trigger_initial_cycle: bool = True
+
+
+class GoalMissionResponse(BaseModel):
+    message: str
+    execution_mode: Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"]
+    trading_enabled: bool
+    goal: dict
+    autonomous: dict
+
+
 class GoalStatusResponse(BaseModel):
     enabled: bool
     start_capital: float | None = None
