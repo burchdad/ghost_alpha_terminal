@@ -215,8 +215,6 @@ export default function AlphaPage() {
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
-  const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
-  const [oauthReason, setOauthReason] = useState<string>("");
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -265,22 +263,6 @@ export default function AlphaPage() {
       accepted,
     };
   }, [scan, portfolio, control, goal, newsSignal, contextSignal, decisionAudit]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const qs = new URLSearchParams(window.location.search);
-    const oauth = qs.get("alpaca_oauth");
-    const reason = qs.get("reason") ?? "";
-    if (oauth === "connected") {
-      setOauthStatus("connected");
-      setOauthReason("");
-    } else if (oauth === "error") {
-      setOauthStatus("error");
-      setOauthReason(reason);
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
