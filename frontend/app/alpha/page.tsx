@@ -183,6 +183,8 @@ type DecisionAuditSummaryListResponse = {
   entries: DecisionAuditSummary[];
 };
 
+const SYNTHETIC_AUDIT_PREFIX = "fallback-audit-";
+
 type DecisionReplayStep = {
   stage: string;
   title: string;
@@ -524,7 +526,20 @@ export default function AlphaPage() {
     setNewsSignal(newsData);
     setNewsAudit(newsAuditData?.entries ?? []);
 
-    const audits = auditData?.entries ?? [];
+    const liveAudits = auditData?.entries ?? [];
+    const fallbackAudits: DecisionAuditSummary[] =
+      liveAudits.length === 0
+        ? (control?.rejected_trades ?? []).slice(-8).map((item, index) => ({
+            audit_id: `${SYNTHETIC_AUDIT_PREFIX}${index}-${item.symbol}-${item.timestamp}`,
+            timestamp: item.timestamp,
+            decision_type: "SWARM",
+            symbol: item.symbol,
+            status: "REJECTED",
+            cycle_id: null,
+          }))
+        : [];
+
+    const audits = liveAudits.length > 0 ? liveAudits : fallbackAudits;
     setDecisionAudit(audits);
     const nextAuditId = preferredAuditId && audits.some((entry) => entry.audit_id === preferredAuditId)
       ? preferredAuditId
@@ -533,6 +548,34 @@ export default function AlphaPage() {
 
     if (!nextAuditId) {
       setDecisionReplay(null);
+      return;
+    }
+
+    if (nextAuditId.startsWith(SYNTHETIC_AUDIT_PREFIX)) {
+      const synthetic = audits.find((item) => item.audit_id === nextAuditId);
+      if (!synthetic) {
+        setDecisionReplay(null);
+        return;
+      }
+      setDecisionReplay({
+        audit_id: synthetic.audit_id,
+        symbol: synthetic.symbol,
+        decision_type: synthetic.decision_type,
+        status: synthetic.status,
+        generated_at: synthetic.timestamp,
+        replay_steps: [
+          {
+            stage: "SUMMARY",
+            title: "Fallback Summary",
+            summary: "Derived from control-panel rejections while persisted audit payload is unavailable.",
+            payload: {
+              source: "control.rejected_trades",
+              symbol: synthetic.symbol,
+            },
+          },
+        ],
+        why_not: ["Decision audit payload unavailable; showing rejection summary fallback."],
+      });
       return;
     }
 
@@ -674,6 +717,35 @@ export default function AlphaPage() {
 
   async function handleSelectAudit(auditId: string) {
     setSelectedAuditId(auditId);
+
+    if (auditId.startsWith(SYNTHETIC_AUDIT_PREFIX)) {
+      const synthetic = decisionAudit?.find((entry) => entry.audit_id === auditId);
+      if (!synthetic) {
+        setDecisionReplay(null);
+        return;
+      }
+      setDecisionReplay({
+        audit_id: synthetic.audit_id,
+        symbol: synthetic.symbol,
+        decision_type: synthetic.decision_type,
+        status: synthetic.status,
+        generated_at: synthetic.timestamp,
+        replay_steps: [
+          {
+            stage: "SUMMARY",
+            title: "Fallback Summary",
+            summary: "Derived from control-panel rejections while persisted audit payload is unavailable.",
+            payload: {
+              source: "control.rejected_trades",
+              symbol: synthetic.symbol,
+            },
+          },
+        ],
+        why_not: ["Decision audit payload unavailable; showing rejection summary fallback."],
+      });
+      return;
+    }
+
     const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
     const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
     setDecisionReplay(replayData);
