@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Query
 
 from app.services.alpaca_oauth_service import alpaca_oauth_service
+from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
 from app.services.decision_audit_store import decision_audit_store
 from app.services.execution_journal import execution_journal
@@ -46,6 +47,11 @@ def get_runtime_readiness() -> dict:
         control = control_engine.status()
     except Exception:
         control = {}
+
+    try:
+        autonomous = autonomous_runner.status()
+    except Exception:
+        autonomous = {}
 
     try:
         latest_scan = master_orchestrator.latest()
@@ -137,8 +143,8 @@ def get_runtime_readiness() -> dict:
         "broker_connected": connected,
         "execution_mode": mode,
         "trading_enabled": bool(control.get("trading_enabled", False)),
-        "autonomous_enabled": bool(control.get("autonomous_enabled", False)),
-        "autonomous_cycles_run": int(control.get("autonomous_cycles_run", 0)),
+        "autonomous_enabled": bool(autonomous.get("enabled", False)),
+        "autonomous_cycles_run": int(autonomous.get("cycles_run", 0)),
         "latest_scan_candidates": latest_candidates,
         "latest_scan_age_seconds": round(scan_age_seconds, 2) if scan_age_seconds is not None else None,
         "open_positions": open_positions,
