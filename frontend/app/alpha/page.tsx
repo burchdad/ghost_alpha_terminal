@@ -318,10 +318,12 @@ export default function AlphaPage() {
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
+  const [activeBrokerProvider, setActiveBrokerProvider] = useState<string | null>(null);
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
   const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
+  const brokerModalCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const seenExecutionIdsRef = useRef<Set<string>>(new Set());
   const executionBaselineReadyRef = useRef(false);
   const autonomousCycleBaselineRef = useRef<number | null>(null);
@@ -393,6 +395,25 @@ export default function AlphaPage() {
       setOauthReason(reason);
     }
   }, []);
+
+  useEffect(() => {
+    if (!activeBrokerProvider) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActiveBrokerProvider(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    brokerModalCloseButtonRef.current?.focus();
+
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [activeBrokerProvider]);
 
   async function refreshBrokerConnections() {
     const brokerRes = await fetch(`${API_BASE}/agents/brokers/connections`);
@@ -771,6 +792,18 @@ export default function AlphaPage() {
 
 
   const connectedBrokerCount = brokerConnections.filter((broker) => broker.connected).length;
+  const activeBroker = useMemo(() => {
+    if (!activeBrokerProvider) {
+      return null;
+    }
+    return brokerConnections.find((broker) => broker.provider === activeBrokerProvider) ?? null;
+  }, [activeBrokerProvider, brokerConnections]);
+
+  useEffect(() => {
+    if (activeBrokerProvider && !activeBroker) {
+      setActiveBrokerProvider(null);
+    }
+  }, [activeBroker, activeBrokerProvider]);
 
   function handleOrchestratorRunSymbol(symbol: string) {
     setFocusSymbol(symbol);
@@ -839,75 +872,122 @@ export default function AlphaPage() {
           </div>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {brokerConnections.map((broker) => {
-            const isDisconnecting = disconnectingProvider === broker.provider;
-            const capabilityTags = [
-              broker.capabilities.supports_equities ? "Equities" : null,
-              broker.capabilities.supports_crypto ? "Crypto" : null,
-              broker.capabilities.supports_options ? "Options" : null,
-              broker.capabilities.supports_fractional ? "Fractional" : null,
-            ].filter(Boolean);
+            const statusTone = broker.connected
+              ? "border-green-500/50 bg-green-500/12 text-green-100"
+              : broker.connectable
+                ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
+                : "border-red-500/50 bg-red-500/12 text-red-100";
+            const statusDot = broker.connected
+              ? "bg-green-400"
+              : broker.connectable
+                ? "bg-amber-400"
+                : "bg-red-400";
+            const statusHint = broker.connected
+              ? "Connected"
+              : broker.connectable
+                ? "Action needed"
+                : "Disconnected";
 
             return (
-              <div
+              <button
+                type="button"
                 key={broker.provider}
-                className={`rounded-lg border px-3 py-3 text-xs ${
-                  broker.connected
-                    ? "border-green-500/40 bg-green-500/10 text-green-100"
-                    : broker.connectable
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
-                      : "border-terminal-line bg-black/20 text-slate-300"
-                }`}
+                onClick={() => setActiveBrokerProvider(broker.provider)}
+                className={`group rounded-lg border px-3 py-2.5 text-left text-xs transition hover:brightness-110 ${statusTone}`}
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold">{broker.label}</div>
-                    <div className="mt-1 text-[11px] uppercase tracking-wider opacity-80">{broker.status_label}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {broker.connect_path && broker.connectable && !broker.connected && (
-                      <a
-                        href={`${API_BASE}${broker.connect_path}`}
-                        className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
-                      >
-                        {broker.auth_type === "oauth" ? `Connect ${broker.label}` : `Authorize ${broker.label}`}
-                      </a>
-                    )}
-                    <button
-                      type="button"
-                      disabled={!broker.connected || !broker.disconnect_supported || isDisconnecting}
-                      onClick={() => handleDisconnectBroker(broker.provider, broker.disconnect_path)}
-                      className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      {isDisconnecting ? "Disconnecting..." : `Disconnect ${broker.label}`}
-                    </button>
-                  </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold">{broker.label}</div>
+                  <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
                 </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-1 text-[11px] text-current/90 sm:grid-cols-2">
-                  <div>Permissions: {broker.permissions}</div>
-                  <div>Auth: {broker.auth_type.replace("_", " ")}</div>
-                  <div>Mode: {broker.mode ?? "N/A"}</div>
-                  <div>Updated: {broker.updated_at ? new Date(broker.updated_at).toLocaleString() : "Never"}</div>
-                </div>
-
-                {capabilityTags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {capabilityTags.map((tag) => (
-                      <span key={tag} className="rounded border border-current/20 px-2 py-1 text-[10px] uppercase tracking-wider">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {broker.notes && <div className="mt-3 text-[11px] text-current/80">{broker.notes}</div>}
-                {broker.last_error && <div className="mt-2 text-[11px] text-red-300">Last error: {broker.last_error}</div>}
-              </div>
+                <div className="mt-1 text-[11px] uppercase tracking-wider text-current/85">{statusHint}</div>
+                <div className="mt-2 text-[11px] text-current/75 group-hover:text-current/90">Open details</div>
+              </button>
             );
           })}
         </div>
+
+        {activeBroker && (
+          <div
+            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4"
+            onClick={() => setActiveBrokerProvider(null)}
+            role="presentation"
+          >
+            <div
+              className={`w-full max-w-2xl rounded-xl border p-4 text-xs shadow-2xl ${
+                activeBroker.connected
+                  ? "border-green-500/40 bg-[#092218] text-green-100"
+                  : activeBroker.connectable
+                    ? "border-amber-500/40 bg-[#241f0a] text-amber-100"
+                    : "border-red-500/40 bg-[#220c0c] text-red-100"
+              }`}
+              onClick={(event) => event.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="broker-modal-title"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 id="broker-modal-title" className="text-sm font-semibold">{activeBroker.label} Connection Details</h3>
+                  <p className="mt-1 text-[11px] uppercase tracking-wider text-current/80">{activeBroker.status_label}</p>
+                </div>
+                <button
+                  ref={brokerModalCloseButtonRef}
+                  type="button"
+                  onClick={() => setActiveBrokerProvider(null)}
+                  className="rounded border border-current/30 bg-black/20 px-2.5 py-1 text-[11px] text-current/90 hover:bg-black/30"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 text-[11px] sm:grid-cols-2">
+                <div>Permissions: {activeBroker.permissions}</div>
+                <div>Auth: {activeBroker.auth_type.replace("_", " ")}</div>
+                <div>Mode: {activeBroker.mode ?? "N/A"}</div>
+                <div>Updated: {activeBroker.updated_at ? new Date(activeBroker.updated_at).toLocaleString() : "Never"}</div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {activeBroker.capabilities.supports_equities && (
+                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Equities</span>
+                )}
+                {activeBroker.capabilities.supports_crypto && (
+                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Crypto</span>
+                )}
+                {activeBroker.capabilities.supports_options && (
+                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Options</span>
+                )}
+                {activeBroker.capabilities.supports_fractional && (
+                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Fractional</span>
+                )}
+              </div>
+
+              {activeBroker.notes && <div className="mt-3 text-[11px] text-current/80">{activeBroker.notes}</div>}
+              {activeBroker.last_error && <div className="mt-2 text-[11px] text-red-300">Last error: {activeBroker.last_error}</div>}
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeBroker.connect_path && activeBroker.connectable && !activeBroker.connected && (
+                  <a
+                    href={`${API_BASE}${activeBroker.connect_path}`}
+                    className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
+                  >
+                    {activeBroker.auth_type === "oauth" ? `Connect ${activeBroker.label}` : `Authorize ${activeBroker.label}`}
+                  </a>
+                )}
+                <button
+                  type="button"
+                  disabled={!activeBroker.connected || !activeBroker.disconnect_supported || disconnectingProvider === activeBroker.provider}
+                  onClick={() => handleDisconnectBroker(activeBroker.provider, activeBroker.disconnect_path)}
+                  className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {disconnectingProvider === activeBroker.provider ? "Disconnecting..." : `Disconnect ${activeBroker.label}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {oauthStatus !== "idle" && (
           <div
