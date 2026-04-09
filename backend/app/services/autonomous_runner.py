@@ -58,6 +58,13 @@ class AutonomousRunner:
             portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
             scan = master_orchestrator.scan(limit=8)
             candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:4]
+            if not candidates:
+                # Fall back to top crypto watches so the swarm keeps exploring and adapting.
+                candidates = [
+                    c
+                    for c in scan.candidates
+                    if c.asset_class == "crypto" and c.action_label == "MONITOR" and c.composite_score >= 0.35
+                ][:2]
             selected_symbols = [c.symbol for c in candidates]
             with self._lock:
                 self._symbols = selected_symbols

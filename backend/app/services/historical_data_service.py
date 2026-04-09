@@ -6,10 +6,27 @@ import pandas as pd
 
 from app.core.config import settings
 from app.services.alpaca_client import alpaca_client
+from app.services.coinbase_market_data_service import coinbase_market_data_service
 from app.utils.data_loader import load_mock_ohlcv
 
 
 class HistoricalDataService:
+    def _is_crypto_symbol(self, symbol: str) -> bool:
+        upper = symbol.upper().strip()
+        return ("-" in upper and upper.endswith("-USD")) or (upper.endswith("USD") and len(upper) <= 12)
+
+    def _to_dataframe(self, rows: list[dict]) -> pd.DataFrame:
+        if not rows:
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df = pd.DataFrame(rows)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        for column in ["open", "high", "low", "close", "volume"]:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+        df = df.dropna(subset=["open", "high", "low", "close", "volume"])
+        if df.empty:
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+        return df.sort_values("timestamp").reset_index(drop=True)
+
     def load_historical_data(
         self,
         *,
@@ -28,15 +45,26 @@ class HistoricalDataService:
                 end=end,
             )
             if rows:
-                df = pd.DataFrame(rows)
-                df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-                for column in ["open", "high", "low", "close", "volume"]:
-                    df[column] = pd.to_numeric(df[column], errors="coerce")
-                df = df.dropna(subset=["open", "high", "low", "close", "volume"])
+                df = self._to_dataframe(rows)
                 if not df.empty:
-                    return df.sort_values("timestamp").reset_index(drop=True)
+                    return df
         except Exception:
             pass
+
+        if self._is_crypto_symbol(symbol):
+            try:
+                rows = coinbase_market_data_service.get_candles(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    start=start,
+                    end=end,
+                )
+                if rows:
+                    df = self._to_dataframe(rows)
+                    if not df.empty:
+                        return df
+            except Exception:
+                pass
 
         if settings.use_mock_data:
             periods = 90 if timeframe in {"1h", "4h"} else 140
