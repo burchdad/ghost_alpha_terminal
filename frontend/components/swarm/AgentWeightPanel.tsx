@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { Cell } from "recharts";
 
 import { useSwarmStore } from "../../store/useSwarmStore";
 import type { AgentWeightEntry, MarketRegime } from "../../types/swarm";
@@ -29,12 +30,16 @@ const AGENT_DISPLAY: Record<string, string> = {
   momentum_agent: "Momentum",
   mean_reversion_agent: "MeanRev",
   sentiment_agent: "Sentiment",
+  volatility_agent: "Volatility",
+  options_agent: "Options",
 };
 
 const AGENT_COLORS: Record<string, string> = {
   momentum_agent: "#6366f1",
   mean_reversion_agent: "#10b981",
   sentiment_agent: "#f59e0b",
+  volatility_agent: "#ef4444",
+  options_agent: "#3b82f6",
 };
 
 // Normalize bar chart data for a single regime
@@ -179,7 +184,7 @@ export default function AgentWeightPanel() {
               />
               <Bar dataKey="weight" radius={[4, 4, 0, 0]}>
                 {barData.map((entry, i) => (
-                  <rect key={i} fill={entry.fill} />
+                  <Cell key={`cell-${i}`} fill={entry.fill} />
                 ))}
               </Bar>
             </BarChart>

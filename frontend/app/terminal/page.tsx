@@ -22,6 +22,8 @@ type ForecastResponse = {
   volatility: "LOW" | "MEDIUM" | "HIGH";
   range_bound: boolean;
   forecast_prices: number[];
+  timeframe?: string;
+  generated_at?: string;
 };
 
 type OptionContract = {
@@ -247,7 +249,6 @@ export default function TerminalPage() {
   const [signal, setSignal] = useState<SignalResponse | null>(null);
   const [swarm, setSwarm] = useState<SwarmResponse | null>(null);
   const [performance, setPerformance] = useState<PerformanceResponse | null>(null);
-  const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
   const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
   const [orchestratorWatchlist, setOrchestratorWatchlist] = useState<string[]>([]);
@@ -302,17 +303,12 @@ export default function TerminalPage() {
 
   useEffect(() => {
     async function fetchAll() {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(end.getDate() - 240);
-
       const [
         fRes,
         oRes,
         sRes,
         swarmRes,
         perfRes,
-        backtestRes,
         oppRes,
         historyRes,
       ] = await Promise.all([
@@ -321,19 +317,6 @@ export default function TerminalPage() {
         fetch(`${API_BASE}/signal/${symbol}`),
         fetch(`${API_BASE}/swarm/${symbol}`),
         fetch(`${API_BASE}/performance/${symbol}`),
-        fetch(`${API_BASE}/backtest`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            symbol,
-            timeframe: "1d",
-            start_date: start.toISOString(),
-            end_date: end.toISOString(),
-            take_profit_pct: 0.03,
-            stop_loss_pct: 0.02,
-            max_hold_periods: 5,
-          }),
-        }),
         fetch(`${API_BASE}/agents/opportunities?limit=10`),
         fetch(`${API_BASE}/agents/execution-history?limit=25`),
       ]);
@@ -343,7 +326,6 @@ export default function TerminalPage() {
       const sData = await parseJsonOrNull<SignalResponse>(sRes);
       const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
       const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
-      const backtestData = await parseJsonOrNull<BacktestResponse>(backtestRes);
       const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
       const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
 
@@ -352,7 +334,6 @@ export default function TerminalPage() {
       setSignal(sData);
       setSwarm(swarmData);
       setPerformance(perfData);
-      setBacktest(backtestData);
       setOpportunities(oppData);
       setExecutionHistory(historyData?.executions ?? []);
     }
@@ -394,7 +375,6 @@ export default function TerminalPage() {
         <div className="space-y-4">
           <Chart
             symbol={symbol}
-            currentPrice={options?.underlying_price ?? 100}
             forecastPrices={forecast?.forecast_prices ?? []}
           />
           <OptionsPanel options={options} />
@@ -407,7 +387,7 @@ export default function TerminalPage() {
             currentPrice={options?.underlying_price ?? 100}
           />
           <PerformancePanel performance={performance} />
-          <BacktestPanel backtest={backtest} />
+          <BacktestPanel symbol={symbol} />
           <OpportunityFeedPanel data={opportunities} />
         </div>
 

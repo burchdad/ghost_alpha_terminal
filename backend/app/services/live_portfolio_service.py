@@ -36,12 +36,20 @@ class LivePortfolioService:
             total_exposure += market_value
             sector_counter[sector] += market_value
             strategy_counter[strategy] += market_value
+            entry_price = float(position.get("avg_entry_price") or 0.0)
+            current_price = float(position.get("current_price") or entry_price)
+            unrealized_pnl = float(position.get("unrealized_pl") or 0.0)
+            cost_basis = entry_price * abs(qty)
+            unrealized_pnl_pct = (unrealized_pnl / cost_basis) if cost_basis > 0 else 0.0
             active_positions.append(
                 {
                     "symbol": symbol,
                     "strategy": strategy,
                     "side": side,
-                    "entry_price": float(position.get("avg_entry_price") or 0.0),
+                    "entry_price": entry_price,
+                    "current_price": current_price,
+                    "unrealized_pnl": round(unrealized_pnl, 2),
+                    "unrealized_pnl_pct": round(unrealized_pnl_pct, 4),
                     "units": abs(qty),
                     "notional": market_value,
                     "sector": sector,

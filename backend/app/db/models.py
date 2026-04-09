@@ -108,3 +108,30 @@ class LaunchMetricDaily(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
+
+
+class ExecutionJournalDB(Base):
+    __tablename__ = "execution_journal"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    execution_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    cycle_id: Mapped[str] = mapped_column(String(64), index=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    regime: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(16), index=True)
+    strategy: Mapped[str] = mapped_column(String(64))
+    confidence: Mapped[float] = mapped_column(Float)
+    risk_level: Mapped[str] = mapped_column(String(16))
+    allocation_pct: Mapped[float] = mapped_column(Float)
+    qty: Mapped[float] = mapped_column(Float)
+    notional: Mapped[float] = mapped_column(Float)
+    mode: Mapped[str] = mapped_column(String(32), index=True)
+    submitted: Mapped[bool] = mapped_column(Boolean, default=False)
+    order_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, default="")
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    outcome_label: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pnl: Mapped[float | None] = mapped_column(Float, nullable=True)

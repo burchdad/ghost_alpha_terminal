@@ -10,6 +10,8 @@ from app.models.schemas import (
     GoalTargetRequest,
     KillSwitchUpdateRequest,
     KillSwitchUpdateResponse,
+    RiskLimitUpdateRequest,
+    RiskLimitUpdateResponse,
 )
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
@@ -43,6 +45,15 @@ def update_kill_switch(payload: KillSwitchUpdateRequest) -> KillSwitchUpdateResp
         trading_enabled=enabled,
         system_status="ACTIVE" if enabled else "PAUSED",
     )
+
+
+@router.post("/limits", response_model=RiskLimitUpdateResponse)
+def update_risk_limits(payload: RiskLimitUpdateRequest) -> RiskLimitUpdateResponse:
+    result = control_engine.set_limits(
+        daily_loss_limit_pct=payload.daily_loss_limit_pct,
+        max_drawdown_limit_pct=payload.max_drawdown_limit_pct,
+    )
+    return RiskLimitUpdateResponse(**result)
 
 
 @router.get("/autonomous", response_model=AutonomousModeStatusResponse)

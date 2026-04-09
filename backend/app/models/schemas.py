@@ -222,6 +222,9 @@ class ActivePosition(BaseModel):
     strategy: str
     side: str
     entry_price: float
+    current_price: float = 0.0
+    unrealized_pnl: float = 0.0
+    unrealized_pnl_pct: float = 0.0
     units: float
     notional: float
     sector: str
@@ -264,6 +267,7 @@ class ControlStatusResponse(BaseModel):
     daily_pnl: float
     daily_loss: float
     daily_loss_limit: float
+    daily_loss_limit_pct: float = 0.05
     rolling_drawdown: float
     rolling_drawdown_pct: float
     max_drawdown_limit_pct: float
@@ -283,6 +287,33 @@ class KillSwitchUpdateRequest(BaseModel):
 class KillSwitchUpdateResponse(BaseModel):
     trading_enabled: bool
     system_status: Literal["ACTIVE", "PAUSED"]
+
+
+class RiskLimitUpdateRequest(BaseModel):
+    daily_loss_limit_pct: float = Field(default=0.05, gt=0, le=0.5)
+    max_drawdown_limit_pct: float = Field(default=0.10, gt=0, le=0.5)
+
+
+class RiskLimitUpdateResponse(BaseModel):
+    daily_loss_limit_pct: float
+    max_drawdown_limit_pct: float
+    daily_loss_limit: float
+
+
+class PriceBar(BaseModel):
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
+class PriceHistoryResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    bars: list[PriceBar]
+    source: str = "alpaca"
 
 
 # ---------------------------------------------------------------------------

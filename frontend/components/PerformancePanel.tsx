@@ -26,6 +26,10 @@ export default function PerformancePanel({ performance }: { performance: Perform
     return <div className="panel rounded-xl p-4 text-sm text-slate-300">Loading performance feedback loop...</div>;
   }
 
+  const hasData =
+    performance.agent_leaderboard.length > 0 &&
+    performance.agent_leaderboard.some((r) => r.composite_score > 0);
+
   return (
     <div className="panel animate-riseIn rounded-xl p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -42,9 +46,17 @@ export default function PerformancePanel({ performance }: { performance: Perform
               <th className="px-2 py-1">Accuracy</th>
               <th className="px-2 py-1">Avg Return</th>
               <th className="px-2 py-1">Score</th>
+              <th className="px-2 py-1">Calibration</th>
             </tr>
           </thead>
           <tbody>
+            {!hasData && (
+              <tr>
+                <td colSpan={6} className="px-2 py-3 text-slate-400">
+                  Performance data populates after trade outcomes are settled.
+                </td>
+              </tr>
+            )}
             {performance.agent_leaderboard.map((row) => (
               <tr key={row.agent_name} className="border-t border-terminal-line">
                 <td className="px-2 py-1 font-semibold">{row.agent_name}</td>
@@ -52,6 +64,7 @@ export default function PerformancePanel({ performance }: { performance: Perform
                 <td className="px-2 py-1">{Math.round(row.accuracy * 100)}%</td>
                 <td className="px-2 py-1">{(row.avg_return * 100).toFixed(2)}%</td>
                 <td className="px-2 py-1">{Math.round(row.composite_score * 100)}%</td>
+              <td className="px-2 py-1">{Math.round((row.confidence_calibration ?? 0) * 100)}%</td>
               </tr>
             ))}
           </tbody>

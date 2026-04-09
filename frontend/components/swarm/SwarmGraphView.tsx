@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type { SwarmAgentSignal } from "../../types/swarm";
 
@@ -29,6 +29,8 @@ const NODE_COLORS: Record<string, string> = {
 };
 
 export default function SwarmGraphView({ signals }: Props) {
+  const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+
   const { nodes, edges } = useMemo(() => {
     const radius = 120;
     const centerX = 180;
@@ -69,7 +71,7 @@ export default function SwarmGraphView({ signals }: Props) {
     <div className="panel rounded-xl p-4">
       <h3 className="mb-3 text-sm font-semibold text-terminal-accent">Agent Battlefield</h3>
       <div className="overflow-x-auto">
-        <svg width="360" height="290" viewBox="0 0 360 290" className="mx-auto">
+        <svg viewBox="0 0 360 290" style={{ width: "100%", height: "auto" }} preserveAspectRatio="xMidYMid meet">
           {edges.map((edge) => {
             const s = nodeMap.get(edge.source);
             const t = nodeMap.get(edge.target);
@@ -94,9 +96,14 @@ export default function SwarmGraphView({ signals }: Props) {
           {nodes.map((node) => {
             const r = 12 + node.confidence * 16;
             return (
-              <g key={node.id}>
-                <circle cx={node.x} cy={node.y} r={r} fill={NODE_COLORS[node.action]} opacity={0.22} />
-                <circle cx={node.x} cy={node.y} r={Math.max(7, r - 4)} fill={NODE_COLORS[node.action]} />
+              <g
+                key={node.id}
+                onMouseEnter={() => setHoveredNode(node.id)}
+                onMouseLeave={() => setHoveredNode(null)}
+                style={{ cursor: "pointer" }}
+              >
+                <circle cx={node.x} cy={node.y} r={r} fill={NODE_COLORS[node.action]} opacity={hoveredNode === node.id ? 0.45 : 0.22} />
+                <circle cx={node.x} cy={node.y} r={Math.max(7, r - 4)} fill={NODE_COLORS[node.action]} strokeWidth={hoveredNode === node.id ? 2 : 0} stroke="white" />
                 <text
                   x={node.x}
                   y={node.y + r + 14}
@@ -121,6 +128,18 @@ export default function SwarmGraphView({ signals }: Props) {
           })}
         </svg>
       </div>
+
+      {hoveredNode && (() => {
+        const node = nodes.find((n) => n.id === hoveredNode);
+        if (!node) return null;
+        return (
+          <div className="mt-2 rounded border border-terminal-line bg-black/60 px-3 py-2 text-xs text-slate-200">
+            <span className="font-semibold">{node.id}</span> — Action:{" "}
+            <span style={{ color: NODE_COLORS[node.action] }}>{node.action}</span> · Confidence:{" "}
+            {Math.round(node.confidence * 100)}%
+          </div>
+        );
+      })()}
 
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-300 md:grid-cols-2">
         <div className="rounded border border-terminal-line bg-black/20 p-2">Solid edge = agreement</div>

@@ -26,6 +26,9 @@ type PortfolioActivePosition = {
   notional: number;
   sector: string;
   opened_at: string;
+  current_price?: number;
+  unrealized_pnl?: number;
+  unrealized_pnl_pct?: number;
 };
 
 type PortfolioResponse = {
@@ -37,6 +40,16 @@ type PortfolioResponse = {
   strategy_exposure: Record<string, number>;
   available_buying_power: number;
   max_concurrent_trades: number;
+  broker_accounts?: {
+    broker: string;
+    account_label: string;
+    account_mode: string;
+    connected: boolean;
+    account_balance: number | null;
+    buying_power: number | null;
+    currency: string;
+    last_error: string | null;
+  }[];
 };
 
 type RejectedTradeLog = {
@@ -52,6 +65,7 @@ type ControlResponse = {
   daily_pnl: number;
   daily_loss: number;
   daily_loss_limit: number;
+  daily_loss_limit_pct?: number;
   rolling_drawdown: number;
   rolling_drawdown_pct: number;
   max_drawdown_limit_pct: number;
@@ -645,15 +659,24 @@ export default function AlphaPage() {
     setGoal(goalData);
   }
 
+
+  async function handleUpdateLimits(data: { daily_loss_limit_pct: number; max_drawdown_limit_pct: number }) {
+    await fetch(`${API_BASE}/control/limits`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    setControl(controlData);
+    pushRuntimeToast("Risk limits updated.", "success");
+  }
+
   async function handleSelectAudit(auditId: string) {
     setSelectedAuditId(auditId);
     const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
     const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
     setDecisionReplay(replayData);
-  }
-
-  function handleOrchestratorRunSymbol(symbol: string) {
-    setFocusSymbol(symbol);
   }
 
   async function handleDisconnectBroker(provider: string, disconnectPath: string | null) {
@@ -674,7 +697,13 @@ export default function AlphaPage() {
     }
   }
 
+
   const connectedBrokerCount = brokerConnections.filter((broker) => broker.connected).length;
+
+  function handleOrchestratorRunSymbol(symbol: string) {
+    setFocusSymbol(symbol);
+  }
+
   const runtimePhase = useMemo(() => {
     if (!runtimeReadiness) {
       return { label: "Loading Runtime State", tone: "text-slate-300", panel: "border-terminal-line bg-black/20" };
@@ -1022,6 +1051,7 @@ export default function AlphaPage() {
             onToggleAutonomous={handleToggleAutonomous}
             onRunAutonomousOnce={handleRunAutonomousOnce}
             onSetExecutionMode={handleSetExecutionMode}
+            onUpdateLimits={handleUpdateLimits}
           />
         </aside>
       </section>

@@ -21,6 +21,8 @@ class ControlEngine:
         self._current_day = datetime.now(tz=timezone.utc).date()
         self._reject_log: list[dict] = []
         self._safe_mode = True
+        self._daily_loss_limit_pct: float = 0.05
+        self._max_drawdown_limit_pct: float = 0.10
 
     def _rollover_day_if_needed(self) -> None:
         today = datetime.now(tz=timezone.utc).date()
@@ -40,14 +42,31 @@ class ControlEngine:
         if len(self._reject_log) > 200:
             self._reject_log = self._reject_log[-200:]
 
+    def set_limits(
+        self,
+        *,
+        daily_loss_limit_pct: float | None = None,
+        max_drawdown_limit_pct: float | None = None,
+    ) -> dict:
+        with self._lock:
+            if daily_loss_limit_pct is not None:
+                self._daily_loss_limit_pct = max(0.001, min(0.5, daily_loss_limit_pct))
+            if max_drawdown_limit_pct is not None:
+                self._max_drawdown_limit_pct = max(0.001, min(0.5, max_drawdown_limit_pct))
+            return {
+                "daily_loss_limit_pct": self._daily_loss_limit_pct,
+                "max_drawdown_limit_pct": self._max_drawdown_limit_pct,
+                "daily_loss_limit": round(self._starting_balance * self._daily_loss_limit_pct, 2),
+            }
+
     def _limits_breached(self) -> tuple[bool, str]:
-        daily_loss_limit = self._starting_balance * 0.05
+        daily_loss_limit = self._starting_balance * self._daily_loss_limit_pct
         if self._daily_loss > daily_loss_limit:
-            return True, "Daily loss limit exceeded (5%): trading paused."
+            return True, f"Daily loss limit exceeded ({self._daily_loss_limit_pct*100:.1f}%): trading paused."
 
         drawdown = max(0.0, self._peak_equity - self._equity)
-        if drawdown > self._peak_equity * 0.10:
-            return True, "Max drawdown exceeded (10%): trading paused."
+        if drawdown > self._peak_equity * self._max_drawdown_limit_pct:
+            return True, f"Max drawdown exceeded ({self._max_drawdown_limit_pct*100:.1f}%): trading paused."
 
         return False, ""
 
@@ -117,10 +136,11 @@ class ControlEngine:
                 "mode": "SAFE" if self._safe_mode else "NORMAL",
                 "daily_pnl": round(self._daily_pnl, 2),
                 "daily_loss": round(self._daily_loss, 2),
-                "daily_loss_limit": round(self._starting_balance * 0.05, 2),
+                "daily_loss_limit": round(self._starting_balance * self._daily_loss_limit_pct, 2),
+                "daily_loss_limit_pct": self._daily_loss_limit_pct,
                 "rolling_drawdown": round(drawdown, 2),
                 "rolling_drawdown_pct": round(drawdown_pct, 4),
-                "max_drawdown_limit_pct": 0.10,
+                "max_drawdown_limit_pct": self._max_drawdown_limit_pct,
                 "rejected_trades": [
                     {
                         "timestamp": item["timestamp"],

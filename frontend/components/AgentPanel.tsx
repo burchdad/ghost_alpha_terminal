@@ -29,8 +29,14 @@ type SwarmData = {
   recommended_trade: string;
   agent_breakdown: AgentDecision[];
 };
+// Extended fields from SwarmResponse that AgentPanel can optionally display
+type SwarmDataExtended = SwarmData & {
+  position_size?: number;
+  risk_level?: "LOW" | "MEDIUM" | "HIGH";
+  expected_value?: number;
+};
 
-export default function AgentPanel({ swarm }: { swarm: SwarmData | null }) {
+export default function AgentPanel({ swarm }: { swarm: SwarmDataExtended | null }) {
   if (!swarm) {
     return <div className="panel rounded-xl p-4 text-sm text-slate-300">Loading swarm agents...</div>;
   }
@@ -61,6 +67,36 @@ export default function AgentPanel({ swarm }: { swarm: SwarmData | null }) {
         </div>
       </div>
 
+      {(swarm.position_size !== undefined || swarm.risk_level || swarm.expected_value !== undefined) && (
+        <div className="mb-4 grid grid-cols-3 gap-2 text-xs text-slate-300">
+          {swarm.position_size !== undefined && (
+            <div className="rounded border border-terminal-line bg-black/20 p-2">
+              <span className="text-slate-400">Size: </span>
+              <span className="font-semibold text-slate-200">{(swarm.position_size * 100).toFixed(1)}%</span>
+            </div>
+          )}
+          {swarm.risk_level && (
+            <div className="rounded border border-terminal-line bg-black/20 p-2">
+              <span className="text-slate-400">Risk: </span>
+              <span
+                className={`font-semibold ${swarm.risk_level === "LOW" ? "text-terminal-bull" : swarm.risk_level === "HIGH" ? "text-terminal-bear" : "text-terminal-warn"}`}
+              >
+                {swarm.risk_level}
+              </span>
+            </div>
+          )}
+          {swarm.expected_value !== undefined && (
+            <div className="rounded border border-terminal-line bg-black/20 p-2">
+              <span className="text-slate-400">EV: </span>
+              <span className={`font-semibold ${swarm.expected_value >= 0 ? "text-terminal-bull" : "text-terminal-bear"}`}>
+                {swarm.expected_value >= 0 ? "+" : ""}
+                {swarm.expected_value.toFixed(3)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
           <thead className="text-slate-400">
@@ -71,6 +107,7 @@ export default function AgentPanel({ swarm }: { swarm: SwarmData | null }) {
               <th className="px-2 py-1">Adj Conf</th>
               <th className="px-2 py-1">Strategy</th>
               <th className="px-2 py-1">Score</th>
+              <th className="px-2 py-1">Weighted</th>
             </tr>
           </thead>
           <tbody>
@@ -82,6 +119,11 @@ export default function AgentPanel({ swarm }: { swarm: SwarmData | null }) {
                 <td className="px-2 py-2">{Math.round((agent.adjusted_confidence ?? agent.confidence) * 100)}%</td>
                 <td className="px-2 py-2">{agent.suggested_strategy}</td>
                 <td className="px-2 py-2">{Math.round((agent.performance?.composite_score ?? 0) * 100)}%</td>
+                <td className="px-2 py-2">
+                  {agent.weighted_confidence !== null && agent.weighted_confidence !== undefined
+                    ? `${Math.round(agent.weighted_confidence * 100)}%`
+                    : "—"}
+                </td>
               </tr>
             ))}
           </tbody>

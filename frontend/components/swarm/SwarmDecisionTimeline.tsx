@@ -47,16 +47,32 @@ export default function SwarmDecisionTimeline({ decisions }: Props) {
         <ResponsiveContainer width="100%" height="100%">
           <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-            <XAxis dataKey="idx" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <XAxis dataKey="ts" tick={{ fill: "#94a3b8", fontSize: 10 }} angle={-30} textAnchor="end" height={36} />
             <YAxis domain={[-1, 1]} tick={{ fill: "#94a3b8", fontSize: 11 }} />
             <Tooltip
               cursor={{ strokeDasharray: "3 3" }}
               contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", color: "#cbd5e1" }}
+              formatter={(value: number, name: string) => [value, name]}
+              labelFormatter={(label: string) => `Time: ${label}`}
             />
-            <Scatter data={timeline} fill="#38bdf8" />
+            <Scatter
+              data={timeline}
+              fill="#38bdf8"
+              shape={(props: { cx?: number; cy?: number; payload?: { action: string } }) => {
+                const { cx = 0, cy = 0, payload } = props;
+                const color =
+                  payload?.action === "BUY"
+                    ? "#22c55e"
+                    : payload?.action === "SELL"
+                      ? "#ef4444"
+                      : "#94a3b8";
+                return <circle cx={cx} cy={cy} r={5} fill={color} fillOpacity={0.85} />;
+              }}
+            />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
+      <p className="mt-1 text-right text-[10px] text-slate-500">Chart: oldest → newest · Table: newest → oldest</p>
 
       <div className="mt-3 max-h-64 overflow-y-auto rounded border border-terminal-line">
         <table className="min-w-full text-left text-xs">
