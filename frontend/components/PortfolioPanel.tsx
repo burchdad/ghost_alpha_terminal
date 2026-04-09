@@ -18,6 +18,16 @@ type PortfolioData = {
   strategy_exposure: Record<string, number>;
   available_buying_power: number;
   max_concurrent_trades: number;
+  broker_accounts?: {
+    broker: string;
+    account_label: string;
+    account_mode: string;
+    connected: boolean;
+    account_balance: number | null;
+    buying_power: number | null;
+    currency: string;
+    last_error: string | null;
+  }[];
 };
 
 export default function PortfolioPanel({ portfolio }: { portfolio: PortfolioData | null }) {
@@ -41,6 +51,28 @@ export default function PortfolioPanel({ portfolio }: { portfolio: PortfolioData
         </div>
         <div className="rounded border border-terminal-line bg-black/20 p-2">
           Max Trades: {portfolio.max_concurrent_trades}
+        </div>
+      </div>
+
+      <div className="mb-3 text-xs text-slate-300">
+        <p className="mb-1 font-semibold text-slate-400">Broker Accounts</p>
+        {(!portfolio.broker_accounts || portfolio.broker_accounts.length === 0) && (
+          <p>No broker snapshots available.</p>
+        )}
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {(portfolio.broker_accounts || []).map((acct) => (
+            <div key={`${acct.broker}-${acct.account_mode}`} className="rounded border border-terminal-line bg-black/20 p-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="font-semibold">{acct.account_label}</span>
+                <span className={acct.connected ? "text-emerald-300" : "text-amber-300"}>
+                  {acct.connected ? "Connected" : "Unavailable"}
+                </span>
+              </div>
+              <p>Balance: {acct.account_balance != null ? acct.account_balance.toFixed(2) : "N/A"}</p>
+              <p>Buying Power: {acct.buying_power != null ? acct.buying_power.toFixed(2) : "N/A"}</p>
+              {acct.last_error ? <p className="mt-1 text-[11px] text-amber-300">{acct.last_error}</p> : null}
+            </div>
+          ))}
         </div>
       </div>
 

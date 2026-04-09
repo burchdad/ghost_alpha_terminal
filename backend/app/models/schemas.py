@@ -228,6 +228,17 @@ class ActivePosition(BaseModel):
     opened_at: datetime
 
 
+class BrokerAccountSnapshot(BaseModel):
+    broker: str
+    account_label: str
+    account_mode: str
+    connected: bool
+    account_balance: float | None = None
+    buying_power: float | None = None
+    currency: str = "USD"
+    last_error: str | None = None
+
+
 class PortfolioResponse(BaseModel):
     account_balance: float
     active_positions: list[ActivePosition]
@@ -237,6 +248,7 @@ class PortfolioResponse(BaseModel):
     strategy_exposure: dict[str, float]
     available_buying_power: float
     max_concurrent_trades: int
+    broker_accounts: list[BrokerAccountSnapshot] = []
 
 
 class RejectedTradeLog(BaseModel):
