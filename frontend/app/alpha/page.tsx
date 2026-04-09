@@ -186,6 +186,20 @@ type DecisionReplayResponse = {
   why_not: string[];
 };
 
+type AlpacaOauthStatusResponse = {
+  provider: "alpaca";
+  connected: boolean;
+  permissions: string;
+  paper_mode: boolean;
+  mode: "Paper Trading" | "Live Trading";
+  token_type: string | null;
+  scope: string | null;
+  obtained_at: string | null;
+  expires_in: number | null;
+  updated_at: string | null;
+  oauth_ready: boolean;
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -215,6 +229,8 @@ export default function AlphaPage() {
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
+  const [brokerConnection, setBrokerConnection] = useState<AlpacaOauthStatusResponse | null>(null);
+  const [disconnecting, setDisconnecting] = useState(false);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -280,6 +296,12 @@ export default function AlphaPage() {
     }
   }, []);
 
+  async function refreshBrokerConnection() {
+    const brokerRes = await fetch(`${API_BASE}/alpaca/oauth/status`);
+    const brokerData = await parseJsonOrNull<AlpacaOauthStatusResponse>(brokerRes);
+    setBrokerConnection(brokerData);
+  }
+
   useEffect(() => {
     async function boot() {
       const [statusRes, latestRes] = await Promise.all([
@@ -308,6 +330,10 @@ export default function AlphaPage() {
 
     boot().catch((err: unknown) => {
       console.error("Failed to load alpha dashboard", err);
+    });
+
+    refreshBrokerConnection().catch((err: unknown) => {
+      console.error("Failed to fetch broker connection status", err);
     });
   }, []);
 
@@ -458,6 +484,22 @@ export default function AlphaPage() {
     setFocusSymbol(symbol);
   }
 
+  async function handleDisconnectAlpaca() {
+    setDisconnecting(true);
+    try {
+      await fetch(`${API_BASE}/alpaca/oauth/disconnect`, { method: "POST" });
+      setOauthStatus("idle");
+      setOauthReason("");
+      await refreshBrokerConnection();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  const isConnected = Boolean(brokerConnection?.connected);
+  const modeLabel = brokerConnection?.mode ?? "Paper Trading";
+  const permissionsLabel = brokerConnection?.permissions ?? "Not Authorized";
+
   return (
     <main className="min-h-screen p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
@@ -474,46 +516,39 @@ export default function AlphaPage() {
       </div>
 
       <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold text-terminal-accent">Broker Connectivity</h2>
-            <p className="text-xs text-slate-400">Connect Alpaca account via OAuth app credentials</p>
+            <h2 className="text-sm font-semibold text-terminal-accent">Connection Safety Banner</h2>
+            <p className="text-xs text-slate-400">Transparent broker state and explicit user controls</p>
           </div>
-          <a
-            href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
-            className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
-          >
-            Connect Alpaca OAuth
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
+              className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
+            >
+              Connect Alpaca OAuth
+            </a>
+            <button
+              type="button"
+              disabled={!isConnected || disconnecting}
+              onClick={handleDisconnectAlpaca}
+              className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {disconnecting ? "Disconnecting..." : "Disconnect Alpaca"}
+            </button>
+          </div>
         </div>
-        {oauthStatus !== "idle" && (
-          <div
-            className={`mt-3 rounded border px-3 py-2 text-xs ${
-              oauthStatus === "connected"
-                ? "border-green-500/40 bg-green-500/10 text-green-300"
-                : "border-red-500/40 bg-red-500/10 text-red-300"
-            }`}
-          >
-            {oauthStatus === "connected"
-              ? "Alpaca OAuth connected successfully."
-              : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
-          </div>
-        )}
-      </section>
 
-      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-terminal-accent">Broker Connectivity</h2>
-            <p className="text-xs text-slate-400">Connect Alpaca account via OAuth app credentials</p>
-          </div>
-          <a
-            href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
-            className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
-          >
-            Connect Alpaca OAuth
-          </a>
+        <div className={`mt-3 rounded border px-3 py-3 text-xs ${
+          isConnected
+            ? "border-green-500/40 bg-green-500/10 text-green-200"
+            : "border-amber-500/40 bg-amber-500/10 text-amber-200"
+        }`}>
+          <div className="font-semibold">{isConnected ? "Connected to Alpaca" : "Not Connected to Alpaca"}</div>
+          <div className="mt-1">Permissions: {permissionsLabel}</div>
+          <div className="mt-1">Mode: {modeLabel}</div>
         </div>
+
         {oauthStatus !== "idle" && (
           <div
             className={`mt-3 rounded border px-3 py-2 text-xs ${

@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 
 from app.models.schemas import (
     AlpacaAccountPnlResponse,
@@ -14,6 +15,8 @@ from app.models.schemas import (
     AlpacaRequestIdEntry,
     AlpacaRequestIdsResponse,
 )
+from app.db.models import BrokerOAuthConnection
+from app.db.session import get_session
 from app.services.alpaca_client import alpaca_client
 from app.core.config import settings
 from app.services.request_id_store import request_id_store
@@ -21,6 +24,7 @@ from app.services.request_id_store import request_id_store
 router = APIRouter(prefix="/alpaca", tags=["alpaca"])
 
 _OAUTH_STATE_TTL_SECONDS = 600
+_OAUTH_PROVIDER = "alpaca"
 _oauth_states: dict[str, dict] = {}
 
 
@@ -37,6 +41,97 @@ def _alpaca_oauth_ready() -> bool:
         and settings.alpaca_connect_client_secret
         and settings.alpaca_connect_redirect_uri
     )
+
+
+def _save_oauth_tokens(payload: dict) -> None:
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        connection = session.execute(
+            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+        ).scalar_one_or_none()
+        if connection is None:
+            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER)
+            session.add(connection)
+
+        # Stored for broker continuity only; never returned in API responses.
+        connection.connected = True
+        connection.access_token = payload.get("access_token")
+        connection.refresh_token = payload.get("refresh_token")
+        connection.token_type = payload.get("token_type")
+        connection.scope = payload.get("scope")
+        connection.expires_in = payload.get("expires_in")
+        connection.obtained_at = now
+        connection.disconnected_at = None
+        connection.last_error = None
+        connection.updated_at = now
+
+
+def _mark_oauth_error(message: str) -> None:
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        connection = session.execute(
+            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+        ).scalar_one_or_none()
+        if connection is None:
+            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER)
+            session.add(connection)
+        connection.last_error = message
+        connection.updated_at = now
+
+
+@router.get("/oauth/status", summary="Get persisted Alpaca OAuth connection status")
+def get_oauth_status() -> dict:
+    with get_session() as session:
+        connection = session.execute(
+            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+        ).scalar_one_or_none()
+
+    connected = bool(connection and connection.connected and connection.access_token)
+    return {
+        "provider": "alpaca",
+        "connected": connected,
+        "permissions": "Trading (User Authorized)" if connected else "Not Authorized",
+        "paper_mode": settings.alpaca_paper,
+        "mode": "Paper Trading" if settings.alpaca_paper else "Live Trading",
+        "token_type": connection.token_type if connection else None,
+        "scope": connection.scope if connection else None,
+        "obtained_at": connection.obtained_at.isoformat() if connection and connection.obtained_at else None,
+        "expires_in": connection.expires_in if connection else None,
+        "updated_at": connection.updated_at.isoformat() if connection and connection.updated_at else None,
+        "oauth_ready": _alpaca_oauth_ready(),
+    }
+
+
+@router.post("/oauth/disconnect", summary="Disconnect Alpaca OAuth and clear persisted broker tokens")
+def disconnect_oauth() -> dict:
+    now = datetime.now(timezone.utc)
+    with get_session() as session:
+        connection = session.execute(
+            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+        ).scalar_one_or_none()
+        if connection is None:
+            return {
+                "provider": "alpaca",
+                "disconnected": True,
+                "connected": False,
+                "updated_at": now.isoformat(),
+            }
+
+        connection.connected = False
+        connection.access_token = None
+        connection.refresh_token = None
+        connection.token_type = None
+        connection.scope = None
+        connection.expires_in = None
+        connection.disconnected_at = now
+        connection.updated_at = now
+
+    return {
+        "provider": "alpaca",
+        "disconnected": True,
+        "connected": False,
+        "updated_at": now.isoformat(),
+    }
 
 
 @router.get(
@@ -167,9 +262,13 @@ def complete_oauth_flow(
         resp.raise_for_status()
         payload = resp.json()
     except httpx.HTTPStatusError as err:
+        _mark_oauth_error(str(err.response.text or err))
         _raise_alpaca_error(err)
     except Exception as err:
+        _mark_oauth_error(str(err))
         raise HTTPException(status_code=502, detail=f"OAuth token exchange failed: {err}")
+
+    _save_oauth_tokens(payload)
 
     # Do not return raw tokens to frontend callback handlers.
     return {
