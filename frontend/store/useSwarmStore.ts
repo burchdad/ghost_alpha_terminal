@@ -13,7 +13,7 @@ import type {
   SwarmStatusResponse,
 } from "../types/swarm";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type LiveTransport = "websocket" | "polling";
 
@@ -44,11 +44,17 @@ type SwarmStore = {
 let socket: WebSocket | null = null;
 let pollHandle: ReturnType<typeof setInterval> | null = null;
 
-function wsUrlFromApiBase(base: string): string {
+function wsUrlFromApiBase(base: string): string | null {
+  if (base.startsWith("/")) {
+    return null;
+  }
   if (base.startsWith("https://")) {
     return base.replace("https://", "wss://");
   }
-  return base.replace("http://", "ws://");
+  if (base.startsWith("http://")) {
+    return base.replace("http://", "ws://");
+  }
+  return null;
 }
 
 function dedupeAndSort(records: SwarmCycleResponse[]): SwarmCycleResponse[] {
@@ -211,6 +217,11 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
     }, 8000);
 
     const wsBase = wsUrlFromApiBase(API_BASE);
+    if (!wsBase) {
+      set({ websocketConnected: false, transport: "polling" });
+      return;
+    }
+
     const ws = new WebSocket(`${wsBase}/ws/agents/live`);
     socket = ws;
 

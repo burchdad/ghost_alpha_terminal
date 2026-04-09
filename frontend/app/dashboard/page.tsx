@@ -13,7 +13,7 @@ import PortfolioPanel from "../../components/PortfolioPanel";
 import SignalPanel from "../../components/SignalPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type ForecastResponse = {
   symbol: string;
