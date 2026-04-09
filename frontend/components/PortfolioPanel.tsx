@@ -15,6 +15,8 @@ type PortfolioData = {
   total_exposure: number;
   risk_exposure_pct: number;
   sector_concentration: Record<string, number>;
+  strategy_exposure: Record<string, number>;
+  available_buying_power: number;
   max_concurrent_trades: number;
 };
 
@@ -33,6 +35,7 @@ export default function PortfolioPanel({ portfolio }: { portfolio: PortfolioData
       <div className="mb-3 grid grid-cols-2 gap-2 text-xs text-slate-300">
         <div className="rounded border border-terminal-line bg-black/20 p-2">Balance: {portfolio.account_balance.toFixed(2)}</div>
         <div className="rounded border border-terminal-line bg-black/20 p-2">Exposure: {portfolio.total_exposure.toFixed(2)}</div>
+        <div className="rounded border border-terminal-line bg-black/20 p-2">Buying Power: {portfolio.available_buying_power.toFixed(2)}</div>
         <div className="rounded border border-terminal-line bg-black/20 p-2">
           Risk: {(portfolio.risk_exposure_pct * 100).toFixed(1)}%
         </div>
@@ -47,6 +50,11 @@ export default function PortfolioPanel({ portfolio }: { portfolio: PortfolioData
         {Object.entries(portfolio.sector_concentration).map(([sector, amount]) => (
           <p key={sector}>
             {sector}: {amount.toFixed(2)}
+          </p>
+        ))}
+        {Object.entries(portfolio.strategy_exposure).map(([strategy, amount]) => (
+          <p key={strategy}>
+            {strategy}: {amount.toFixed(2)}
           </p>
         ))}
       </div>

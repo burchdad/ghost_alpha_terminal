@@ -8,6 +8,7 @@ from threading import Lock
 
 @dataclass
 class Position:
+    cycle_id: str | None
     symbol: str
     strategy: str
     side: str
@@ -43,7 +44,7 @@ class PortfolioManager:
             if max_concurrent_trades is not None and max_concurrent_trades >= 1:
                 self._max_concurrent_trades = max_concurrent_trades
 
-    def can_open_position(self, *, symbol: str, notional: float) -> tuple[bool, str]:
+    def can_open_position(self, *, symbol: str, strategy: str, notional: float) -> tuple[bool, str]:
         with self._lock:
             if len(self._positions) >= self._max_concurrent_trades:
                 return False, "Max concurrent trades reached"
@@ -57,11 +58,16 @@ class PortfolioManager:
             if sector_exposure + notional > self._balance * 0.6:
                 return False, "Sector concentration too high"
 
+            strategy_exposure = sum(pos.notional for pos in self._positions if pos.strategy == strategy)
+            if strategy_exposure + notional > self._balance * 0.35:
+                return False, "Strategy concentration too high"
+
             return True, ""
 
     def open_position(
         self,
         *,
+        cycle_id: str | None = None,
         symbol: str,
         strategy: str,
         side: str,
@@ -69,11 +75,12 @@ class PortfolioManager:
         units: float,
     ) -> dict:
         notional = entry_price * units
-        ok, reason = self.can_open_position(symbol=symbol, notional=notional)
+        ok, reason = self.can_open_position(symbol=symbol, strategy=strategy, notional=notional)
         if not ok:
             return {"accepted": False, "reason": reason}
 
         position = Position(
+            cycle_id=cycle_id,
             symbol=symbol.upper(),
             strategy=strategy,
             side=side,
@@ -88,13 +95,31 @@ class PortfolioManager:
 
         return {"accepted": True, "position": position}
 
+    def close_position(self, *, cycle_id: str, pnl: float) -> None:
+        with self._lock:
+            for idx, position in enumerate(self._positions):
+                if position.cycle_id == cycle_id:
+                    self._positions.pop(idx)
+                    break
+            self._balance += pnl
+
+    def buying_power(self) -> float:
+        with self._lock:
+            total_exposure = sum(p.notional for p in self._positions)
+            return max(self._balance - total_exposure, 0.0)
+
     def snapshot(self) -> dict:
         with self._lock:
             total_exposure = sum(p.notional for p in self._positions)
             sector_counts = Counter([p.sector for p in self._positions])
+            strategy_counts = Counter([p.strategy for p in self._positions])
             allocation = {
                 sector: round(sum(p.notional for p in self._positions if p.sector == sector), 2)
                 for sector in sector_counts
+            }
+            strategy_allocation = {
+                strategy: round(sum(p.notional for p in self._positions if p.strategy == strategy), 2)
+                for strategy in strategy_counts
             }
             return {
                 "account_balance": round(self._balance, 2),
@@ -114,6 +139,8 @@ class PortfolioManager:
                 "total_exposure": round(total_exposure, 2),
                 "risk_exposure_pct": round((total_exposure / self._balance) if self._balance > 0 else 0.0, 4),
                 "sector_concentration": allocation,
+                "strategy_exposure": strategy_allocation,
+                "available_buying_power": round(max(self._balance - total_exposure, 0.0), 2),
                 "max_concurrent_trades": self._max_concurrent_trades,
             }
 

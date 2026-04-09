@@ -17,14 +17,22 @@ type ControlStatus = {
   rolling_drawdown_pct: number;
   max_drawdown_limit_pct: number;
   rejected_trades: RejectedTrade[];
+  autonomous_enabled: boolean;
+  autonomous_interval_seconds: number;
+  autonomous_symbols: string[];
+  autonomous_cycles_run: number;
+  autonomous_last_run_at: string | null;
+  autonomous_last_error: string | null;
 };
 
 type Props = {
   control: ControlStatus | null;
   onToggleKillSwitch: (enabled: boolean) => void;
+  onToggleAutonomous: (enabled: boolean) => void;
+  onRunAutonomousOnce: () => void;
 };
 
-export default function ControlPanel({ control, onToggleKillSwitch }: Props) {
+export default function ControlPanel({ control, onToggleKillSwitch, onToggleAutonomous, onRunAutonomousOnce }: Props) {
   if (!control) {
     return <div className="panel rounded-xl p-4 text-sm text-slate-300">Loading control status...</div>;
   }
@@ -59,6 +67,39 @@ export default function ControlPanel({ control, onToggleKillSwitch }: Props) {
       >
         {control.trading_enabled ? "Disable Trading (Kill Switch)" : "Enable Trading"}
       </button>
+
+      <div className="mb-3 rounded border border-terminal-line bg-black/20 p-3 text-xs text-slate-300">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-semibold text-slate-400">Autonomous Paper Mode</span>
+          <span className={control.autonomous_enabled ? "text-terminal-bull" : "text-slate-400"}>
+            {control.autonomous_enabled ? "ENABLED" : "DISABLED"}
+          </span>
+        </div>
+        <p>Interval: {control.autonomous_interval_seconds}s</p>
+        <p>Symbols: {control.autonomous_symbols.join(", ") || "-"}</p>
+        <p>Cycles run: {control.autonomous_cycles_run}</p>
+        <p>Last run: {control.autonomous_last_run_at ? new Date(control.autonomous_last_run_at).toLocaleString() : "Never"}</p>
+        {control.autonomous_last_error && <p className="mt-1 text-terminal-bear">{control.autonomous_last_error}</p>}
+
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => onToggleAutonomous(!control.autonomous_enabled)}
+            className={`rounded border px-3 py-2 text-xs font-semibold transition ${
+              control.autonomous_enabled
+                ? "border-terminal-bear bg-terminal-bear/15 text-terminal-bear"
+                : "border-terminal-bull bg-terminal-bull/15 text-terminal-bull"
+            }`}
+          >
+            {control.autonomous_enabled ? "Stop Auto Mode" : "Start Auto Mode"}
+          </button>
+          <button
+            onClick={onRunAutonomousOnce}
+            className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-2 text-xs font-semibold text-terminal-accent transition"
+          >
+            Run Once
+          </button>
+        </div>
+      </div>
 
       <div className="text-xs text-slate-300">
         <p className="mb-1 font-semibold text-slate-400">Recent Rejections</p>

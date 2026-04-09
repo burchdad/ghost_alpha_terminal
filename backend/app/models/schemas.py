@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Literal
 
@@ -207,6 +209,8 @@ class ExecuteTradeResponse(BaseModel):
     risk_level: Literal["LOW", "MEDIUM", "HIGH"] = "HIGH"
     expected_value: float = 0
     risk_reward_ratio: float = 0
+    target_pct: float = 0
+    position_notional: float = 0
 
 
 class ActivePosition(BaseModel):
@@ -226,6 +230,8 @@ class PortfolioResponse(BaseModel):
     total_exposure: float
     risk_exposure_pct: float
     sector_concentration: dict[str, float]
+    strategy_exposure: dict[str, float]
+    available_buying_power: float
     max_concurrent_trades: int
 
 
@@ -246,6 +252,12 @@ class ControlStatusResponse(BaseModel):
     rolling_drawdown_pct: float
     max_drawdown_limit_pct: float
     rejected_trades: list[RejectedTradeLog]
+    autonomous_enabled: bool = False
+    autonomous_interval_seconds: int = 300
+    autonomous_symbols: list[str] = []
+    autonomous_cycles_run: int = 0
+    autonomous_last_run_at: datetime | None = None
+    autonomous_last_error: str | None = None
 
 
 class KillSwitchUpdateRequest(BaseModel):
@@ -353,6 +365,7 @@ class SwarmCycleResponse(BaseModel):
     execution_result: dict | None = None
     vetoed: bool
     veto_reason: str
+    allocation: AllocationDecision | None = None
     outcome: DecisionOutcome | None = None
     agent_attribution: list[AgentAttribution] = []
 
@@ -361,6 +374,7 @@ class SwarmStatusResponse(BaseModel):
     agents: list[dict]         # {name, confidence_score}
     total_cycles: int
     execution_mode: Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"]
+    current_weights: dict[str, dict[str, float]] | None = None
     latest_decision: dict | None = None
 
 
@@ -408,3 +422,56 @@ class AgentWeightsResponse(BaseModel):
 class AgentWeightHistoryResponse(BaseModel):
     snapshots: list[AgentWeightSnapshot]
     total_settled_cycles: int
+
+
+class AllocationDecision(BaseModel):
+    accepted: bool
+    target_pct: float = Field(ge=0, le=1)
+    recommended_notional: float
+    recommended_qty: float
+    max_risk_amount: float
+    stop_loss_pct: float
+    agent_agreement: float = Field(ge=0, le=1)
+    rationale: list[str]
+    reason: str
+
+
+class ExecutionHistoryEntry(BaseModel):
+    execution_id: str
+    cycle_id: str
+    symbol: str
+    regime: str
+    action: str
+    strategy: str
+    confidence: float
+    risk_level: str
+    allocation_pct: float
+    qty: float
+    notional: float
+    mode: str
+    submitted: bool
+    order_id: str | None = None
+    reason: str
+    error: str | None = None
+    timestamp: datetime
+    outcome_label: str | None = None
+    pnl: float | None = None
+
+
+class ExecutionHistoryResponse(BaseModel):
+    executions: list[ExecutionHistoryEntry]
+
+
+class AutonomousModeUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    interval_seconds: int | None = Field(default=None, ge=60, le=3600)
+    symbols: list[str] | None = None
+
+
+class AutonomousModeStatusResponse(BaseModel):
+    enabled: bool
+    interval_seconds: int
+    symbols: list[str]
+    last_run_at: datetime | None = None
+    last_error: str | None = None
+    cycles_run: int = 0

@@ -47,6 +47,7 @@ class ExecutionBridge:
         action: Literal["BUY", "SELL", "HOLD"],
         qty: float,
         confidence: float,
+        client_order_id: str | None = None,
     ) -> dict:
         """
         Submit to Alpaca if all gates pass.
@@ -64,10 +65,15 @@ class ExecutionBridge:
             "order_id": None,
             "error": None,
             "mode": self._mode,
+            "track_position": False,
         }
 
         if self._mode == "SIMULATION":
-            return {**base, "reason": "Execution mode is SIMULATION — decision logged only."}
+            return {
+                **base,
+                "track_position": action != "HOLD",
+                "reason": "Execution mode is SIMULATION — decision logged only.",
+            }
 
         # Gate 1 — HOLD: nothing to do
         if action == "HOLD":
@@ -108,6 +114,8 @@ class ExecutionBridge:
             "type": "market",
             "time_in_force": "day",
         }
+        if client_order_id:
+            order_payload["client_order_id"] = client_order_id
 
         try:
             response = alpaca_client.post(
@@ -126,6 +134,7 @@ class ExecutionBridge:
             return {
                 **base,
                 "submitted": True,
+                "track_position": True,
                 "order_id": order_id,
                 "reason": f"Order submitted: {side.upper()} {qty} {symbol} @ market.",
             }

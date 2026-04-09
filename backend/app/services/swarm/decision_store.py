@@ -31,8 +31,10 @@ class AgentCycleRecord:
     vetoed: bool = False
     veto_reason: str = ""
     request_id: str = field(default="")  # X-Request-ID from our middleware
+    allocation: dict | None = None
     outcome: dict | None = None
     agent_attribution: list[dict] = field(default_factory=list)
+    settlement_applied: bool = False
 
 
 class SwarmDecisionStore:
@@ -111,8 +113,8 @@ class SwarmDecisionStore:
                         "agent_name": sig.get("agent_name", "unknown"),
                         "prediction": prediction,
                         "confidence": confidence,
-                        "correct": correct,
-                        "pnl_contribution": contribution,
+                        "correct": bool(correct),
+                        "pnl_contribution": float(contribution),
                     }
                 )
 
@@ -121,11 +123,31 @@ class SwarmDecisionStore:
             # Feed settled outcomes into the dynamic weight engine
             # Import lazily to avoid circular import at module load time
             from app.services.swarm.weight_engine import dynamic_weight_engine  # noqa: PLC0415
+            from app.services.control_engine import control_engine  # noqa: PLC0415
+            from app.services.execution_journal import execution_journal  # noqa: PLC0415
+            from app.services.portfolio_manager import portfolio_manager  # noqa: PLC0415
+
             dynamic_weight_engine.record_outcome(
                 cycle_id=cycle_id,
                 regime=target.regime,
                 attribution=attributions,
             )
+
+            execution_journal.update_outcome(
+                cycle_id,
+                outcome_label=outcome_label,
+                pnl=pnl,
+            )
+
+            if (
+                target.execution_result
+                and not target.settlement_applied
+                and target.final_action != "HOLD"
+                and target.execution_result.get("track_position")
+            ):
+                portfolio_manager.close_position(cycle_id=cycle_id, pnl=pnl)
+                control_engine.update_balance(pnl=pnl)
+                target.settlement_applied = True
 
             return target
 

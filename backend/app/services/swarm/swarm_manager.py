@@ -18,6 +18,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
+from app.services.capital_allocator import AllocationInput, capital_allocator
+from app.services.control_engine import control_engine
+from app.services.execution_journal import execution_journal
+from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.base_agent import MarketSnapshot, SwarmSignal
 from app.services.swarm.decision_store import AgentCycleRecord, swarm_decision_store
 from app.services.swarm.execution_bridge import execution_bridge
@@ -66,12 +70,15 @@ class AgentSwarmManager:
             regime=regime,
             regime_confidence=regime_confidence,
         )
+        cycle_id = uuid.uuid4().hex
 
         # 1. Collect signals
         signals: list[SwarmSignal] = [agent.run(snapshot) for agent in self._signal_agents]
 
         # 2. Weighted vote
         final_action, final_confidence, consensus_reasoning = self._aggregate(signals, snapshot)
+        risk_level = self._risk_level(snapshot.regime, final_confidence)
+        agreement = self._agent_agreement(signals, final_action)
 
         # 3. Risk veto
         self._risk.analyze_market(snapshot)
@@ -80,17 +87,71 @@ class AgentSwarmManager:
             final_action = "HOLD"
             consensus_reasoning = veto_reason
 
-        # 4. Submit to Alpaca (paper)
-        exec_result = execution_bridge.submit(
-            symbol=symbol.upper(),
-            action=final_action,
-            qty=default_qty,
-            confidence=final_confidence,
+        portfolio_state = portfolio_manager.snapshot()
+        control_state = control_engine.status()
+        allocation = capital_allocator.compute(
+            AllocationInput(
+                account_balance=float(portfolio_state["account_balance"]),
+                current_price=snapshot.current_price,
+                confidence=final_confidence,
+                regime=regime,
+                risk_level=risk_level,
+                agent_agreement=agreement,
+                drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+                current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
+            )
         )
+
+        if final_action != "HOLD" and allocation["accepted"]:
+            can_open, open_reason = portfolio_manager.can_open_position(
+                symbol=symbol.upper(),
+                strategy="SWARM_MARKET",
+                notional=float(allocation["recommended_notional"]),
+            )
+            if not can_open:
+                allocation["accepted"] = False
+                allocation["reason"] = open_reason
+
+        # 4. Submit to Alpaca / simulation
+        if final_action != "HOLD" and not allocation["accepted"]:
+            exec_result = {
+                "submitted": False,
+                "action": final_action,
+                "order_id": None,
+                "error": None,
+                "mode": execution_bridge.get_mode(),
+                "track_position": False,
+                "reason": allocation["reason"],
+            }
+        else:
+            exec_result = execution_bridge.submit(
+                symbol=symbol.upper(),
+                action=final_action,
+                qty=allocation["recommended_qty"] if allocation["accepted"] else default_qty,
+                confidence=final_confidence,
+                client_order_id=f"swarm-{symbol.upper()}-{uuid.uuid4().hex[:12]}",
+            )
+
+        if final_action != "HOLD" and allocation["accepted"] and exec_result.get("track_position"):
+            opened = portfolio_manager.open_position(
+                cycle_id=cycle_id,
+                symbol=symbol.upper(),
+                strategy="SWARM_MARKET",
+                side="LONG" if final_action == "BUY" else "SHORT",
+                entry_price=snapshot.current_price,
+                units=allocation["recommended_qty"],
+            )
+            if not opened.get("accepted", False):
+                exec_result = {
+                    **exec_result,
+                    "submitted": False,
+                    "track_position": False,
+                    "reason": opened.get("reason", "Portfolio rejected position."),
+                }
 
         # 5. Build and store record
         record = AgentCycleRecord(
-            cycle_id=uuid.uuid4().hex,
+            cycle_id=cycle_id,
             symbol=symbol.upper(),
             timestamp=datetime.now(tz=timezone.utc),
             regime=regime,
@@ -110,6 +171,7 @@ class AgentSwarmManager:
             execution_result=exec_result,
             vetoed=vetoed,
             veto_reason=veto_reason,
+            allocation=allocation,
             agent_attribution=[
                 {
                     "agent_name": s.agent_name,
@@ -122,6 +184,24 @@ class AgentSwarmManager:
             ],
         )
         swarm_decision_store.append(record)
+
+        execution_journal.append(
+            cycle_id=cycle_id,
+            symbol=symbol.upper(),
+            regime=regime,
+            action=final_action,
+            strategy="SWARM_MARKET",
+            confidence=round(final_confidence, 3),
+            risk_level=risk_level,
+            allocation_pct=float(allocation["target_pct"]),
+            qty=float(allocation["recommended_qty"]),
+            notional=float(allocation["recommended_notional"]),
+            mode=exec_result.get("mode", execution_bridge.get_mode()),
+            submitted=bool(exec_result.get("submitted", False)),
+            order_id=exec_result.get("order_id"),
+            reason=exec_result.get("reason", allocation.get("reason", "")),
+            error=exec_result.get("error"),
+        )
 
         logger.info(
             "swarm_cycle symbol=%s action=%s confidence=%.3f vetoed=%s submitted=%s",
@@ -145,6 +225,19 @@ class AgentSwarmManager:
             "latest_decision": _record_to_dict(swarm_decision_store.get_latest()),
             "current_weights": dynamic_weight_engine.get_all_regime_weights(),
         }
+
+    def _risk_level(self, regime: str, confidence: float) -> str:
+        if regime == "HIGH_VOLATILITY" or confidence < 0.58:
+            return "HIGH"
+        if regime == "RANGE_BOUND" or confidence < 0.70:
+            return "MEDIUM"
+        return "LOW"
+
+    def _agent_agreement(self, signals: list[SwarmSignal], final_action: str) -> float:
+        if not signals:
+            return 0.0
+        agreeing = sum(1 for sig in signals if sig.action == final_action)
+        return agreeing / len(signals)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -212,14 +305,28 @@ def _record_to_dict(r: AgentCycleRecord | None) -> dict | None:
         "timestamp": r.timestamp.isoformat(),
         "regime": r.regime,
         "final_action": r.final_action,
-        "final_confidence": r.final_confidence,
-        "vetoed": r.vetoed,
+        "final_confidence": _json_safe(r.final_confidence),
+        "vetoed": _json_safe(r.vetoed),
         "veto_reason": r.veto_reason,
-        "execution_submitted": r.execution_submitted,
-        "agent_signals": r.agent_signals,
-        "outcome": r.outcome,
-        "agent_attribution": r.agent_attribution,
+        "execution_submitted": _json_safe(r.execution_submitted),
+        "allocation": _json_safe(r.allocation),
+        "agent_signals": _json_safe(r.agent_signals),
+        "outcome": _json_safe(r.outcome),
+        "agent_attribution": _json_safe(r.agent_attribution),
     }
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            return value
+    return value
 
 
 swarm_manager = AgentSwarmManager()

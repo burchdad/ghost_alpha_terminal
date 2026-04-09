@@ -14,12 +14,15 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.models.schemas import (
     AgentAttribution,
+    AllocationDecision,
     AgentWeightHistoryResponse,
     AgentWeightSnapshot,
     AgentWeightEntry,
     AgentWeightsResponse,
     DecisionOutcome,
     DecisionOutcomeUpdateRequest,
+    ExecutionHistoryEntry,
+    ExecutionHistoryResponse,
     ExecutionModeResponse,
     ExecutionModeUpdateRequest,
     SwarmAgentSignal,
@@ -29,6 +32,7 @@ from app.models.schemas import (
     SwarmStatusResponse,
 )
 from app.services.swarm.decision_store import swarm_decision_store
+from app.services.execution_journal import execution_journal
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
 from app.services.swarm.weight_engine import dynamic_weight_engine
@@ -47,6 +51,7 @@ def get_agent_status() -> SwarmStatusResponse:
         agents=raw["agents"],
         total_cycles=raw["total_cycles"],
         execution_mode=raw["execution_mode"],
+        current_weights=raw.get("current_weights"),
         latest_decision=raw["latest_decision"],
     )
 
@@ -134,6 +139,41 @@ def get_decisions(
     return SwarmDecisionListResponse(
         decisions=decisions,
         total_cycles=swarm_decision_store.total_cycles,
+    )
+
+
+@router.get(
+    "/execution-history",
+    response_model=ExecutionHistoryResponse,
+    summary="Recent execution and allocation journal",
+)
+def get_execution_history(limit: int = Query(default=50, ge=1, le=200)) -> ExecutionHistoryResponse:
+    entries = execution_journal.recent(limit)
+    return ExecutionHistoryResponse(
+        executions=[
+            ExecutionHistoryEntry(
+                execution_id=item.execution_id,
+                cycle_id=item.cycle_id,
+                symbol=item.symbol,
+                regime=item.regime,
+                action=item.action,
+                strategy=item.strategy,
+                confidence=item.confidence,
+                risk_level=item.risk_level,
+                allocation_pct=item.allocation_pct,
+                qty=item.qty,
+                notional=item.notional,
+                mode=item.mode,
+                submitted=item.submitted,
+                order_id=item.order_id,
+                reason=item.reason,
+                error=item.error,
+                timestamp=item.timestamp,
+                outcome_label=item.outcome_label,
+                pnl=item.pnl,
+            )
+            for item in reversed(entries)
+        ]
     )
 
 
@@ -228,6 +268,7 @@ def _to_response(r) -> SwarmCycleResponse:  # type: ignore[return]
         execution_result=r.execution_result,
         vetoed=r.vetoed,
         veto_reason=r.veto_reason or "",
+        allocation=AllocationDecision(**r.allocation) if r.allocation else None,
         outcome=DecisionOutcome(**r.outcome) if r.outcome else None,
         agent_attribution=[AgentAttribution(**item) for item in (r.agent_attribution or [])],
     )

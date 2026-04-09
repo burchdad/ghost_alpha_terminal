@@ -11,6 +11,7 @@ import OptionsPanel from "../../components/OptionsPanel";
 import PerformancePanel from "../../components/PerformancePanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
 import SignalPanel from "../../components/SignalPanel";
+import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
@@ -157,6 +158,8 @@ type PortfolioResponse = {
   total_exposure: number;
   risk_exposure_pct: number;
   sector_concentration: Record<string, number>;
+  strategy_exposure: Record<string, number>;
+  available_buying_power: number;
   max_concurrent_trades: number;
 };
 
@@ -177,6 +180,38 @@ type ControlResponse = {
   rolling_drawdown_pct: number;
   max_drawdown_limit_pct: number;
   rejected_trades: RejectedTradeLog[];
+  autonomous_enabled: boolean;
+  autonomous_interval_seconds: number;
+  autonomous_symbols: string[];
+  autonomous_cycles_run: number;
+  autonomous_last_run_at: string | null;
+  autonomous_last_error: string | null;
+};
+
+type ExecutionHistoryEntry = {
+  execution_id: string;
+  cycle_id: string;
+  symbol: string;
+  regime: string;
+  action: string;
+  strategy: string;
+  confidence: number;
+  risk_level: string;
+  allocation_pct: number;
+  qty: number;
+  notional: number;
+  mode: string;
+  submitted: boolean;
+  order_id: string | null;
+  reason: string;
+  error: string | null;
+  timestamp: string;
+  outcome_label: string | null;
+  pnl: number | null;
+};
+
+type ExecutionHistoryResponse = {
+  executions: ExecutionHistoryEntry[];
 };
 
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
@@ -200,6 +235,7 @@ export default function DashboardPage() {
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [control, setControl] = useState<ControlResponse | null>(null);
+  const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
 
   const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
 
@@ -209,7 +245,7 @@ export default function DashboardPage() {
       const start = new Date();
       start.setDate(end.getDate() - 240);
 
-      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes] = await Promise.all([
+      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes] = await Promise.all([
         fetch(`${API_BASE}/forecast/${symbol}`),
         fetch(`${API_BASE}/options/${symbol}`),
         fetch(`${API_BASE}/signal/${symbol}`),
@@ -230,6 +266,7 @@ export default function DashboardPage() {
         }),
         fetch(`${API_BASE}/portfolio`),
         fetch(`${API_BASE}/control`),
+        fetch(`${API_BASE}/agents/execution-history?limit=25`),
       ]);
 
       const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -240,6 +277,7 @@ export default function DashboardPage() {
       const backtestData = await parseJsonOrNull<BacktestResponse>(backtestRes);
       const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
       const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+      const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
 
       setForecast(fData);
       setOptions(oData);
@@ -249,6 +287,7 @@ export default function DashboardPage() {
       setBacktest(backtestData);
       setPortfolio(portfolioData);
       setControl(controlData);
+      setExecutionHistory(historyData?.executions ?? []);
     }
 
     fetchAll().catch((error: unknown) => {
@@ -266,6 +305,34 @@ export default function DashboardPage() {
     const controlRes = await fetch(`${API_BASE}/control`);
     const controlData = (await controlRes.json()) as ControlResponse;
     setControl(controlData);
+  }
+
+  async function refreshControlAndHistory() {
+    const [controlRes, historyRes, portfolioRes] = await Promise.all([
+      fetch(`${API_BASE}/control`),
+      fetch(`${API_BASE}/agents/execution-history?limit=25`),
+      fetch(`${API_BASE}/portfolio`),
+    ]);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+    const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+    setControl(controlData);
+    setExecutionHistory(historyData?.executions ?? []);
+    setPortfolio(portfolioData);
+  }
+
+  async function handleToggleAutonomous(enabled: boolean) {
+    await fetch(`${API_BASE}/control/autonomous`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    await refreshControlAndHistory();
+  }
+
+  async function handleRunAutonomousOnce() {
+    await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
+    await refreshControlAndHistory();
   }
 
   return (
@@ -329,7 +396,13 @@ export default function DashboardPage() {
             </p>
           </div>
           <PortfolioPanel portfolio={portfolio} />
-          <ControlPanel control={control} onToggleKillSwitch={handleToggleKillSwitch} />
+          <ExecutionHistoryPanel history={executionHistory} />
+          <ControlPanel
+            control={control}
+            onToggleKillSwitch={handleToggleKillSwitch}
+            onToggleAutonomous={handleToggleAutonomous}
+            onRunAutonomousOnce={handleRunAutonomousOnce}
+          />
         </aside>
       </section>
     </main>
