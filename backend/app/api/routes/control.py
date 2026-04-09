@@ -15,6 +15,7 @@ from app.models.schemas import (
 )
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
+from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.portfolio_manager import portfolio_manager
@@ -27,8 +28,41 @@ router = APIRouter(prefix="/control", tags=["control"])
 def get_control_status() -> ControlStatusResponse:
     status = control_engine.status()
     auto = autonomous_runner.status()
+    merged_rejections = list(status.get("rejected_trades", []))
+
+    try:
+        # Include execution-level non-submitted outcomes (e.g., HOLD / veto / broker rejection)
+        # so Safety & Control aligns with Decision Replay and audit trail status.
+        executions = execution_journal.recent(limit=200)
+        for entry in executions:
+            if entry.submitted:
+                continue
+            merged_rejections.append(
+                {
+                    "timestamp": entry.timestamp,
+                    "symbol": entry.symbol,
+                    "reason": entry.reason or "Execution not submitted.",
+                }
+            )
+    except Exception:
+        pass
+
+    deduped: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in sorted(merged_rejections, key=lambda x: x.get("timestamp")):
+        ts = item.get("timestamp")
+        key = (str(ts), str(item.get("symbol", "")), str(item.get("reason", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    # Keep payload bounded while preserving chronological order for UI slice(-5).
+    deduped = deduped[-200:]
+
     return ControlStatusResponse(
         **status,
+        rejected_trades=deduped,
         autonomous_enabled=auto["enabled"],
         autonomous_interval_seconds=auto["interval_seconds"],
         autonomous_symbols=auto["symbols"],
