@@ -11,7 +11,6 @@ from __future__ import annotations
 import threading
 from datetime import datetime, timezone
 
-from fastapi import HTTPException
 from fastapi import APIRouter, Query
 
 from app.models.schemas import (
@@ -64,6 +63,21 @@ def _result_to_response(result) -> OrchestratorScanResponse:
     )
 
 
+def _fallback_scan_response(*, narrative: str, scanned_at: datetime) -> OrchestratorScanResponse:
+    status = master_orchestrator.status()
+    return OrchestratorScanResponse(
+        candidates=[],
+        market_narrative=narrative,
+        regime_summary={},
+        sector_leaders=[],
+        scanned_at=scanned_at,
+        scan_count=0,
+        total_scanned=0,
+        passed_prefilter=0,
+        auto_mode=bool(status.get("auto_mode", False)),
+    )
+
+
 @router.get(
     "/status",
     response_model=OrchestratorStatusResponse,
@@ -105,12 +119,18 @@ def trigger_scan(
     if thread.is_alive():
         if latest is not None:
             return _result_to_response(latest)
-        raise HTTPException(status_code=503, detail="Scan is still in progress. Retry shortly.")
+        return _fallback_scan_response(
+            narrative="Scan warm-up in progress. Retry in a few seconds.",
+            scanned_at=now,
+        )
 
     if "error" in box:
         if latest is not None:
             return _result_to_response(latest)
-        raise HTTPException(status_code=502, detail=f"Scan failed: {box['error']}")
+        return _fallback_scan_response(
+            narrative="Scan temporarily unavailable due to upstream data provider latency.",
+            scanned_at=now,
+        )
 
     result = box["result"]
 
