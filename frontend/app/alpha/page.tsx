@@ -1,15 +1,190 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import ControlPanel from "../../components/ControlPanel";
+import ContextPanel from "../../components/ContextPanel";
+import DecisionAuditPanel from "../../components/DecisionAuditPanel";
+import DecisionReplayPanel from "../../components/DecisionReplayPanel";
+import GoalPanel from "../../components/GoalPanel";
+import NewsPanel from "../../components/NewsPanel";
 import OrchestratorPanel, {
   type OrchestratorScan,
   type OrchestratorStatus,
 } from "../../components/OrchestratorPanel";
+import PortfolioPanel from "../../components/PortfolioPanel";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
+
+type PortfolioActivePosition = {
+  symbol: string;
+  strategy: string;
+  side: string;
+  entry_price: number;
+  units: number;
+  notional: number;
+  sector: string;
+  opened_at: string;
+};
+
+type PortfolioResponse = {
+  account_balance: number;
+  active_positions: PortfolioActivePosition[];
+  total_exposure: number;
+  risk_exposure_pct: number;
+  sector_concentration: Record<string, number>;
+  strategy_exposure: Record<string, number>;
+  available_buying_power: number;
+  max_concurrent_trades: number;
+};
+
+type RejectedTradeLog = {
+  timestamp: string;
+  symbol: string;
+  reason: string;
+};
+
+type ControlResponse = {
+  trading_enabled: boolean;
+  system_status: "ACTIVE" | "PAUSED";
+  mode: "SAFE" | "NORMAL";
+  daily_pnl: number;
+  daily_loss: number;
+  daily_loss_limit: number;
+  rolling_drawdown: number;
+  rolling_drawdown_pct: number;
+  max_drawdown_limit_pct: number;
+  rejected_trades: RejectedTradeLog[];
+  autonomous_enabled: boolean;
+  autonomous_interval_seconds: number;
+  autonomous_symbols: string[];
+  autonomous_cycles_run: number;
+  autonomous_last_run_at: string | null;
+  autonomous_last_error: string | null;
+};
+
+type ExecutionModeResponse = {
+  mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+};
+
+type GoalStatusResponse = {
+  enabled: boolean;
+  start_capital: number | null;
+  target_capital: number | null;
+  timeframe_days: number | null;
+  elapsed_days: number;
+  remaining_days: number | null;
+  required_total_return: number;
+  required_daily_return: number;
+  required_daily_return_remaining: number;
+  trajectory_expected_capital: number | null;
+  trajectory_gap_pct: number;
+  goal_pressure_multiplier: number;
+  success_probability: number;
+  stress_level: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";
+  target_unrealistic: boolean;
+  suggested_target_capital: number | null;
+  suggested_timeframe_days: number | null;
+  message: string;
+};
+
+type ContextSignalResponse = {
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  signal_validation: {
+    recency_decay_factor: number;
+    average_source_weight: number;
+    confirmation_count: number;
+    confirmation_factor: number;
+    confirmation_label: string;
+    validated_signal_strength: number;
+    source_details: Array<{
+      source: string;
+      source_weight: number;
+      age_hours: number;
+      decay_factor: number;
+      effective_weight: number;
+    }>;
+  };
+  market_reaction: {
+    price_reaction_pct: number;
+    volume_spike_ratio: number;
+    breakout: string;
+    expected_direction: string;
+    price_direction: string;
+    correlation_score: number;
+    actionability_multiplier: number;
+  };
+  modifiers: {
+    confidence_modifier: number;
+    risk_modifier: number;
+    opportunity_boost: number;
+  };
+  rationale: string;
+};
+
+type NewsSignalResponse = {
+  symbol: string;
+  timestamp: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  rationale: string;
+};
+
+type NewsAuditEntry = {
+  timestamp: string;
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+};
+
+type NewsAuditResponse = {
+  entries: NewsAuditEntry[];
+};
+
+type DecisionAuditSummary = {
+  audit_id: string;
+  timestamp: string;
+  decision_type: string;
+  symbol: string;
+  status: string;
+  cycle_id: string | null;
+};
+
+type DecisionAuditSummaryListResponse = {
+  entries: DecisionAuditSummary[];
+};
+
+type DecisionReplayStep = {
+  stage: string;
+  title: string;
+  summary: string;
+  payload: Record<string, unknown>;
+};
+
+type DecisionReplayResponse = {
+  audit_id: string;
+  symbol: string;
+  decision_type: string;
+  status: string;
+  generated_at: string;
+  replay_steps: DecisionReplayStep[];
+  why_not: string[];
+};
 
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
@@ -23,10 +198,21 @@ async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
 }
 
 export default function AlphaPage() {
-  const router = useRouter();
   const [scan, setScan] = useState<OrchestratorScan | null>(null);
   const [status, setStatus] = useState<OrchestratorStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const [focusSymbol, setFocusSymbol] = useState("AAPL");
+
+  const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
+  const [control, setControl] = useState<ControlResponse | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionModeResponse["mode"] | null>(null);
+  const [goal, setGoal] = useState<GoalStatusResponse | null>(null);
+  const [contextSignal, setContextSignal] = useState<ContextSignalResponse | null>(null);
+  const [newsSignal, setNewsSignal] = useState<NewsSignalResponse | null>(null);
+  const [newsAudit, setNewsAudit] = useState<NewsAuditEntry[] | null>(null);
+  const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -41,6 +227,10 @@ export default function AlphaPage() {
       counts[c.strategy_type] = (counts[c.strategy_type] ?? 0) + 1;
     }
     return counts;
+  }, [scan]);
+
+  const topSymbols = useMemo(() => {
+    return (scan?.candidates ?? []).slice(0, 12).map((c) => c.symbol);
   }, [scan]);
 
   useEffect(() => {
@@ -74,6 +264,66 @@ export default function AlphaPage() {
     });
   }, []);
 
+  useEffect(() => {
+    async function fetchOperationalData() {
+      const [
+        portfolioRes,
+        controlRes,
+        executionModeRes,
+        goalRes,
+        contextRes,
+        newsRes,
+        newsAuditRes,
+        auditRes,
+      ] = await Promise.all([
+        fetch(`${API_BASE}/portfolio`),
+        fetch(`${API_BASE}/control`),
+        fetch(`${API_BASE}/agents/execution-mode`),
+        fetch(`${API_BASE}/agents/goal/status`),
+        fetch(`${API_BASE}/agents/context/${focusSymbol}`),
+        fetch(`${API_BASE}/agents/news/${focusSymbol}`),
+        fetch(`${API_BASE}/agents/news/audit?limit=25`),
+        fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+      ]);
+
+      const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+      const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+      const executionModeData = await parseJsonOrNull<ExecutionModeResponse>(executionModeRes);
+      const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+      const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+      const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
+      const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
+      const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
+
+      setPortfolio(portfolioData);
+      setControl(controlData);
+      setExecutionMode(executionModeData?.mode ?? null);
+      setGoal(goalData);
+      setContextSignal(contextData);
+      setNewsSignal(newsData);
+      setNewsAudit(newsAuditData?.entries ?? []);
+
+      const audits = auditData?.entries ?? [];
+      setDecisionAudit(audits);
+      const preferredId = selectedAuditId && audits.some((entry) => entry.audit_id === selectedAuditId)
+        ? selectedAuditId
+        : (audits[0]?.audit_id ?? null);
+      setSelectedAuditId(preferredId);
+
+      if (preferredId) {
+        const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${preferredId}`);
+        const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+        setDecisionReplay(replayData);
+      } else {
+        setDecisionReplay(null);
+      }
+    }
+
+    fetchOperationalData().catch((error: unknown) => {
+      console.error("Failed to fetch market operations data", error);
+    });
+  }, [focusSymbol]);
+
   async function handleScan() {
     setLoading(true);
     try {
@@ -99,8 +349,66 @@ export default function AlphaPage() {
     setStatus(statusData);
   }
 
-  function drillIntoSymbol(symbol: string) {
-    router.push(`/terminal?symbol=${encodeURIComponent(symbol)}`);
+  async function handleToggleKillSwitch(enabled: boolean) {
+    await fetch(`${API_BASE}/control/kill-switch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trading_enabled: enabled }),
+    });
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    setControl(controlData);
+  }
+
+  async function handleToggleAutonomous(enabled: boolean) {
+    await fetch(`${API_BASE}/control/autonomous`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    });
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    setControl(controlData);
+  }
+
+  async function handleRunAutonomousOnce() {
+    await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    setControl(controlData);
+  }
+
+  async function handleSetExecutionMode(mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") {
+    await fetch(`${API_BASE}/agents/execution-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    const modeRes = await fetch(`${API_BASE}/agents/execution-mode`);
+    const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
+    setExecutionMode(modeData?.mode ?? null);
+  }
+
+  async function handleSetGoal(payload: { start_capital: number; target_capital: number; timeframe_days: number }) {
+    await fetch(`${API_BASE}/agents/goal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const goalRes = await fetch(`${API_BASE}/agents/goal/status`);
+    const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
+    setGoal(goalData);
+  }
+
+  async function handleSelectAudit(auditId: string) {
+    setSelectedAuditId(auditId);
+    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
+    const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
+    setDecisionReplay(replayData);
+  }
+
+  function handleOrchestratorRunSymbol(symbol: string) {
+    setFocusSymbol(symbol);
   }
 
   return (
@@ -158,8 +466,61 @@ export default function AlphaPage() {
         loading={loading}
         onScan={handleScan}
         onToggleAutoMode={handleToggleAuto}
-        onRunSymbol={drillIntoSymbol}
+        onRunSymbol={handleOrchestratorRunSymbol}
       />
+
+      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-terminal-accent">Operational Focus Symbol</h2>
+          <Link
+            href={`/terminal?symbol=${encodeURIComponent(focusSymbol)}`}
+            className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/60 hover:text-terminal-accent"
+          >
+            Drill Into Deep Terminal ({focusSymbol})
+          </Link>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {(topSymbols.length > 0 ? topSymbols : [focusSymbol]).map((sym) => (
+            <button
+              key={sym}
+              onClick={() => setFocusSymbol(sym)}
+              className={`rounded border px-3 py-1 text-xs transition ${
+                focusSymbol === sym
+                  ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
+                  : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
+              }`}
+            >
+              {sym}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
+        <div className="space-y-4">
+          <PortfolioPanel portfolio={portfolio} />
+          <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
+          <DecisionAuditPanel
+            entries={decisionAudit}
+            selectedAuditId={selectedAuditId}
+            onSelect={handleSelectAudit}
+          />
+          <DecisionReplayPanel replay={decisionReplay} />
+        </div>
+
+        <aside className="space-y-4">
+          <NewsPanel signal={newsSignal} audit={newsAudit} />
+          <ContextPanel context={contextSignal} />
+          <ControlPanel
+            control={control}
+            executionMode={executionMode}
+            onToggleKillSwitch={handleToggleKillSwitch}
+            onToggleAutonomous={handleToggleAutonomous}
+            onRunAutonomousOnce={handleRunAutonomousOnce}
+            onSetExecutionMode={handleSetExecutionMode}
+          />
+        </aside>
+      </section>
     </main>
   );
 }
