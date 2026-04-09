@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter
 
 from app.models.schemas import (
@@ -23,6 +25,29 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
+
+
+def _coerce_timestamp(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except ValueError:
+            return None
+
+    return None
 
 
 @router.get("", response_model=ControlStatusResponse)
@@ -62,11 +87,23 @@ def get_control_status() -> ControlStatusResponse:
     except Exception:
         pass
 
+    normalized: list[dict] = []
+    for item in merged_rejections:
+        ts = _coerce_timestamp(item.get("timestamp"))
+        symbol = str(item.get("symbol", "")).strip().upper()
+        reason = str(item.get("reason", "")).strip()
+        if ts is None or not symbol or not reason:
+            continue
+        normalized.append({"timestamp": ts, "symbol": symbol, "reason": reason})
+
     deduped: list[dict] = []
     seen: set[tuple[str, str, str]] = set()
-    for item in sorted(merged_rejections, key=lambda x: x.get("timestamp")):
-        ts = item.get("timestamp")
-        key = (str(ts), str(item.get("symbol", "")), str(item.get("reason", "")))
+    for item in sorted(normalized, key=lambda x: x["timestamp"]):
+        key = (
+            item["timestamp"].isoformat(),
+            item["symbol"],
+            item["reason"],
+        )
         if key in seen:
             continue
         seen.add(key)
