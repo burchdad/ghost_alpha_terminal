@@ -90,27 +90,41 @@ class AgentSwarmManager:
         # 1. Collect signals
         signals: list[SwarmSignal] = [agent.run(snapshot) for agent in self._signal_agents]
 
-        # 2. Weighted vote
-        final_action, final_confidence, consensus_reasoning = self._aggregate(signals, snapshot)
-        risk_level = self._risk_level(snapshot.regime, final_confidence)
-        agreement = self._agent_agreement(signals, final_action)
-        realized_vol = self._realized_volatility_pct(snapshot.close_prices)
-
-        # 3. Risk veto
-        self._risk.analyze_market(snapshot)
-        vetoed, veto_reason = self._risk.veto(final_action, final_confidence)
-        if vetoed:
-            final_action = "HOLD"
-            consensus_reasoning = veto_reason
-
-        self._execution_risk.analyze_market(snapshot)
-
         portfolio_state = portfolio_manager.snapshot()
         control_state = control_engine.status()
         context = context_intelligence.get_context(symbol.upper())
         goal_pressure = goal_engine.current_pressure(
             current_capital=float(portfolio_state["account_balance"])
         )
+        recent_win_rate = self._recent_win_rate(limit=30)
+
+        # 2. Weighted vote
+        final_action, final_confidence, consensus_reasoning = self._aggregate(
+            signals,
+            snapshot,
+            goal_pressure=goal_pressure,
+            drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+            recent_win_rate=recent_win_rate,
+        )
+        risk_level = self._risk_level(snapshot.regime, final_confidence)
+        agreement = self._agent_agreement(signals, final_action)
+        realized_vol = self._realized_volatility_pct(snapshot.close_prices)
+
+        # 3. Risk veto
+        self._risk.analyze_market(snapshot)
+        vetoed, veto_reason = self._risk.veto(
+            final_action,
+            final_confidence,
+            goal_pressure=goal_pressure,
+            drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+            recent_win_rate=recent_win_rate,
+        )
+        if vetoed:
+            final_action = "HOLD"
+            consensus_reasoning = veto_reason
+
+        self._execution_risk.analyze_market(snapshot)
+
         allocation = capital_allocator.compute(
             AllocationInput(
                 account_balance=float(portfolio_state["account_balance"]),
@@ -123,6 +137,7 @@ class AgentSwarmManager:
                 current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
                 realized_volatility_pct=realized_vol,
                 goal_pressure_multiplier=goal_pressure * float(context["modifiers"]["risk_modifier"]),
+                recent_win_rate=recent_win_rate,
             )
         )
 
@@ -164,6 +179,44 @@ class AgentSwarmManager:
             allocation["recommended_qty"] = governor.adjusted_qty
             allocation["reason"] = governor.reason
 
+        # Controlled probe lane:
+        # In persistent high-volatility HOLD environments, allow small directional probes
+        # when goal pressure is elevated and recent settled performance is acceptable.
+        if (
+            final_action == "HOLD"
+            and regime == "HIGH_VOLATILITY"
+            and allocation.get("accepted", False)
+            and goal_pressure > 1.15
+            and float(control_state["rolling_drawdown_pct"]) < 0.03
+            and recent_win_rate >= 0.50
+            and final_confidence >= 0.58
+        ):
+            probe_action = self._probe_direction(snapshot.close_prices)
+            if probe_action in {"BUY", "SELL"}:
+                final_action = probe_action
+                probe_scale = 0.35
+                allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * probe_scale, 2)
+                allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * probe_scale, 4)
+                allocation["reason"] = (
+                    "Probe lane: high-volatility hold converted to constrained directional entry "
+                    f"({probe_action}) under elevated goal pressure and healthy recent win rate."
+                )
+                consensus_reasoning = (
+                    consensus_reasoning
+                    + f" | Probe lane enabled: action={probe_action}, scale={probe_scale:.2f}, recent_win_rate={recent_win_rate:.2f}."
+                )
+                revetoed, reveto_reason = self._risk.veto(
+                    final_action,
+                    final_confidence,
+                    goal_pressure=goal_pressure,
+                    drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+                    recent_win_rate=recent_win_rate,
+                )
+                if revetoed:
+                    final_action = "HOLD"
+                    allocation["reason"] = reveto_reason
+                    consensus_reasoning = reveto_reason
+
         # 4. Submit to Alpaca / simulation
         if final_action != "HOLD" and not allocation["accepted"]:
             exec_result = {
@@ -202,6 +255,7 @@ class AgentSwarmManager:
                 "goal_pressure": round(goal_pressure, 4),
                 "realized_volatility_pct": round(realized_vol, 6),
                 "agent_agreement": round(agreement, 4),
+                "recent_win_rate": round(recent_win_rate, 4),
                 "context": context,
                 "governor": governor.__dict__,
             },
@@ -357,6 +411,10 @@ class AgentSwarmManager:
         self,
         signals: list[SwarmSignal],
         snapshot: MarketSnapshot,
+        *,
+        goal_pressure: float,
+        drawdown_pct: float,
+        recent_win_rate: float,
     ) -> tuple[str, float, str]:
         """
         Weighted-confidence majority vote using dynamic per-regime weights.
@@ -380,9 +438,17 @@ class AgentSwarmManager:
 
         normalised = weighted_score / max(total_weight, 1e-6)
 
-        if normalised > 0.15:
+        directional_threshold = 0.15
+        if goal_pressure > 1.20 and drawdown_pct < 0.03 and recent_win_rate >= 0.50:
+            directional_threshold -= 0.03
+        elif goal_pressure > 1.05 and drawdown_pct < 0.02 and recent_win_rate >= 0.45:
+            directional_threshold -= 0.015
+
+        directional_threshold = max(0.10, min(0.18, directional_threshold))
+
+        if normalised > directional_threshold:
             action: str = "BUY"
-        elif normalised < -0.15:
+        elif normalised < -directional_threshold:
             action = "SELL"
         else:
             action = "HOLD"
@@ -392,7 +458,7 @@ class AgentSwarmManager:
             f"{a.split('_')[0]}={w:.2f}" for a, w in active_weights.items()
         )
         reasoning = (
-            f"Weighted consensus score={normalised:.3f} [weights: {weight_summary}]. "
+            f"Weighted consensus score={normalised:.3f} threshold={directional_threshold:.3f} [weights: {weight_summary}]. "
             + " | ".join(reasoning_parts)
         )
 
@@ -404,6 +470,32 @@ class AgentSwarmManager:
             action,
         )
         return action, confidence, reasoning
+
+    def _recent_win_rate(self, limit: int = 30) -> float:
+        entries = execution_journal.recent(limit=limit)
+        settled = [
+            e
+            for e in entries
+            if e.outcome_label in {"WIN", "LOSS"} and e.submitted
+        ]
+        if not settled:
+            return 0.5
+        wins = sum(1 for e in settled if e.outcome_label == "WIN")
+        return wins / max(len(settled), 1)
+
+    def _probe_direction(self, close_prices: list[float]) -> str:
+        if len(close_prices) < 8:
+            return "HOLD"
+        short = sum(close_prices[-3:]) / 3
+        long = sum(close_prices[-8:]) / 8
+        if long <= 0:
+            return "HOLD"
+        drift = (short / long) - 1.0
+        if drift > 0.0025:
+            return "BUY"
+        if drift < -0.0025:
+            return "SELL"
+        return "HOLD"
 
 
 def _record_to_dict(r: AgentCycleRecord | None) -> dict | None:

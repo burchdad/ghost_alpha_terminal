@@ -15,6 +15,7 @@ class AllocationInput:
     current_exposure_pct: float
     realized_volatility_pct: float = 0.02
     goal_pressure_multiplier: float = 1.0
+    recent_win_rate: float = 0.5
 
 
 class CapitalAllocator:
@@ -25,6 +26,7 @@ class CapitalAllocator:
         exposure_pct = max(0.0, min(payload.current_exposure_pct, 1.0))
         realized_vol = max(0.0005, min(payload.realized_volatility_pct, 1.0))
         goal_pressure = max(0.5, min(payload.goal_pressure_multiplier, 2.5))
+        recent_win_rate = max(0.0, min(payload.recent_win_rate, 1.0))
         price = max(payload.current_price, 0.01)
         balance = max(payload.account_balance, 0.0)
 
@@ -73,7 +75,9 @@ class CapitalAllocator:
         target_pct *= agreement_multiplier
         target_pct *= drawdown_multiplier
         target_pct *= portfolio_risk_multiplier
-        target_pct *= goal_pressure
+        # Goal pressure is intentionally damped so stressed targets don't force oversized risk.
+        goal_pressure_effective = min(goal_pressure, 1.55)
+        target_pct *= goal_pressure_effective
         target_pct = max(0.0, min(target_pct, max_position_pct))
 
         notional = round(balance * target_pct, 2)
@@ -85,7 +89,22 @@ class CapitalAllocator:
         }.get(payload.risk_level, 0.028)
         stop_loss_pct = min(0.05, max(0.01, stop_loss_pct + realized_vol * 0.25))
         max_loss_amount = round(notional * stop_loss_pct, 2)
-        accepted = qty >= 0.0001 and notional >= 10.0 and confidence >= 0.53 and target_pct >= 0.001
+        regime_floor = {
+            "TRENDING": 0.52,
+            "RANGE_BOUND": 0.54,
+            "HIGH_VOLATILITY": 0.56,
+        }.get(payload.regime, 0.54)
+        # Better recent hit rate and elevated goal pressure can relax confidence floor modestly.
+        perf_adjustment = max(-0.03, min((recent_win_rate - 0.5) * 0.12, 0.02))
+        pressure_adjustment = -0.015 if goal_pressure > 1.25 and recent_win_rate >= 0.5 else 0.0
+        min_confidence_required = max(0.50, min(0.60, regime_floor - perf_adjustment + pressure_adjustment))
+
+        accepted = (
+            qty >= 0.0001
+            and notional >= 10.0
+            and confidence >= min_confidence_required
+            and target_pct >= 0.001
+        )
 
         rationale = [
             f"confidence_scalar={confidence_scalar:.3f}",
@@ -96,7 +115,9 @@ class CapitalAllocator:
             f"agreement_mult={agreement_multiplier:.2f}",
             f"drawdown_mult={drawdown_multiplier:.2f}",
             f"portfolio_risk_mult={portfolio_risk_multiplier:.2f}",
-            f"goal_pressure_mult={goal_pressure:.2f}",
+            f"goal_pressure_mult={goal_pressure_effective:.2f}",
+            f"recent_win_rate={recent_win_rate:.2f}",
+            f"min_conf_required={min_confidence_required:.3f}",
         ]
 
         return {

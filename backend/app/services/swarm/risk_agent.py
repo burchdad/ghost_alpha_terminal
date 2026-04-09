@@ -70,7 +70,15 @@ class RiskAgent(TradingAgent):
             ),
         )
 
-    def veto(self, proposed_action: str, consensus_confidence: float) -> tuple[bool, str]:
+    def veto(
+        self,
+        proposed_action: str,
+        consensus_confidence: float,
+        *,
+        goal_pressure: float = 1.0,
+        drawdown_pct: float = 0.0,
+        recent_win_rate: float = 0.5,
+    ) -> tuple[bool, str]:
         """
         Return (True, reason) if the RiskAgent vetoes the proposed action.
         Called by AgentSwarmManager before final decision.
@@ -83,10 +91,18 @@ class RiskAgent(TradingAgent):
 
         snap = self._snapshot
         if snap and snap.regime == "HIGH_VOLATILITY" and proposed_action != "HOLD":
-            if consensus_confidence < 0.72:
+            adaptive_conf_floor = 0.72
+            if goal_pressure > 1.2 and drawdown_pct < 0.03 and recent_win_rate >= 0.50:
+                adaptive_conf_floor -= 0.04
+            elif goal_pressure > 1.05 and drawdown_pct < 0.02 and recent_win_rate >= 0.45:
+                adaptive_conf_floor -= 0.02
+
+            adaptive_conf_floor = max(0.66, min(0.74, adaptive_conf_floor))
+
+            if consensus_confidence < adaptive_conf_floor:
                 return True, (
                     f"HIGH_VOLATILITY regime + low consensus confidence "
-                    f"({consensus_confidence:.2f} < 0.72). Risk agent forcing HOLD."
+                    f"({consensus_confidence:.2f} < {adaptive_conf_floor:.2f}). Risk agent forcing HOLD."
                 )
 
         if self._volume_ratio > _VOLUME_SPIKE_MULT and proposed_action != "HOLD":
