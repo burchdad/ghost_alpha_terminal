@@ -432,7 +432,8 @@ class OpportunityScanner:
                 prefiltered.append(result)
 
         prefiltered = sorted(prefiltered, key=lambda item: item["prefilter_score"], reverse=True)
-        candidates = prefiltered[: max(limit * 3, 10)]
+        candidate_window = min(max(limit * 2, 10), 30)
+        candidates = prefiltered[:candidate_window]
 
         opportunities: list[dict] = []
         for candidate in candidates:
