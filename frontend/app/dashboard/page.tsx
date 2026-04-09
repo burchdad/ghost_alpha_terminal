@@ -418,7 +418,31 @@ export default function DashboardPage() {
   const [orchestratorStatus, setOrchestratorStatus] = useState<OrchestratorStatus | null>(null);
   const [orchestratorLoading, setOrchestratorLoading] = useState(false);
 
-  const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
+  const watchlist = useMemo(() => {
+    const ranked = orchestratorScan?.candidates ?? [];
+    const top = ranked.slice(0, 25).map((item) => item.symbol);
+    const merged = [symbol, ...top];
+    return Array.from(new Set(merged)).slice(0, 30);
+  }, [orchestratorScan, symbol]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const qpSymbol = (new URLSearchParams(window.location.search).get("symbol") ?? "").toUpperCase();
+    if (qpSymbol && qpSymbol !== symbol) {
+      setSymbol(qpSymbol);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("symbol", symbol);
+    window.history.replaceState({}, "", url.toString());
+  }, [symbol]);
 
   useEffect(() => {
     async function fetchAll() {

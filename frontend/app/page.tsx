@@ -14,10 +14,10 @@ export default function HomePage() {
         </p>
         <div>
           <Link
-            href="/dashboard"
+            href="/alpha"
             className="inline-flex items-center rounded-md bg-terminal-accent px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
           >
-            Launch Dashboard
+            Launch Market Dashboard
           </Link>
         </div>
       </section>
