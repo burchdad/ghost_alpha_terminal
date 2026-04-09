@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.config import settings
 from app.services.brokers.base import (
     BrokerAdapter,
     BrokerCapabilities,
@@ -28,11 +29,16 @@ class CoinbaseBrokerAdapter(BrokerAdapter):
         )
 
     def submit_order(self, request: BrokerOrderRequest) -> BrokerOrderResult:
+        keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
         return BrokerOrderResult(
             broker=self.name,
             submitted=False,
             order_id=None,
-            reason="Coinbase adapter is not activated yet.",
+            reason=(
+                "Coinbase credentials detected but adapter signing/execution path is not activated yet."
+                if keys_present
+                else "Coinbase adapter is not activated and API keys are not configured."
+            ),
             error="NotImplemented",
         )
 

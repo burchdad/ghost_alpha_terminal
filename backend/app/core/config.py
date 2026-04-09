@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     alpaca_connect_token_url: str = "https://api.alpaca.markets/oauth/token"
 
     # ---------------------------------------------------------------------------
+    # Coinbase Advanced Trade API credentials
+    # ---------------------------------------------------------------------------
+    coinbase_api_key_name: str = ""
+    coinbase_api_private_key: str = ""
+
+    # ---------------------------------------------------------------------------
     # Misc
     # ---------------------------------------------------------------------------
     request_id_max_entries: int = 100

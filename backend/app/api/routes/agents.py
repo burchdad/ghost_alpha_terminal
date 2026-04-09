@@ -163,6 +163,40 @@ def get_broker_connections() -> BrokerConnectionsResponse:
             continue
 
         connected = bool(connection and connection.connected and connection.access_token)
+        coinbase_keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
+        if provider == "coinbase":
+            brokers.append(
+                BrokerConnectionEntryResponse(
+                    provider=provider,
+                    label="Coinbase",
+                    connected=coinbase_keys_present,
+                    connectable=True,
+                    disconnect_supported=False,
+                    auth_type="api_key",
+                    permissions="Crypto Trading (API Key Configured)" if coinbase_keys_present else "API Key Not Configured",
+                    mode="Crypto",
+                    status_label="Configured (Activation Pending)" if coinbase_keys_present else "Ready for API Key",
+                    connect_path=None,
+                    disconnect_path=None,
+                    updated_at=connection.updated_at if connection else None,
+                    last_error=connection.last_error if connection else None,
+                    notes=(
+                        "API key presence is detected. Order signing/execution adapter activation is still required "
+                        "before Coinbase orders can be submitted."
+                        if coinbase_keys_present
+                        else "Add COINBASE_API_KEY_NAME and COINBASE_API_PRIVATE_KEY in backend environment variables."
+                    ),
+                    capabilities={
+                        "supports_equities": bool(capability.get("supports_equities")),
+                        "supports_crypto": bool(capability.get("supports_crypto")),
+                        "supports_options": bool(capability.get("supports_options")),
+                        "supports_fractional": bool(capability.get("supports_fractional")),
+                        "supports_leverage": bool(capability.get("supports_leverage")),
+                    },
+                )
+            )
+            continue
+
         brokers.append(
             BrokerConnectionEntryResponse(
                 provider=provider,
