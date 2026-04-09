@@ -212,6 +212,8 @@ class ExecuteTradeResponse(BaseModel):
     risk_reward_ratio: float = 0
     target_pct: float = 0
     position_notional: float = 0
+    governor_decision: str | None = None
+    governor_reason: str | None = None
     explainability: dict | None = None
 
 
@@ -367,6 +369,8 @@ class SwarmCycleResponse(BaseModel):
     execution_result: dict | None = None
     vetoed: bool
     veto_reason: str
+    governor_decision: str | None = None
+    governor_reason: str | None = None
     explainability: dict | None = None
     allocation: AllocationDecision | None = None
     outcome: DecisionOutcome | None = None
@@ -531,6 +535,7 @@ class OpportunityRecommendation(BaseModel):
     data_classification: Literal["PUBLIC", "DERIVED", "RESTRICTED", "UNKNOWN"]
     sources_used: list[str]
     event_flags: list[str]
+    context_modifiers: dict | None = None
     risk_level: str
     expected_value: float
     target_pct: float
@@ -590,3 +595,49 @@ class NewsAuditResponse(BaseModel):
 
 class NewsSourceWhitelistResponse(BaseModel):
     sources: list[str]
+
+
+class ContextModifiersResponse(BaseModel):
+    confidence_modifier: float
+    risk_modifier: float
+    opportunity_boost: float
+
+
+class ContextSignalResponse(BaseModel):
+    symbol: str
+    data_classification: Literal["PUBLIC", "DERIVED", "RESTRICTED", "UNKNOWN"]
+    sources_used: list[str]
+    sentiment_score: float
+    news_momentum_score: float
+    event_strength: float
+    event_flags: list[str]
+    modifiers: ContextModifiersResponse
+    rationale: str
+
+
+class DecisionAuditSummaryResponse(BaseModel):
+    audit_id: str
+    timestamp: datetime
+    decision_type: str
+    symbol: str
+    status: str
+    cycle_id: str | None = None
+
+
+class DecisionAuditSummaryListResponse(BaseModel):
+    entries: list[DecisionAuditSummaryResponse]
+
+
+class DecisionAuditDetailResponse(BaseModel):
+    audit_id: str
+    timestamp: datetime
+    decision_type: str
+    symbol: str
+    status: str
+    cycle_id: str | None = None
+    goal_snapshot: dict
+    context_snapshot: dict
+    allocation_snapshot: dict
+    governor_snapshot: dict
+    execution_snapshot: dict
+    explainability_snapshot: dict

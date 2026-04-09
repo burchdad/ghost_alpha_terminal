@@ -21,6 +21,10 @@ from app.models.schemas import (
     AgentWeightsResponse,
     BrokerCapabilitiesResponse,
     CapitalSplitRecommendation,
+    ContextSignalResponse,
+    DecisionAuditDetailResponse,
+    DecisionAuditSummaryListResponse,
+    DecisionAuditSummaryResponse,
     DecisionOutcome,
     DecisionOutcomeUpdateRequest,
     ExecutionHistoryEntry,
@@ -42,6 +46,8 @@ from app.models.schemas import (
     SwarmStatusResponse,
 )
 from app.services.control_engine import control_engine
+from app.services.context_intelligence import context_intelligence
+from app.services.decision_audit_store import decision_audit_store
 from app.services.swarm.decision_store import swarm_decision_store
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
@@ -125,6 +131,41 @@ def get_news_signal(symbol: str) -> NewsSignalResponse:
 def get_news_audit(limit: int = Query(default=50, ge=1, le=500)) -> NewsAuditResponse:
     entries = news_intelligence.recent_audit(limit=limit)
     return NewsAuditResponse(entries=[NewsAuditEntryResponse(**item) for item in entries])
+
+
+@router.get(
+    "/context/{symbol}",
+    response_model=ContextSignalResponse,
+    summary="Context intelligence for a symbol (news/sentiment/event modifiers)",
+)
+def get_context_signal(symbol: str) -> ContextSignalResponse:
+    return ContextSignalResponse(**context_intelligence.get_context(symbol))
+
+
+@router.get(
+    "/audit/decisions",
+    response_model=DecisionAuditSummaryListResponse,
+    summary="List recent persisted decision audits",
+)
+def list_decision_audits(
+    limit: int = Query(default=50, ge=1, le=200),
+    symbol: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+) -> DecisionAuditSummaryListResponse:
+    rows = decision_audit_store.list_recent(limit=limit, symbol=symbol, status=status)
+    return DecisionAuditSummaryListResponse(entries=[DecisionAuditSummaryResponse(**row) for row in rows])
+
+
+@router.get(
+    "/audit/decisions/{audit_id}",
+    response_model=DecisionAuditDetailResponse,
+    summary="Get full decision audit payload by audit id",
+)
+def get_decision_audit(audit_id: str) -> DecisionAuditDetailResponse:
+    row = decision_audit_store.get_by_id(audit_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Decision audit not found: {audit_id}")
+    return DecisionAuditDetailResponse(**row)
 
 
 @router.post(
@@ -374,6 +415,8 @@ def _to_response(r) -> SwarmCycleResponse:  # type: ignore[return]
         execution_result=r.execution_result,
         vetoed=r.vetoed,
         veto_reason=r.veto_reason or "",
+        governor_decision=((r.execution_result or {}).get("explainability", {}).get("inputs", {}).get("governor", {}).get("decision")),
+        governor_reason=((r.execution_result or {}).get("explainability", {}).get("inputs", {}).get("governor", {}).get("reason")),
         explainability=(r.execution_result or {}).get("explainability"),
         allocation=AllocationDecision(**r.allocation) if r.allocation else None,
         outcome=DecisionOutcome(**r.outcome) if r.outcome else None,

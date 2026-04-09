@@ -140,6 +140,9 @@ API endpoints:
 - `GET /agents/news/sources` (whitelisted public news sources)
 - `GET /agents/news/{symbol}` (news/event signal for symbol)
 - `GET /agents/news/audit?limit=50` (news signal audit log)
+- `GET /agents/context/{symbol}` (context intelligence modifiers)
+- `GET /agents/audit/decisions?limit=50` (decision audit summary list)
+- `GET /agents/audit/decisions/{audit_id}` (full decision lineage payload)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
@@ -289,6 +292,33 @@ Swarm agent breakdown now exposes both:
 - Data classification is explicitly tagged (`PUBLIC`/`DERIVED`/`RESTRICTED`/`UNKNOWN`).
 - Signals are auditable with timestamp, source list, and classification.
 - Opportunity ranking includes a bounded news alpha boost.
+
+### Context Intelligence Layer
+
+- Context layer merges public news signals into bounded modifiers:
+	- `confidence_modifier`
+	- `risk_modifier`
+	- `opportunity_boost`
+- Compliance guardrail: `RESTRICTED`/`UNKNOWN` classifications cannot increase risk or confidence.
+
+### Portfolio Risk Governor
+
+- Final gate before execution to enforce portfolio-level controls:
+	- per-trade notional caps
+	- total exposure caps
+	- sector concentration caps
+	- drawdown hard stop
+- Governor can `ALLOW`, `RESIZE`, or `BLOCK` a decision with explicit rationale.
+
+### Decision Audit Trail
+
+- Every execute/swarm decision now persists a full audit envelope including:
+	- goal snapshot
+	- context snapshot
+	- allocation + governor snapshots
+	- execution snapshot
+	- explainability snapshot
+- Audit records are queryable by summary and by id for full traceability.
 
 ### Market Regime Detection
 

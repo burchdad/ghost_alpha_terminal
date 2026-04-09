@@ -20,11 +20,14 @@ from statistics import pstdev
 from typing import Literal
 
 from app.services.capital_allocator import AllocationInput, capital_allocator
+from app.services.context_intelligence import context_intelligence
 from app.services.control_engine import control_engine
+from app.services.decision_audit_store import decision_audit_store
 from app.services.explainability import build_explainability
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.portfolio_manager import portfolio_manager
+from app.services.portfolio_risk_governor import portfolio_risk_governor
 from app.services.swarm.base_agent import MarketSnapshot, SwarmSignal
 from app.services.swarm.decision_store import AgentCycleRecord, swarm_decision_store
 from app.services.swarm.execution_risk_agent import ExecutionRiskAgent
@@ -104,6 +107,7 @@ class AgentSwarmManager:
 
         portfolio_state = portfolio_manager.snapshot()
         control_state = control_engine.status()
+        context = context_intelligence.get_context(symbol.upper())
         goal_pressure = goal_engine.current_pressure(
             current_capital=float(portfolio_state["account_balance"])
         )
@@ -118,7 +122,7 @@ class AgentSwarmManager:
                 drawdown_pct=float(control_state["rolling_drawdown_pct"]),
                 current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
                 realized_volatility_pct=realized_vol,
-                goal_pressure_multiplier=goal_pressure,
+                goal_pressure_multiplier=goal_pressure * float(context["modifiers"]["risk_modifier"]),
             )
         )
 
@@ -140,6 +144,25 @@ class AgentSwarmManager:
         if exec_vetoed:
             allocation["accepted"] = False
             allocation["reason"] = exec_veto_reason
+
+        governor = portfolio_risk_governor.evaluate(
+            symbol=symbol.upper(),
+            proposed_notional=float(allocation.get("recommended_notional", 0.0)),
+            proposed_qty=float(allocation.get("recommended_qty", 0.0)),
+            account_balance=float(portfolio_state["account_balance"]),
+            current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
+            drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+            sector_concentration=dict(portfolio_state.get("sector_concentration", {})),
+        )
+        if governor.decision == "BLOCK":
+            allocation["accepted"] = False
+            allocation["recommended_notional"] = 0.0
+            allocation["recommended_qty"] = 0.0
+            allocation["reason"] = governor.reason
+        elif governor.decision == "RESIZE":
+            allocation["recommended_notional"] = governor.adjusted_notional
+            allocation["recommended_qty"] = governor.adjusted_qty
+            allocation["reason"] = governor.reason
 
         # 4. Submit to Alpaca / simulation
         if final_action != "HOLD" and not allocation["accepted"]:
@@ -179,6 +202,8 @@ class AgentSwarmManager:
                 "goal_pressure": round(goal_pressure, 4),
                 "realized_volatility_pct": round(realized_vol, 6),
                 "agent_agreement": round(agreement, 4),
+                "context": context,
+                "governor": governor.__dict__,
             },
         )
 
@@ -234,6 +259,19 @@ class AgentSwarmManager:
             ],
         )
         swarm_decision_store.append(record)
+
+        decision_audit_store.record(
+            decision_type="SWARM",
+            symbol=symbol.upper(),
+            status="ACCEPTED" if bool(record.execution_submitted) else "REJECTED",
+            cycle_id=cycle_id,
+            goal_snapshot=goal_engine.status(current_capital=float(portfolio_state["account_balance"])),
+            context_snapshot=context,
+            allocation_snapshot=allocation,
+            governor_snapshot=governor.__dict__,
+            execution_snapshot=exec_result,
+            explainability_snapshot=explainability,
+        )
 
         execution_journal.append(
             cycle_id=cycle_id,

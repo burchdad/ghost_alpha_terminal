@@ -168,6 +168,28 @@ This document is a quick reference for what the platform can currently do.
 - Symbol-level news signal endpoint:
   - `GET /agents/news/{symbol}`
 
+## Context Intelligence Layer
+
+- Context aggregation endpoint: `GET /agents/context/{symbol}`
+- Produces bounded modifiers for confidence, risk, and opportunity ranking.
+- Enforces compliance-safe behavior when data classification is not trusted.
+
+## Portfolio Risk Governor
+
+- Portfolio-level override layer after allocation and before execution.
+- Decisions:
+  - `ALLOW`
+  - `RESIZE`
+  - `BLOCK`
+- Protects against over-concentration, over-exposure, and excessive drawdown.
+
+## Decision Audit Trail
+
+- Persistent decision lineage with query endpoints:
+  - `GET /agents/audit/decisions`
+  - `GET /agents/audit/decisions/{audit_id}`
+- Stores normalized snapshots of goal, context, allocation, governor, execution, and explainability.
+
 ## Safety and Risk Controls
 
 - Guardrails reject low-quality or over-risk trades.

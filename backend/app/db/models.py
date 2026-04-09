@@ -56,3 +56,23 @@ class TradeOutcome(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
+
+
+class DecisionAudit(Base):
+    __tablename__ = "decision_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    audit_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    decision_type: Mapped[str] = mapped_column(String(32), index=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    cycle_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
+    goal_snapshot: Mapped[str] = mapped_column(Text, default="{}")
+    context_snapshot: Mapped[str] = mapped_column(Text, default="{}")
+    allocation_snapshot: Mapped[str] = mapped_column(Text, default="{}")
+    governor_snapshot: Mapped[str] = mapped_column(Text, default="{}")
+    execution_snapshot: Mapped[str] = mapped_column(Text, default="{}")
+    explainability_snapshot: Mapped[str] = mapped_column(Text, default="{}")

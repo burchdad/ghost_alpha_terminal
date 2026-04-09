@@ -12,6 +12,8 @@ import PerformancePanel from "../../components/PerformancePanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
 import SignalPanel from "../../components/SignalPanel";
 import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
+import ContextPanel from "../../components/ContextPanel";
+import DecisionAuditPanel from "../../components/DecisionAuditPanel";
 import GoalPanel from "../../components/GoalPanel";
 import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
@@ -272,6 +274,35 @@ type ExecutionModeResponse = {
   mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
 };
 
+type ContextSignalResponse = {
+  symbol: string;
+  data_classification: "PUBLIC" | "DERIVED" | "RESTRICTED" | "UNKNOWN";
+  sources_used: string[];
+  sentiment_score: number;
+  news_momentum_score: number;
+  event_strength: number;
+  event_flags: string[];
+  modifiers: {
+    confidence_modifier: number;
+    risk_modifier: number;
+    opportunity_boost: number;
+  };
+  rationale: string;
+};
+
+type DecisionAuditSummary = {
+  audit_id: string;
+  timestamp: string;
+  decision_type: string;
+  symbol: string;
+  status: string;
+  cycle_id: string | null;
+};
+
+type DecisionAuditSummaryListResponse = {
+  entries: DecisionAuditSummary[];
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -297,6 +328,8 @@ export default function DashboardPage() {
   const [goal, setGoal] = useState<GoalStatusResponse | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
   const [executionMode, setExecutionMode] = useState<ExecutionModeResponse["mode"] | null>(null);
+  const [contextSignal, setContextSignal] = useState<ContextSignalResponse | null>(null);
+  const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
 
   const watchlist = useMemo(() => ["AAPL", "TSLA", "NVDA", "SPY", "MSFT", "AMD"], []);
 
@@ -306,7 +339,7 @@ export default function DashboardPage() {
       const start = new Date();
       start.setDate(end.getDate() - 240);
 
-      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes, goalRes, oppRes, execModeRes] = await Promise.all([
+      const [fRes, oRes, sRes, swarmRes, perfRes, backtestRes, portfolioRes, controlRes, historyRes, goalRes, oppRes, execModeRes, contextRes, auditRes] = await Promise.all([
         fetch(`${API_BASE}/forecast/${symbol}`),
         fetch(`${API_BASE}/options/${symbol}`),
         fetch(`${API_BASE}/signal/${symbol}`),
@@ -331,6 +364,8 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/agents/goal/status`),
         fetch(`${API_BASE}/agents/opportunities?limit=10`),
         fetch(`${API_BASE}/agents/execution-mode`),
+        fetch(`${API_BASE}/agents/context/${symbol}`),
+        fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
       ]);
 
       const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -345,6 +380,8 @@ export default function DashboardPage() {
       const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
       const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
       const execModeData = await parseJsonOrNull<ExecutionModeResponse>(execModeRes);
+      const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
+      const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
 
       setForecast(fData);
       setOptions(oData);
@@ -358,6 +395,8 @@ export default function DashboardPage() {
       setGoal(goalData);
       setOpportunities(oppData);
       setExecutionMode(execModeData?.mode ?? null);
+      setContextSignal(contextData);
+      setDecisionAudit(auditData?.entries ?? []);
     }
 
     fetchAll().catch((error: unknown) => {
@@ -378,31 +417,37 @@ export default function DashboardPage() {
   }
 
   async function refreshControlAndHistory() {
-    const [controlRes, historyRes, portfolioRes, modeRes] = await Promise.all([
+    const [controlRes, historyRes, portfolioRes, modeRes, auditRes] = await Promise.all([
       fetch(`${API_BASE}/control`),
       fetch(`${API_BASE}/agents/execution-history?limit=25`),
       fetch(`${API_BASE}/portfolio`),
       fetch(`${API_BASE}/agents/execution-mode`),
+      fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
     ]);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
     const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
     const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
+    const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
     setControl(controlData);
     setExecutionHistory(historyData?.executions ?? []);
     setPortfolio(portfolioData);
     setExecutionMode(modeData?.mode ?? null);
+    setDecisionAudit(auditData?.entries ?? []);
   }
 
   async function refreshGoalAndOpportunities() {
-    const [goalRes, oppRes] = await Promise.all([
+    const [goalRes, oppRes, contextRes] = await Promise.all([
       fetch(`${API_BASE}/agents/goal/status`),
       fetch(`${API_BASE}/agents/opportunities?limit=10`),
+      fetch(`${API_BASE}/agents/context/${symbol}`),
     ]);
     const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
     const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+    const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
     setGoal(goalData);
     setOpportunities(oppData);
+    setContextSignal(contextData);
   }
 
   async function handleToggleAutonomous(enabled: boolean) {
@@ -499,8 +544,10 @@ export default function DashboardPage() {
             </p>
           </div>
           <PortfolioPanel portfolio={portfolio} />
+          <ContextPanel context={contextSignal} />
           <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
           <ExecutionHistoryPanel history={executionHistory} />
+          <DecisionAuditPanel entries={decisionAudit} />
           <ControlPanel
             control={control}
             executionMode={executionMode}

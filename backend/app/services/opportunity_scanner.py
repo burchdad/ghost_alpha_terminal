@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
+from app.services.context_intelligence import context_intelligence
 from app.services.explainability import build_explainability
 from app.services.kronos_service import kronos_service
 from app.services.news.news_intelligence import news_intelligence
@@ -176,6 +177,7 @@ class OpportunityScanner:
             signal = signal_engine.generate_signal(symbol=symbol, forecast=forecast, options_data=options_data)
             swarm = consensus_engine.generate_consensus(symbol=symbol, outputs=outputs)
             news = news_intelligence.analyze_symbol(symbol)
+            context = context_intelligence.get_context(symbol)
             expected_return_pct = 0.0
             if forecast.forecast_prices:
                 expected_return_pct = (forecast.forecast_prices[-1] / options_data.underlying_price) - 1.0
@@ -203,7 +205,7 @@ class OpportunityScanner:
                     drawdown_pct=drawdown_pct,
                     current_exposure_pct=current_exposure_pct,
                     realized_volatility_pct=float(candidate["realized_volatility_pct"]),
-                    goal_pressure_multiplier=goal_pressure_multiplier,
+                    goal_pressure_multiplier=goal_pressure_multiplier * float(context["modifiers"]["risk_modifier"]),
                 )
             )
 
@@ -223,11 +225,12 @@ class OpportunityScanner:
                 + float(news["event_strength"]) * 0.07
             )
             risk_adjusted_score = (
-                swarm.consensus.confidence * 0.45
+                (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
                 + max(0.0, risk["expected_value"]) * 8.0 * 0.2
                 + float(allocation["target_pct"]) * 3.0 * 0.2
                 + (0.15 if tradable else 0.0)
                 + news_alpha_boost
+                + float(context["modifiers"]["opportunity_boost"])
             )
 
             opportunities.append(
@@ -248,6 +251,7 @@ class OpportunityScanner:
                     "data_classification": news["data_classification"],
                     "sources_used": news["sources_used"],
                     "event_flags": news["event_flags"],
+                    "context_modifiers": context["modifiers"],
                     "risk_level": risk["risk_level"],
                     "expected_value": risk["expected_value"],
                     "target_pct": allocation["target_pct"],
@@ -278,6 +282,7 @@ class OpportunityScanner:
                             "sentiment_score": news["sentiment_score"],
                             "news_momentum_score": news["news_momentum_score"],
                             "event_strength": news["event_strength"],
+                            "context_modifiers": context["modifiers"],
                         },
                     ),
                 }

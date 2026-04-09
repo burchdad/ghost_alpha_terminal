@@ -4,12 +4,15 @@ from typing import Literal
 from fastapi import APIRouter
 
 from app.services.capital_allocator import AllocationInput, capital_allocator
+from app.services.context_intelligence import context_intelligence
 from app.services.control_engine import control_engine
+from app.services.decision_audit_store import decision_audit_store
 from app.services.explainability import build_explainability
 from app.models.schemas import ExecuteTradeRequest, ExecuteTradeResponse
 from app.services.goal_engine import goal_engine
 from app.services.historical_data_service import historical_data_service
 from app.services.portfolio_manager import portfolio_manager
+from app.services.portfolio_risk_governor import portfolio_risk_governor
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
 
@@ -56,6 +59,7 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
     goal_pressure = goal_engine.current_pressure(
         current_capital=float(portfolio_state["account_balance"])
     )
+    context = context_intelligence.get_context(payload.symbol)
 
     risk_level = "HIGH" if payload.confidence < 0.58 else "MEDIUM" if payload.confidence < 0.70 else "LOW"
     inferred_regime, realized_volatility_pct = _derive_market_context(payload.symbol)
@@ -70,13 +74,28 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             drawdown_pct=float(control_state["rolling_drawdown_pct"]),
             current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
             realized_volatility_pct=realized_volatility_pct,
-            goal_pressure_multiplier=goal_pressure,
+            goal_pressure_multiplier=goal_pressure * float(context["modifiers"]["risk_modifier"]),
         )
     )
 
     max_notional_by_risk = payload.account_balance * payload.risk_per_trade / max(allocation["stop_loss_pct"], 0.001)
     bounded_notional = min(float(allocation["recommended_notional"]), max_notional_by_risk)
     bounded_qty = round(bounded_notional / max(payload.entry_price, 0.01), 4)
+    governor = portfolio_risk_governor.evaluate(
+        symbol=payload.symbol,
+        proposed_notional=bounded_notional,
+        proposed_qty=bounded_qty,
+        account_balance=payload.account_balance,
+        current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
+        drawdown_pct=float(control_state["rolling_drawdown_pct"]),
+        sector_concentration=dict(portfolio_state.get("sector_concentration", {})),
+    )
+    if governor.decision == "BLOCK":
+        bounded_notional = 0.0
+        bounded_qty = 0.0
+    elif governor.decision == "RESIZE":
+        bounded_notional = float(governor.adjusted_notional)
+        bounded_qty = float(governor.adjusted_qty)
     max_loss_amount = round(bounded_notional * float(allocation["stop_loss_pct"]), 2)
 
     risk = risk_engine.evaluate_trade(
@@ -88,20 +107,35 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
         account_balance=payload.account_balance,
     )
 
-    if not risk["approved"] or not allocation["accepted"]:
+    if governor.decision == "BLOCK" or not risk["approved"] or not allocation["accepted"]:
         reason = risk["reason"] if not risk["approved"] else allocation["reason"]
+        if governor.decision == "BLOCK":
+            reason = governor.reason
         explainability = build_explainability(
             reasoning=reason,
             confidence=payload.confidence,
             risk_level=risk["risk_level"],
             expected_value=risk["expected_value"],
             accepted=False,
-            safeguards=["risk_engine", "capital_allocator"],
+            safeguards=["risk_engine", "capital_allocator", "portfolio_risk_governor"],
             inputs={
                 "regime": inferred_regime,
                 "goal_pressure_multiplier": goal_pressure,
                 "realized_volatility_pct": realized_volatility_pct,
+                "context": context,
             },
+        )
+        decision_audit_store.record(
+            decision_type="EXECUTE",
+            symbol=payload.symbol,
+            status="REJECTED",
+            cycle_id=None,
+            goal_snapshot=goal_engine.status(current_capital=float(portfolio_state["account_balance"])),
+            context_snapshot=context,
+            allocation_snapshot=allocation,
+            governor_snapshot=governor.__dict__,
+            execution_snapshot={"submitted": False, "reason": reason},
+            explainability_snapshot=explainability,
         )
         return ExecuteTradeResponse(
             accepted=False,
@@ -113,6 +147,8 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            governor_decision=governor.decision,
+            governor_reason=governor.reason,
             explainability=explainability,
         )
 
@@ -132,12 +168,25 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_level=risk["risk_level"],
             expected_value=risk["expected_value"],
             accepted=False,
-            safeguards=["control_engine", "kill_switch", "drawdown_limits"],
+            safeguards=["control_engine", "kill_switch", "drawdown_limits", "portfolio_risk_governor"],
             inputs={
                 "regime": inferred_regime,
                 "goal_pressure_multiplier": goal_pressure,
                 "realized_volatility_pct": realized_volatility_pct,
+                "context": context,
             },
+        )
+        decision_audit_store.record(
+            decision_type="EXECUTE",
+            symbol=payload.symbol,
+            status="REJECTED",
+            cycle_id=None,
+            goal_snapshot=goal_engine.status(current_capital=float(portfolio_state["account_balance"])),
+            context_snapshot=context,
+            allocation_snapshot=allocation,
+            governor_snapshot=governor.__dict__,
+            execution_snapshot={"submitted": False, "reason": control_reason},
+            explainability_snapshot=explainability,
         )
         return ExecuteTradeResponse(
             accepted=False,
@@ -149,6 +198,8 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            governor_decision=governor.decision,
+            governor_reason=governor.reason,
             explainability=explainability,
         )
 
@@ -172,7 +223,20 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
                 "regime": inferred_regime,
                 "goal_pressure_multiplier": goal_pressure,
                 "realized_volatility_pct": realized_volatility_pct,
+                "context": context,
             },
+        )
+        decision_audit_store.record(
+            decision_type="EXECUTE",
+            symbol=payload.symbol,
+            status="REJECTED",
+            cycle_id=None,
+            goal_snapshot=goal_engine.status(current_capital=float(portfolio_state["account_balance"])),
+            context_snapshot=context,
+            allocation_snapshot=allocation,
+            governor_snapshot=governor.__dict__,
+            execution_snapshot={"submitted": False, "reason": opened["reason"]},
+            explainability_snapshot=explainability,
         )
         return ExecuteTradeResponse(
             accepted=False,
@@ -184,6 +248,8 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             risk_reward_ratio=risk["risk_reward_ratio"],
             target_pct=float(allocation["target_pct"]),
             position_notional=round(bounded_notional, 2),
+            governor_decision=governor.decision,
+            governor_reason=governor.reason,
             explainability=explainability,
         )
 
@@ -199,7 +265,21 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             "goal_pressure_multiplier": goal_pressure,
             "realized_volatility_pct": realized_volatility_pct,
             "position_notional": round(bounded_notional, 2),
+            "context": context,
         },
+    )
+
+    decision_audit_store.record(
+        decision_type="EXECUTE",
+        symbol=payload.symbol,
+        status="ACCEPTED",
+        cycle_id=None,
+        goal_snapshot=goal_engine.status(current_capital=float(portfolio_state["account_balance"])),
+        context_snapshot=context,
+        allocation_snapshot=allocation,
+        governor_snapshot=governor.__dict__,
+        execution_snapshot={"submitted": True, "reason": "Order accepted in execute route."},
+        explainability_snapshot=explainability,
     )
 
     return ExecuteTradeResponse(
@@ -212,5 +292,7 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
         risk_reward_ratio=risk["risk_reward_ratio"],
         target_pct=float(allocation["target_pct"]),
         position_notional=round(bounded_notional, 2),
+        governor_decision=governor.decision,
+        governor_reason=governor.reason,
         explainability=explainability,
     )
