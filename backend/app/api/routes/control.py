@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
@@ -25,6 +26,7 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
+logger = logging.getLogger(__name__)
 
 
 def _coerce_timestamp(value: object) -> datetime | None:
@@ -52,77 +54,99 @@ def _coerce_timestamp(value: object) -> datetime | None:
 
 @router.get("", response_model=ControlStatusResponse)
 def get_control_status() -> ControlStatusResponse:
-    status = control_engine.status()
-    auto = autonomous_runner.status()
-    merged_rejections = list(status.get("rejected_trades", []))
-
     try:
-        # Include execution-level non-submitted outcomes (e.g., HOLD / veto / broker rejection)
-        # so Safety & Control aligns with Decision Replay and audit trail status.
-        executions = execution_journal.recent(limit=200)
-        for entry in executions:
-            if entry.submitted:
+        status = control_engine.status()
+        auto = autonomous_runner.status()
+        merged_rejections = list(status.get("rejected_trades", []))
+
+        try:
+            # Include execution-level non-submitted outcomes (e.g., HOLD / veto / broker rejection)
+            # so Safety & Control aligns with Decision Replay and audit trail status.
+            executions = execution_journal.recent(limit=200)
+            for entry in executions:
+                if entry.submitted:
+                    continue
+                merged_rejections.append(
+                    {
+                        "timestamp": entry.timestamp,
+                        "symbol": entry.symbol,
+                        "reason": entry.reason or "Execution not submitted.",
+                    }
+                )
+        except Exception:
+            pass
+
+        try:
+            # Include decision-audit rejections for paths that do not write to control_engine reject log.
+            rejected_audits = decision_audit_store.list_recent(limit=200, status="REJECTED")
+            for audit in rejected_audits:
+                merged_rejections.append(
+                    {
+                        "timestamp": audit.get("timestamp"),
+                        "symbol": str(audit.get("symbol", "N/A")),
+                        "reason": "Decision audit marked REJECTED.",
+                    }
+                )
+        except Exception:
+            pass
+
+        normalized: list[dict] = []
+        for item in merged_rejections:
+            ts = _coerce_timestamp(item.get("timestamp"))
+            symbol = str(item.get("symbol", "")).strip().upper()
+            reason = str(item.get("reason", "")).strip()
+            if ts is None or not symbol or not reason:
                 continue
-            merged_rejections.append(
-                {
-                    "timestamp": entry.timestamp,
-                    "symbol": entry.symbol,
-                    "reason": entry.reason or "Execution not submitted.",
-                }
+            normalized.append({"timestamp": ts, "symbol": symbol, "reason": reason})
+
+        deduped: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for item in sorted(normalized, key=lambda x: x["timestamp"]):
+            key = (
+                item["timestamp"].isoformat(),
+                item["symbol"],
+                item["reason"],
             )
-    except Exception:
-        pass
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(item)
 
-    try:
-        # Include decision-audit rejections for paths that do not write to control_engine reject log.
-        rejected_audits = decision_audit_store.list_recent(limit=200, status="REJECTED")
-        for audit in rejected_audits:
-            merged_rejections.append(
-                {
-                    "timestamp": audit.get("timestamp"),
-                    "symbol": str(audit.get("symbol", "N/A")),
-                    "reason": "Decision audit marked REJECTED.",
-                }
-            )
-    except Exception:
-        pass
+        # Keep payload bounded while preserving chronological order for UI slice(-5).
+        deduped = deduped[-200:]
 
-    normalized: list[dict] = []
-    for item in merged_rejections:
-        ts = _coerce_timestamp(item.get("timestamp"))
-        symbol = str(item.get("symbol", "")).strip().upper()
-        reason = str(item.get("reason", "")).strip()
-        if ts is None or not symbol or not reason:
-            continue
-        normalized.append({"timestamp": ts, "symbol": symbol, "reason": reason})
+        status_payload = {**status, "rejected_trades": deduped}
 
-    deduped: list[dict] = []
-    seen: set[tuple[str, str, str]] = set()
-    for item in sorted(normalized, key=lambda x: x["timestamp"]):
-        key = (
-            item["timestamp"].isoformat(),
-            item["symbol"],
-            item["reason"],
+        return ControlStatusResponse(
+            **status_payload,
+            autonomous_enabled=bool(auto.get("enabled", False)),
+            autonomous_interval_seconds=int(auto.get("interval_seconds", 300)),
+            autonomous_symbols=list(auto.get("symbols", [])),
+            autonomous_cycles_run=int(auto.get("cycles_run", 0)),
+            autonomous_last_run_at=_coerce_timestamp(auto.get("last_run_at")),
+            autonomous_last_error=auto.get("last_error"),
         )
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(item)
-
-    # Keep payload bounded while preserving chronological order for UI slice(-5).
-    deduped = deduped[-200:]
-
-    status_payload = {**status, "rejected_trades": deduped}
-
-    return ControlStatusResponse(
-        **status_payload,
-        autonomous_enabled=auto["enabled"],
-        autonomous_interval_seconds=auto["interval_seconds"],
-        autonomous_symbols=auto["symbols"],
-        autonomous_cycles_run=auto["cycles_run"],
-        autonomous_last_run_at=auto["last_run_at"],
-        autonomous_last_error=auto["last_error"],
-    )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("control_status_failed: %s", exc)
+        return ControlStatusResponse(
+            trading_enabled=False,
+            system_status="PAUSED",
+            mode="SAFE",
+            daily_pnl=0.0,
+            daily_loss=0.0,
+            daily_loss_limit=5000.0,
+            daily_loss_limit_pct=0.05,
+            rolling_drawdown=0.0,
+            rolling_drawdown_pct=0.0,
+            max_drawdown_limit_pct=0.10,
+            rejected_trades=[],
+            autonomous_enabled=False,
+            autonomous_interval_seconds=300,
+            autonomous_symbols=[],
+            autonomous_cycles_run=0,
+            autonomous_last_run_at=None,
+            autonomous_last_error="Control status temporarily unavailable; using fallback.",
+        )
 
 
 @router.post("/kill-switch", response_model=KillSwitchUpdateResponse)
