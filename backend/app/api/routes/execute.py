@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter
 
@@ -7,16 +8,14 @@ from app.services.control_engine import control_engine
 from app.models.schemas import ExecuteTradeRequest, ExecuteTradeResponse
 from app.services.historical_data_service import historical_data_service
 from app.services.portfolio_manager import portfolio_manager
+from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
 
 router = APIRouter(prefix="/execute", tags=["execute"])
 
 
-def _estimate_realized_volatility_pct(symbol: str, timeframe: str = "1d") -> float:
-    """Estimate recent realized volatility from historical close returns.
-
-    Returns per-period standard deviation as a percent in decimal form.
-    """
+def _derive_market_context(symbol: str, timeframe: str = "1d") -> tuple[Literal["TRENDING", "RANGE_BOUND", "HIGH_VOLATILITY"], float]:
+    """Infer regime and realized volatility from recent historical candles."""
     end_date = datetime.now(tz=timezone.utc)
     start_date = end_date - timedelta(days=90)
     try:
@@ -26,9 +25,10 @@ def _estimate_realized_volatility_pct(symbol: str, timeframe: str = "1d") -> flo
             start_date=start_date,
             end_date=end_date,
         )
+        detected_regime = regime_detector.detect_from_dataframe(df).regime
         closes = [float(v) for v in df["close"].tolist() if float(v) > 0]
         if len(closes) < 3:
-            return 0.02
+            return detected_regime, 0.02
         returns: list[float] = []
         for idx in range(1, len(closes)):
             prev = closes[idx - 1]
@@ -37,13 +37,13 @@ def _estimate_realized_volatility_pct(symbol: str, timeframe: str = "1d") -> flo
                 continue
             returns.append((curr / prev) - 1.0)
         if len(returns) < 2:
-            return 0.02
+            return detected_regime, 0.02
         mean_ret = sum(returns) / len(returns)
         variance = sum((r - mean_ret) ** 2 for r in returns) / len(returns)
         stdev = variance ** 0.5
-        return max(0.001, min(stdev, 0.25))
+        return detected_regime, max(0.001, min(stdev, 0.25))
     except Exception:
-        return 0.02
+        return "RANGE_BOUND", 0.02
 
 
 @router.post("", response_model=ExecuteTradeResponse)
@@ -53,13 +53,13 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
     control_state = control_engine.status()
 
     risk_level = "HIGH" if payload.confidence < 0.58 else "MEDIUM" if payload.confidence < 0.70 else "LOW"
-    realized_volatility_pct = _estimate_realized_volatility_pct(payload.symbol)
+    inferred_regime, realized_volatility_pct = _derive_market_context(payload.symbol)
     allocation = capital_allocator.compute(
         AllocationInput(
             account_balance=payload.account_balance,
             current_price=payload.entry_price,
             confidence=payload.confidence,
-            regime=payload.regime,
+            regime=inferred_regime,
             risk_level=risk_level,
             agent_agreement=0.66,
             drawdown_pct=float(control_state["rolling_drawdown_pct"]),
