@@ -71,7 +71,7 @@ def get_swarm(symbol: str) -> SwarmResponse:
     risk = risk_engine.evaluate_trade(
         entry_price=options_data.underlying_price,
         stop_loss_pct=allocation["stop_loss_pct"],
-        take_profit_pct=0.03,
+        take_profit_pct=min(0.12, max(0.03, float(allocation["stop_loss_pct"]) * 1.9)),
         confidence=swarm.consensus.confidence,
         max_loss_amount=allocation["max_risk_amount"],
         account_balance=float(portfolio_state["account_balance"]),
