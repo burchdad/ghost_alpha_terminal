@@ -1,8 +1,12 @@
 import json
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Literal
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import RedirectResponse
 
 from app.models.schemas import (
     AlpacaAccountPnlResponse,
@@ -15,6 +19,24 @@ from app.core.config import settings
 from app.services.request_id_store import request_id_store
 
 router = APIRouter(prefix="/alpaca", tags=["alpaca"])
+
+_OAUTH_STATE_TTL_SECONDS = 600
+_oauth_states: dict[str, dict] = {}
+
+
+def _purge_expired_oauth_states() -> None:
+    now = datetime.now(timezone.utc)
+    expired = [state for state, payload in _oauth_states.items() if payload["expires_at"] <= now]
+    for state in expired:
+        _oauth_states.pop(state, None)
+
+
+def _alpaca_oauth_ready() -> bool:
+    return bool(
+        settings.alpaca_connect_client_id
+        and settings.alpaca_connect_client_secret
+        and settings.alpaca_connect_redirect_uri
+    )
 
 
 @router.get(
@@ -76,7 +98,87 @@ def alpaca_config_check() -> dict:
         "alpaca_connect_client_id_present": bool(settings.alpaca_connect_client_id),
         "alpaca_connect_client_secret_present": bool(settings.alpaca_connect_client_secret),
         "alpaca_connect_redirect_uri": settings.alpaca_connect_redirect_uri,
+        "alpaca_connect_authorize_url": settings.alpaca_connect_authorize_url,
+        "alpaca_connect_token_url": settings.alpaca_connect_token_url,
+        "alpaca_connect_oauth_ready": _alpaca_oauth_ready(),
         "app_env": settings.app_env,
+    }
+
+
+@router.get("/oauth/start", summary="Start Alpaca Connect OAuth flow")
+def start_oauth_flow(
+    next_path: str = Query(default="/alpha", alias="next"),
+) -> RedirectResponse:
+    if not _alpaca_oauth_ready():
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Alpaca Connect OAuth not configured. Set ALPACA_CONNECT_CLIENT_ID, "
+                "ALPACA_CONNECT_CLIENT_SECRET, and ALPACA_CONNECT_REDIRECT_URI."
+            ),
+        )
+
+    _purge_expired_oauth_states()
+    state = secrets.token_urlsafe(24)
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=_OAUTH_STATE_TTL_SECONDS)
+    _oauth_states[state] = {
+        "next": next_path if next_path.startswith("/") else "/alpha",
+        "expires_at": expires_at,
+    }
+
+    query = {
+        "client_id": settings.alpaca_connect_client_id,
+        "redirect_uri": settings.alpaca_connect_redirect_uri,
+        "response_type": "code",
+        "state": state,
+    }
+    auth_url = f"{settings.alpaca_connect_authorize_url}?{urlencode(query)}"
+    return RedirectResponse(url=auth_url, status_code=307)
+
+
+@router.get("/oauth/callback", summary="Exchange Alpaca OAuth code for tokens")
+def complete_oauth_flow(
+    code: str = Query(..., min_length=1),
+    state: str = Query(..., min_length=1),
+) -> dict:
+    if not _alpaca_oauth_ready():
+        raise HTTPException(status_code=500, detail="Alpaca Connect OAuth is not configured")
+
+    _purge_expired_oauth_states()
+    state_payload = _oauth_states.pop(state, None)
+    if state_payload is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
+    token_body = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": settings.alpaca_connect_client_id,
+        "client_secret": settings.alpaca_connect_client_secret,
+        "redirect_uri": settings.alpaca_connect_redirect_uri,
+    }
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.post(
+                settings.alpaca_connect_token_url,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                data=token_body,
+            )
+        resp.raise_for_status()
+        payload = resp.json()
+    except httpx.HTTPStatusError as err:
+        _raise_alpaca_error(err)
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"OAuth token exchange failed: {err}")
+
+    # Do not return raw tokens to frontend callback handlers.
+    return {
+        "connected": True,
+        "token_type": payload.get("token_type"),
+        "scope": payload.get("scope"),
+        "expires_in": payload.get("expires_in"),
+        "obtained_at": datetime.now(timezone.utc).isoformat(),
+        "next": state_payload.get("next", "/alpha"),
     }
 
 

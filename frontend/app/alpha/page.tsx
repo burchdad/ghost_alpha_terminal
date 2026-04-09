@@ -213,6 +213,10 @@ export default function AlphaPage() {
   const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
+  const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [oauthReason, setOauthReason] = useState<string>("");
+  const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
+  const [oauthReason, setOauthReason] = useState<string>("");
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -261,6 +265,38 @@ export default function AlphaPage() {
       accepted,
     };
   }, [scan, portfolio, control, goal, newsSignal, contextSignal, decisionAudit]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const qs = new URLSearchParams(window.location.search);
+    const oauth = qs.get("alpaca_oauth");
+    const reason = qs.get("reason") ?? "";
+    if (oauth === "connected") {
+      setOauthStatus("connected");
+      setOauthReason("");
+    } else if (oauth === "error") {
+      setOauthStatus("error");
+      setOauthReason(reason);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const qs = new URLSearchParams(window.location.search);
+    const oauth = qs.get("alpaca_oauth");
+    const reason = qs.get("reason") ?? "";
+    if (oauth === "connected") {
+      setOauthStatus("connected");
+      setOauthReason("");
+    } else if (oauth === "error") {
+      setOauthStatus("error");
+      setOauthReason(reason);
+    }
+  }, []);
 
   useEffect(() => {
     async function boot() {
@@ -454,6 +490,62 @@ export default function AlphaPage() {
           Open Deep Terminal
         </Link>
       </div>
+
+      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-terminal-accent">Broker Connectivity</h2>
+            <p className="text-xs text-slate-400">Connect Alpaca account via OAuth app credentials</p>
+          </div>
+          <a
+            href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
+            className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
+          >
+            Connect Alpaca OAuth
+          </a>
+        </div>
+        {oauthStatus !== "idle" && (
+          <div
+            className={`mt-3 rounded border px-3 py-2 text-xs ${
+              oauthStatus === "connected"
+                ? "border-green-500/40 bg-green-500/10 text-green-300"
+                : "border-red-500/40 bg-red-500/10 text-red-300"
+            }`}
+          >
+            {oauthStatus === "connected"
+              ? "Alpaca OAuth connected successfully."
+              : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-terminal-accent">Broker Connectivity</h2>
+            <p className="text-xs text-slate-400">Connect Alpaca account via OAuth app credentials</p>
+          </div>
+          <a
+            href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
+            className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
+          >
+            Connect Alpaca OAuth
+          </a>
+        </div>
+        {oauthStatus !== "idle" && (
+          <div
+            className={`mt-3 rounded border px-3 py-2 text-xs ${
+              oauthStatus === "connected"
+                ? "border-green-500/40 bg-green-500/10 text-green-300"
+                : "border-red-500/40 bg-red-500/10 text-red-300"
+            }`}
+          >
+            {oauthStatus === "connected"
+              ? "Alpaca OAuth connected successfully."
+              : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
+          </div>
+        )}
+      </section>
 
       <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">
         <div className="mb-2 flex items-center justify-between">

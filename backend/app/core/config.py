@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     alpaca_connect_client_id: str = ""
     alpaca_connect_client_secret: str = ""
     alpaca_connect_redirect_uri: str = ""
+    alpaca_connect_authorize_url: str = "https://app.alpaca.markets/oauth/authorize"
+    alpaca_connect_token_url: str = "https://api.alpaca.markets/oauth/token"
 
     # ---------------------------------------------------------------------------
     # Misc
