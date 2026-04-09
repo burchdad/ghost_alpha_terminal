@@ -34,44 +34,93 @@ def get_runtime_readiness() -> dict:
     now = datetime.now(tz=timezone.utc)
     window_start = now - timedelta(hours=24)
 
-    control = control_engine.status()
-    latest_scan = master_orchestrator.latest()
+    try:
+        control = control_engine.status()
+    except Exception:
+        control = {}
+
+    try:
+        latest_scan = master_orchestrator.latest()
+    except Exception:
+        latest_scan = None
+
     scan_age_seconds: float | None = None
     latest_candidates = 0
     if latest_scan is not None:
         scan_age_seconds = max(0.0, (now - latest_scan.scanned_at).total_seconds())
         latest_candidates = len(latest_scan.candidates)
 
-    executions = execution_journal.recent(limit=500)
+    try:
+        executions = execution_journal.recent(limit=500)
+    except Exception:
+        executions = []
+
     submitted_24h = 0
     rejected_24h = 0
     for item in executions:
-        if item.timestamp < window_start:
+        ts = getattr(item, "timestamp", None)
+        if not isinstance(ts, datetime) or ts < window_start:
             continue
         if item.submitted:
             submitted_24h += 1
         else:
             rejected_24h += 1
 
-    audits = decision_audit_store.list_recent(limit=500)
+    try:
+        audits = decision_audit_store.list_recent(limit=500)
+    except Exception:
+        audits = []
+
     audits_24h = 0
     for audit in audits:
         ts = audit.get("timestamp")
         if isinstance(ts, datetime) and ts >= window_start:
             audits_24h += 1
 
-    news_entries = news_intelligence.recent_audit(limit=500)
+    try:
+        news_entries = news_intelligence.recent_audit(limit=500)
+    except Exception:
+        news_entries = []
+
     news_audit_24h = 0
     for entry in news_entries:
         ts = entry.get("timestamp")
         if isinstance(ts, datetime) and ts >= window_start:
             news_audit_24h += 1
 
-    portfolio = live_portfolio_service.snapshot()
+    try:
+        portfolio = live_portfolio_service.snapshot()
+    except Exception:
+        portfolio = None
     open_positions = len(portfolio.get("active_positions", [])) if portfolio else 0
-    connected = alpaca_oauth_service.is_connected()
-    mode = execution_bridge.get_mode()
-    ws_status = coinbase_ws_service.status()
+
+    try:
+        connected = alpaca_oauth_service.is_connected()
+    except Exception:
+        connected = False
+
+    try:
+        mode = execution_bridge.get_mode()
+    except Exception:
+        mode = "SIMULATION"
+
+    try:
+        ws_status = coinbase_ws_service.status()
+    except Exception:
+        ws_status = {}
+
+    try:
+        lightweight = lightweight_metrics.summary(days=7)
+    except Exception:
+        lightweight = {
+            "window_days": 7,
+            "start_day": now.date().isoformat(),
+            "end_day": now.date().isoformat(),
+            "scans_run": 0,
+            "trades_triggered": 0,
+            "strategies_selected": {},
+            "top_strategies": [],
+        }
 
     return {
         "as_of": now.isoformat(),
@@ -90,5 +139,5 @@ def get_runtime_readiness() -> dict:
         "coinbase_ws_connected": bool(ws_status.get("connected", False)),
         "coinbase_ws_last_message_at": ws_status.get("last_message_at"),
         "coinbase_ws_error": ws_status.get("last_error"),
-        "lightweight_7d": lightweight_metrics.summary(days=7),
+        "lightweight_7d": lightweight,
     }

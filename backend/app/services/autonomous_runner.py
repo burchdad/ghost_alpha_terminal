@@ -56,8 +56,14 @@ class AutonomousRunner:
 
         try:
             portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
-            scan = master_orchestrator.scan(limit=8)
-            candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:4]
+            latest = master_orchestrator.latest()
+            now = datetime.now(tz=timezone.utc)
+            if latest is not None and (now - latest.scanned_at).total_seconds() <= 180:
+                scan = latest
+            else:
+                scan = master_orchestrator.scan(limit=8)
+
+            candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:2]
             if not candidates:
                 # Fall back to top crypto watches so the swarm keeps exploring and adapting.
                 candidates = [
@@ -66,6 +72,12 @@ class AutonomousRunner:
                     if c.asset_class == "crypto" and c.action_label == "MONITOR" and c.composite_score >= 0.35
                 ][:2]
             selected_symbols = [c.symbol for c in candidates]
+
+            if not selected_symbols:
+                with self._lock:
+                    self._last_error = "No eligible symbols from latest scan."
+                return self.status()
+
             with self._lock:
                 self._symbols = selected_symbols
 
