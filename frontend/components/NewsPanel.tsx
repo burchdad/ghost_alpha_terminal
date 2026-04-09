@@ -59,6 +59,11 @@ export default function NewsPanel({
       <div className="mb-3 text-xs text-slate-300">
         <p className="mb-1 font-semibold text-slate-400">Sources</p>
         <p>{signal.sources_used.join(", ")}</p>
+        <p className="mt-1 text-[11px] text-slate-400">
+          {signal.sources_used.includes("COINBASE_WS_PUBLIC")
+            ? "Realtime Coinbase WS momentum is active for this symbol."
+            : "Realtime Coinbase WS momentum not active for this symbol."}
+        </p>
       </div>
 
       <div className="text-xs text-slate-300">

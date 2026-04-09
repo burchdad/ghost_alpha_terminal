@@ -21,6 +21,7 @@ from app.api.routes.trade import router as trade_router
 from app.api.routes.metrics import router as metrics_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
+from app.services.news.coinbase_ws_service import coinbase_ws_service
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
@@ -65,6 +66,12 @@ app.include_router(metrics_router)
 @app.on_event("startup")
 def on_startup() -> None:
     initialize_database()
+    coinbase_ws_service.start()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    coinbase_ws_service.stop()
 
 
 @app.get("/health")

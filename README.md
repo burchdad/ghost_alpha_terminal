@@ -145,11 +145,17 @@ API endpoints:
 - `GET /agents/news/sources` (whitelisted public news sources)
 - `GET /agents/news/{symbol}` (news/event signal for symbol)
 - `GET /agents/news/audit?limit=50` (news signal audit log)
+- `GET /agents/news/stream/status` (Coinbase websocket ingest status)
 - `GET /agents/context/{symbol}` (context intelligence modifiers)
 - `GET /agents/audit/decisions?limit=50` (decision audit summary list)
 - `GET /agents/audit/decisions/{audit_id}` (full decision lineage payload)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 - `GET /metrics/runtime-readiness` (cutover and operator telemetry snapshot)
+
+Coinbase websocket integration:
+
+- Public market data feed (`wss://advanced-trade-ws.coinbase.com`) is ingested for configured crypto products.
+- News intelligence can augment signals with realtime Coinbase WS momentum for supported crypto symbols.
 
 Example trade outcome payload:
 

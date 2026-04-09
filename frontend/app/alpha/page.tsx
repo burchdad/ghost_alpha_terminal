@@ -243,6 +243,9 @@ type RuntimeReadinessResponse = {
   rejected_executions_24h: number;
   decision_audits_24h: number;
   news_audits_24h: number;
+  coinbase_ws_connected: boolean;
+  coinbase_ws_last_message_at: string | null;
+  coinbase_ws_error: string | null;
   lightweight_7d: LightweightMetricsResponse;
 };
 
@@ -861,7 +864,12 @@ export default function AlphaPage() {
           <div className="rounded border border-current/20 px-2 py-2">Rejected 24h: {runtimeReadiness?.rejected_executions_24h ?? 0}</div>
           <div className="rounded border border-current/20 px-2 py-2">Decision Audits 24h: {runtimeReadiness?.decision_audits_24h ?? 0}</div>
           <div className="rounded border border-current/20 px-2 py-2">News Audits 24h: {runtimeReadiness?.news_audits_24h ?? 0}</div>
+          <div className="rounded border border-current/20 px-2 py-2">Coinbase WS: {runtimeReadiness?.coinbase_ws_connected ? "CONNECTED" : "DISCONNECTED"}</div>
+          <div className="rounded border border-current/20 px-2 py-2">WS Msg: {runtimeReadiness?.coinbase_ws_last_message_at ? new Date(runtimeReadiness.coinbase_ws_last_message_at).toLocaleTimeString() : "-"}</div>
         </div>
+        {runtimeReadiness?.coinbase_ws_error && (
+          <div className="mt-2 text-[11px] text-red-300">Coinbase WS error: {runtimeReadiness.coinbase_ws_error}</div>
+        )}
       </section>
 
       <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">

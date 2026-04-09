@@ -11,6 +11,7 @@ from app.services.execution_journal import execution_journal
 from app.services.lightweight_metrics import lightweight_metrics
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
+from app.services.news.coinbase_ws_service import coinbase_ws_service
 from app.services.news.news_intelligence import news_intelligence
 from app.services.swarm.execution_bridge import execution_bridge
 
@@ -70,6 +71,7 @@ def get_runtime_readiness() -> dict:
     open_positions = len(portfolio.get("active_positions", [])) if portfolio else 0
     connected = alpaca_oauth_service.is_connected()
     mode = execution_bridge.get_mode()
+    ws_status = coinbase_ws_service.status()
 
     return {
         "as_of": now.isoformat(),
@@ -85,5 +87,8 @@ def get_runtime_readiness() -> dict:
         "rejected_executions_24h": rejected_24h,
         "decision_audits_24h": audits_24h,
         "news_audits_24h": news_audit_24h,
+        "coinbase_ws_connected": bool(ws_status.get("connected", False)),
+        "coinbase_ws_last_message_at": ws_status.get("last_message_at"),
+        "coinbase_ws_error": ws_status.get("last_error"),
         "lightweight_7d": lightweight_metrics.summary(days=7),
     }

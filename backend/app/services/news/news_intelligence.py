@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from threading import Lock
 
 from app.services.alpaca_client import alpaca_client
+from app.services.news.coinbase_ws_service import coinbase_ws_service
 
 
 @dataclass
@@ -64,9 +65,19 @@ class NewsIntelligenceService:
         else:
             event_flags.append("NO_RECENT_ALPACA_NEWS")
 
+        ws_signal = coinbase_ws_service.symbol_signal(upper)
+        if ws_signal:
+            selected_sources.append("COINBASE_WS_PUBLIC")
+            sentiment_score = max(-1.0, min((sentiment_score * 0.7) + (float(ws_signal["sentiment_score"]) * 0.3), 1.0))
+            news_momentum_score = max(float(news_momentum_score), float(ws_signal["news_momentum_score"]))
+            event_strength = max(float(event_strength), float(ws_signal["event_strength"]))
+            for flag in ws_signal.get("event_flags", []):
+                if flag not in event_flags:
+                    event_flags.append(flag)
+
         data_classification = "PUBLIC"
         rationale = (
-            "Signals derived from Alpaca public news data only; "
+            "Signals derived from Alpaca public news and Coinbase public websocket market feed; "
             "no private channels or restricted datasets included."
         )
 

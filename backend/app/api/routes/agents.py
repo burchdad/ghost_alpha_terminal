@@ -59,6 +59,7 @@ from app.services.decision_audit_store import decision_audit_store
 from app.services.swarm.decision_store import swarm_decision_store
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
+from app.services.news.coinbase_ws_service import coinbase_ws_service
 from app.services.news.news_intelligence import news_intelligence
 from app.services.opportunity_scanner import opportunity_scanner
 from app.services.portfolio_manager import portfolio_manager
@@ -233,6 +234,14 @@ def get_broker_connections() -> BrokerConnectionsResponse:
 )
 def get_news_sources() -> NewsSourceWhitelistResponse:
     return NewsSourceWhitelistResponse(sources=news_intelligence.source_whitelist())
+
+
+@router.get(
+    "/news/stream/status",
+    summary="Coinbase websocket ingest status for live news/momentum augmentation",
+)
+def get_news_stream_status() -> dict:
+    return coinbase_ws_service.status()
 
 
 @router.get(
