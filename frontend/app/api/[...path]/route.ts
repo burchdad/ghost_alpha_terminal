@@ -53,6 +53,8 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
       headers,
       body,
       cache: "no-store",
+      // Keep upstream redirect responses intact for browser-driven OAuth flows.
+      redirect: "manual",
     });
   } catch (err) {
     return jsonError(
