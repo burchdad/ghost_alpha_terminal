@@ -194,6 +194,7 @@ class ExecuteTradeRequest(BaseModel):
     strategy: str
     side: Literal["LONG", "SHORT"]
     entry_price: float = Field(gt=0)
+    regime: Literal["TRENDING", "RANGE_BOUND", "HIGH_VOLATILITY"] = "RANGE_BOUND"
     stop_loss_pct: float = Field(default=0.02, gt=0, le=0.5)
     take_profit_pct: float = Field(default=0.03, gt=0, le=0.5)
     account_balance: float = Field(default=100000, gt=1000)
@@ -432,6 +433,8 @@ class AllocationDecision(BaseModel):
     max_risk_amount: float
     stop_loss_pct: float
     agent_agreement: float = Field(ge=0, le=1)
+    realized_volatility_pct: float | None = Field(default=None, ge=0, le=1)
+    kelly_fraction: float | None = Field(default=None, ge=0, le=1)
     rationale: list[str]
     reason: str
 

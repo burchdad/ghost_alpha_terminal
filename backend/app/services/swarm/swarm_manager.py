@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
+from statistics import pstdev
 from typing import Literal
 
 from app.services.capital_allocator import AllocationInput, capital_allocator
@@ -79,6 +80,7 @@ class AgentSwarmManager:
         final_action, final_confidence, consensus_reasoning = self._aggregate(signals, snapshot)
         risk_level = self._risk_level(snapshot.regime, final_confidence)
         agreement = self._agent_agreement(signals, final_action)
+        realized_vol = self._realized_volatility_pct(snapshot.close_prices)
 
         # 3. Risk veto
         self._risk.analyze_market(snapshot)
@@ -99,6 +101,7 @@ class AgentSwarmManager:
                 agent_agreement=agreement,
                 drawdown_pct=float(control_state["rolling_drawdown_pct"]),
                 current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
+                realized_volatility_pct=realized_vol,
             )
         )
 
@@ -238,6 +241,20 @@ class AgentSwarmManager:
             return 0.0
         agreeing = sum(1 for sig in signals if sig.action == final_action)
         return agreeing / len(signals)
+
+    def _realized_volatility_pct(self, close_prices: list[float]) -> float:
+        if len(close_prices) < 3:
+            return 0.02
+        returns: list[float] = []
+        for idx in range(1, len(close_prices)):
+            prev = close_prices[idx - 1]
+            curr = close_prices[idx]
+            if prev <= 0:
+                continue
+            returns.append((curr / prev) - 1.0)
+        if not returns:
+            return 0.02
+        return max(0.001, min(pstdev(returns), 0.20))
 
     # ------------------------------------------------------------------
     # Private helpers
