@@ -137,6 +137,9 @@ API endpoints:
 - `GET /agents/opportunities?limit=10` (top opportunities + allocation split)
 - `GET /agents/execution-mode` and `POST /agents/execution-mode` (insight-only/paper/live)
 - `GET /agents/brokers/capabilities` (broker capability matrix used by router)
+- `GET /agents/news/sources` (whitelisted public news sources)
+- `GET /agents/news/{symbol}` (news/event signal for symbol)
+- `GET /agents/news/audit?limit=50` (news signal audit log)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
@@ -274,6 +277,18 @@ Swarm agent breakdown now exposes both:
 	- expected value
 	- safeguards applied
 	- decision inputs used
+
+### News Intelligence Layer
+
+- Added public-source news intelligence service with source whitelisting.
+- Each symbol now has:
+	- `sentiment_score`
+	- `news_momentum_score`
+	- `event_strength`
+	- `event_flags`
+- Data classification is explicitly tagged (`PUBLIC`/`DERIVED`/`RESTRICTED`/`UNKNOWN`).
+- Signals are auditable with timestamp, source list, and classification.
+- Opportunity ranking includes a bounded news alpha boost.
 
 ### Market Regime Detection
 

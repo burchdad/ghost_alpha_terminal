@@ -154,6 +154,20 @@ This document is a quick reference for what the platform can currently do.
   - safeguards
   - decision inputs
 
+## News Intelligence Layer
+
+- Public-source news intelligence enriches symbol scoring with:
+  - sentiment score
+  - news momentum score
+  - event strength
+  - event flags
+- Compliance guardrails:
+  - source whitelist endpoint (`GET /agents/news/sources`)
+  - explicit data classification tags (`PUBLIC`, `DERIVED`, `RESTRICTED`, `UNKNOWN`)
+  - auditable signal trail (`GET /agents/news/audit`)
+- Symbol-level news signal endpoint:
+  - `GET /agents/news/{symbol}`
+
 ## Safety and Risk Controls
 
 - Guardrails reject low-quality or over-risk trades.

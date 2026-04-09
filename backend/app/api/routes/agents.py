@@ -29,6 +29,10 @@ from app.models.schemas import (
     ExecutionModeUpdateRequest,
     GoalStatusResponse,
     GoalTargetRequest,
+    NewsAuditEntryResponse,
+    NewsAuditResponse,
+    NewsSignalResponse,
+    NewsSourceWhitelistResponse,
     OpportunitiesResponse,
     OpportunityRecommendation,
     SwarmAgentSignal,
@@ -41,6 +45,7 @@ from app.services.control_engine import control_engine
 from app.services.swarm.decision_store import swarm_decision_store
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
+from app.services.news.news_intelligence import news_intelligence
 from app.services.opportunity_scanner import opportunity_scanner
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
@@ -92,6 +97,34 @@ def update_execution_mode(payload: ExecutionModeUpdateRequest) -> ExecutionModeR
 )
 def get_broker_capabilities() -> BrokerCapabilitiesResponse:
     return BrokerCapabilitiesResponse(capabilities=execution_bridge.broker_capabilities())
+
+
+@router.get(
+    "/news/sources",
+    response_model=NewsSourceWhitelistResponse,
+    summary="Whitelisted public news sources used by the news intelligence layer",
+)
+def get_news_sources() -> NewsSourceWhitelistResponse:
+    return NewsSourceWhitelistResponse(sources=news_intelligence.source_whitelist())
+
+
+@router.get(
+    "/news/{symbol}",
+    response_model=NewsSignalResponse,
+    summary="News and event signal for a symbol from public sources",
+)
+def get_news_signal(symbol: str) -> NewsSignalResponse:
+    return NewsSignalResponse(**news_intelligence.analyze_symbol(symbol))
+
+
+@router.get(
+    "/news/audit",
+    response_model=NewsAuditResponse,
+    summary="Recent news-signal audit entries for traceability",
+)
+def get_news_audit(limit: int = Query(default=50, ge=1, le=500)) -> NewsAuditResponse:
+    entries = news_intelligence.recent_audit(limit=limit)
+    return NewsAuditResponse(entries=[NewsAuditEntryResponse(**item) for item in entries])
 
 
 @router.post(

@@ -7,6 +7,7 @@ from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
 from app.services.explainability import build_explainability
 from app.services.kronos_service import kronos_service
+from app.services.news.news_intelligence import news_intelligence
 from app.services.options_service import options_service
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
@@ -174,6 +175,7 @@ class OpportunityScanner:
             )
             signal = signal_engine.generate_signal(symbol=symbol, forecast=forecast, options_data=options_data)
             swarm = consensus_engine.generate_consensus(symbol=symbol, outputs=outputs)
+            news = news_intelligence.analyze_symbol(symbol)
             expected_return_pct = 0.0
             if forecast.forecast_prices:
                 expected_return_pct = (forecast.forecast_prices[-1] / options_data.underlying_price) - 1.0
@@ -215,11 +217,17 @@ class OpportunityScanner:
             )
 
             tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
+            news_alpha_boost = (
+                float(news["sentiment_score"]) * 0.10
+                + float(news["news_momentum_score"]) * 0.08
+                + float(news["event_strength"]) * 0.07
+            )
             risk_adjusted_score = (
                 swarm.consensus.confidence * 0.45
                 + max(0.0, risk["expected_value"]) * 8.0 * 0.2
                 + float(allocation["target_pct"]) * 3.0 * 0.2
                 + (0.15 if tradable else 0.0)
+                + news_alpha_boost
             )
 
             opportunities.append(
@@ -234,6 +242,12 @@ class OpportunityScanner:
                     "consensus_bias": swarm.consensus.final_bias,
                     "consensus_confidence": swarm.consensus.confidence,
                     "expected_return_pct": round(expected_return_pct, 6),
+                    "sentiment_score": news["sentiment_score"],
+                    "news_momentum_score": news["news_momentum_score"],
+                    "event_strength": news["event_strength"],
+                    "data_classification": news["data_classification"],
+                    "sources_used": news["sources_used"],
+                    "event_flags": news["event_flags"],
                     "risk_level": risk["risk_level"],
                     "expected_value": risk["expected_value"],
                     "target_pct": allocation["target_pct"],
@@ -261,6 +275,9 @@ class OpportunityScanner:
                             "expected_return_pct": round(expected_return_pct, 6),
                             "target_pct": allocation["target_pct"],
                             "goal_pressure_multiplier": goal_pressure_multiplier,
+                            "sentiment_score": news["sentiment_score"],
+                            "news_momentum_score": news["news_momentum_score"],
+                            "event_strength": news["event_strength"],
                         },
                     ),
                 }

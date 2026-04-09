@@ -525,6 +525,12 @@ class OpportunityRecommendation(BaseModel):
     consensus_bias: str
     consensus_confidence: float
     expected_return_pct: float
+    sentiment_score: float
+    news_momentum_score: float
+    event_strength: float
+    data_classification: Literal["PUBLIC", "DERIVED", "RESTRICTED", "UNKNOWN"]
+    sources_used: list[str]
+    event_flags: list[str]
     risk_level: str
     expected_value: float
     target_pct: float
@@ -553,3 +559,34 @@ class OpportunitiesResponse(BaseModel):
     opportunities: list[OpportunityRecommendation]
     capital_allocation_recommendations: list[CapitalSplitRecommendation]
     goal: GoalStatusResponse
+
+
+class NewsSignalResponse(BaseModel):
+    symbol: str
+    timestamp: datetime
+    data_classification: Literal["PUBLIC", "DERIVED", "RESTRICTED", "UNKNOWN"]
+    sources_used: list[str]
+    sentiment_score: float
+    news_momentum_score: float
+    event_strength: float
+    event_flags: list[str]
+    rationale: str
+
+
+class NewsAuditEntryResponse(BaseModel):
+    timestamp: datetime
+    symbol: str
+    data_classification: Literal["PUBLIC", "DERIVED", "RESTRICTED", "UNKNOWN"]
+    sources_used: list[str]
+    sentiment_score: float
+    news_momentum_score: float
+    event_strength: float
+    event_flags: list[str]
+
+
+class NewsAuditResponse(BaseModel):
+    entries: list[NewsAuditEntryResponse]
+
+
+class NewsSourceWhitelistResponse(BaseModel):
+    sources: list[str]
