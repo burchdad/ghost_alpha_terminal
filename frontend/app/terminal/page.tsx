@@ -225,6 +225,10 @@ type ExecutionHistoryResponse = {
   executions: ExecutionHistoryEntry[];
 };
 
+type OrchestratorScanLite = {
+  candidates: Array<{ symbol: string }>;
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -246,12 +250,36 @@ export default function TerminalPage() {
   const [backtest, setBacktest] = useState<BacktestResponse | null>(null);
   const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
   const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
+  const [orchestratorWatchlist, setOrchestratorWatchlist] = useState<string[]>([]);
 
   const watchlist = useMemo(() => {
     const ranked = opportunities?.opportunities ?? [];
-    const top = ranked.slice(0, 25).map((item) => item.symbol);
-    return Array.from(new Set([symbol, ...top])).slice(0, 30);
-  }, [opportunities, symbol]);
+    const topOpportunities = ranked.slice(0, 25).map((item) => item.symbol);
+    const fallback = [
+      "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "IWM",
+    ];
+    return Array.from(new Set([symbol, ...orchestratorWatchlist, ...topOpportunities, ...fallback])).slice(0, 50);
+  }, [opportunities, symbol, orchestratorWatchlist]);
+
+  useEffect(() => {
+    async function hydrateWatchlist() {
+      // Reuse orchestrator rankings for a broader, high-signal watchlist without re-adding orchestrator UI.
+      const latestRes = await fetch(`${API_BASE}/orchestrator/scan/latest`);
+      const latest = await parseJsonOrNull<OrchestratorScanLite>(latestRes);
+      if (latest?.candidates?.length) {
+        setOrchestratorWatchlist(latest.candidates.slice(0, 50).map((c) => c.symbol));
+        return;
+      }
+
+      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=50`, { method: "POST" });
+      const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
+      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 50).map((c) => c.symbol));
+    }
+
+    hydrateWatchlist().catch((error: unknown) => {
+      console.error("Failed to hydrate terminal watchlist", error);
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
