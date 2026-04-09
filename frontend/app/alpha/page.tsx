@@ -233,6 +233,35 @@ export default function AlphaPage() {
     return (scan?.candidates ?? []).slice(0, 12).map((c) => c.symbol);
   }, [scan]);
 
+  const compactStats = useMemo(() => {
+    const executionReady = (scan?.candidates ?? []).filter((c) => c.action_label === "EXECUTE").length;
+    const highConviction = (scan?.candidates ?? []).filter((c) => c.composite_score >= 0.7).length;
+    const openPositions = portfolio?.active_positions.length ?? 0;
+    const exposurePct = (portfolio?.risk_exposure_pct ?? 0) * 100;
+    const drawdownPct = (control?.rolling_drawdown_pct ?? 0) * 100;
+    const riskBudgetLeft = Math.max(0, ((control?.daily_loss_limit ?? 0) - (control?.daily_loss ?? 0)));
+    const stress = goal?.stress_level ?? "LOW";
+    const goalProb = (goal?.success_probability ?? 0) * 100;
+    const newsStrength = newsSignal?.event_strength ?? 0;
+    const contextConfidence = contextSignal?.modifiers.confidence_modifier ?? 1;
+    const audits = decisionAudit ?? [];
+    const accepted = audits.filter((a) => a.status === "ACCEPTED").length;
+    return {
+      executionReady,
+      highConviction,
+      openPositions,
+      exposurePct,
+      drawdownPct,
+      riskBudgetLeft,
+      stress,
+      goalProb,
+      newsStrength,
+      contextConfidence,
+      audits: audits.length,
+      accepted,
+    };
+  }, [scan, portfolio, control, goal, newsSignal, contextSignal, decisionAudit]);
+
   useEffect(() => {
     async function boot() {
       const [statusRes, latestRes] = await Promise.all([
@@ -425,6 +454,64 @@ export default function AlphaPage() {
           Open Deep Terminal
         </Link>
       </div>
+
+      <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-accent">NOC Strip</h2>
+          <p className="text-[11px] text-slate-400">Compact market-wide telemetry</p>
+        </div>
+        <div className="flex gap-3 overflow-x-auto pb-1">
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Ghost Alpha Engine</p>
+            <p className="mt-1 text-sm font-semibold text-terminal-accent">
+              {compactStats.executionReady} ready / {compactStats.highConviction} high conviction
+            </p>
+            <p className="text-[11px] text-slate-400">{scan?.total_scanned ?? 0} scanned</p>
+          </div>
+
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Portfolio</p>
+            <p className="mt-1 text-sm font-semibold text-cyan-300">
+              {compactStats.openPositions} open · {compactStats.exposurePct.toFixed(1)}% exposure
+            </p>
+            <p className="text-[11px] text-slate-400">Buying power {portfolio?.available_buying_power?.toFixed(0) ?? "0"}</p>
+          </div>
+
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Safety and Control</p>
+            <p className={`mt-1 text-sm font-semibold ${control?.trading_enabled ? "text-green-400" : "text-red-400"}`}>
+              {control?.trading_enabled ? "Trading Enabled" : "Kill Switch Active"}
+            </p>
+            <p className="text-[11px] text-slate-400">
+              DD {compactStats.drawdownPct.toFixed(2)}% · Loss budget left {compactStats.riskBudgetLeft.toFixed(0)}
+            </p>
+          </div>
+
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Goal Dashboard</p>
+            <p className="mt-1 text-sm font-semibold text-amber-300">
+              {compactStats.stress} stress · {compactStats.goalProb.toFixed(1)}% success
+            </p>
+            <p className="text-[11px] text-slate-400">Pressure {goal?.goal_pressure_multiplier?.toFixed(2) ?? "1.00"}x</p>
+          </div>
+
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">News and Context</p>
+            <p className="mt-1 text-sm font-semibold text-blue-300">
+              News {compactStats.newsStrength.toFixed(2)} · Ctx {compactStats.contextConfidence.toFixed(2)}x
+            </p>
+            <p className="text-[11px] text-slate-400">Focus {focusSymbol}</p>
+          </div>
+
+          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500">Decision Audit</p>
+            <p className="mt-1 text-sm font-semibold text-violet-300">
+              {compactStats.accepted}/{compactStats.audits} accepted
+            </p>
+            <p className="text-[11px] text-slate-400">Latest {selectedAuditId?.slice(0, 8) ?? "none"}</p>
+          </div>
+        </div>
+      </section>
 
       <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
