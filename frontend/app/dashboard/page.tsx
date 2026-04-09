@@ -179,6 +179,17 @@ type ControlResponse = {
   rejected_trades: RejectedTradeLog[];
 };
 
+async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
+  if (!res.ok) {
+    return null;
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function DashboardPage() {
   const [symbol, setSymbol] = useState("AAPL");
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
@@ -221,14 +232,14 @@ export default function DashboardPage() {
         fetch(`${API_BASE}/control`),
       ]);
 
-      const fData = (await fRes.json()) as ForecastResponse;
-      const oData = (await oRes.json()) as OptionsResponse;
-      const sData = (await sRes.json()) as SignalResponse;
-      const swarmData = (await swarmRes.json()) as SwarmResponse;
-      const perfData = (await perfRes.json()) as PerformanceResponse;
-      const backtestData = (await backtestRes.json()) as BacktestResponse;
-      const portfolioData = (await portfolioRes.json()) as PortfolioResponse;
-      const controlData = (await controlRes.json()) as ControlResponse;
+      const fData = await parseJsonOrNull<ForecastResponse>(fRes);
+      const oData = await parseJsonOrNull<OptionsResponse>(oRes);
+      const sData = await parseJsonOrNull<SignalResponse>(sRes);
+      const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
+      const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
+      const backtestData = await parseJsonOrNull<BacktestResponse>(backtestRes);
+      const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
+      const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
 
       setForecast(fData);
       setOptions(oData);
@@ -313,7 +324,7 @@ export default function DashboardPage() {
             <p>
               Regime: {forecast?.volatility ?? "..."} volatility. Directional bias: {forecast?.direction ?? "..."}.
               Strategy engine prefers {signal?.signal ?? "..."}, while swarm consensus is{" "}
-              {swarm?.consensus.top_strategy ?? "..."}. Suggested size {swarm?.position_size ?? 0} with {" "}
+              {swarm?.consensus?.top_strategy ?? "..."}. Suggested size {swarm?.position_size ?? 0} with {" "}
               {swarm?.risk_level ?? "MEDIUM"} risk.
             </p>
           </div>

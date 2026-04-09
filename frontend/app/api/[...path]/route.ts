@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function resolveBackendUrl(): string | null {
-  const raw = process.env.BACKEND_URL?.trim();
-  if (!raw) {
+  const rawInput = process.env.BACKEND_URL?.trim();
+  if (!rawInput) {
     return null;
   }
 
-  // BACKEND_URL must be absolute (e.g. https://...railway.app), never /api
-  if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+  const raw = rawInput.replace(/\/$/, "");
+
+  // Guard against accidental self-proxy values.
+  if (raw === "/api" || raw.endsWith("/api")) {
     return null;
   }
 
-  return raw.replace(/\/$/, "");
+  // Accept bare domains in env vars and default to https.
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw;
+  }
+
+  return `https://${raw}`;
 }
 
 function jsonError(status: number, code: string, message: string): NextResponse {
