@@ -15,6 +15,7 @@ from app.models.schemas import (
 )
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
+from app.services.decision_audit_store import decision_audit_store
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
@@ -42,6 +43,20 @@ def get_control_status() -> ControlStatusResponse:
                     "timestamp": entry.timestamp,
                     "symbol": entry.symbol,
                     "reason": entry.reason or "Execution not submitted.",
+                }
+            )
+    except Exception:
+        pass
+
+    try:
+        # Include decision-audit rejections for paths that do not write to control_engine reject log.
+        rejected_audits = decision_audit_store.list_recent(limit=200, status="REJECTED")
+        for audit in rejected_audits:
+            merged_rejections.append(
+                {
+                    "timestamp": audit.get("timestamp"),
+                    "symbol": str(audit.get("symbol", "N/A")),
+                    "reason": "Decision audit marked REJECTED.",
                 }
             )
     except Exception:
