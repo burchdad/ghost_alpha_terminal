@@ -97,6 +97,7 @@ class AgentSwarmManager:
             current_capital=float(portfolio_state["account_balance"])
         )
         recent_win_rate = self._recent_win_rate(limit=30)
+        symbol_recent_win_rate = self._recent_symbol_win_rate(symbol.upper(), limit=24)
 
         # 2. Weighted vote
         final_action, final_confidence, consensus_reasoning = self._aggregate(
@@ -189,12 +190,15 @@ class AgentSwarmManager:
             and goal_pressure > 1.15
             and float(control_state["rolling_drawdown_pct"]) < 0.03
             and recent_win_rate >= 0.50
+            and symbol_recent_win_rate >= 0.50
             and final_confidence >= 0.58
         ):
             probe_action = self._probe_direction(snapshot.close_prices)
             if probe_action in {"BUY", "SELL"}:
                 final_action = probe_action
                 probe_scale = 0.35
+                if symbol_recent_win_rate >= 0.55 and recent_win_rate >= 0.52:
+                    probe_scale = 0.45
                 allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * probe_scale, 2)
                 allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * probe_scale, 4)
                 allocation["reason"] = (
@@ -203,7 +207,10 @@ class AgentSwarmManager:
                 )
                 consensus_reasoning = (
                     consensus_reasoning
-                    + f" | Probe lane enabled: action={probe_action}, scale={probe_scale:.2f}, recent_win_rate={recent_win_rate:.2f}."
+                    + (
+                        f" | Probe lane enabled: action={probe_action}, scale={probe_scale:.2f}, "
+                        f"recent_win_rate={recent_win_rate:.2f}, symbol_recent_win_rate={symbol_recent_win_rate:.2f}."
+                    )
                 )
                 revetoed, reveto_reason = self._risk.veto(
                     final_action,
@@ -256,6 +263,7 @@ class AgentSwarmManager:
                 "realized_volatility_pct": round(realized_vol, 6),
                 "agent_agreement": round(agreement, 4),
                 "recent_win_rate": round(recent_win_rate, 4),
+                "symbol_recent_win_rate": round(symbol_recent_win_rate, 4),
                 "context": context,
                 "governor": governor.__dict__,
             },
@@ -477,6 +485,18 @@ class AgentSwarmManager:
             e
             for e in entries
             if e.outcome_label in {"WIN", "LOSS"} and e.submitted
+        ]
+        if not settled:
+            return 0.5
+        wins = sum(1 for e in settled if e.outcome_label == "WIN")
+        return wins / max(len(settled), 1)
+
+    def _recent_symbol_win_rate(self, symbol: str, limit: int = 24) -> float:
+        entries = execution_journal.recent(limit=limit)
+        settled = [
+            e
+            for e in entries
+            if e.symbol == symbol and e.outcome_label in {"WIN", "LOSS"} and e.submitted
         ]
         if not settled:
             return 0.5

@@ -93,11 +93,11 @@ class RiskAgent(TradingAgent):
         if snap and snap.regime == "HIGH_VOLATILITY" and proposed_action != "HOLD":
             adaptive_conf_floor = 0.72
             if goal_pressure > 1.2 and drawdown_pct < 0.03 and recent_win_rate >= 0.50:
-                adaptive_conf_floor -= 0.04
+                adaptive_conf_floor -= 0.05
             elif goal_pressure > 1.05 and drawdown_pct < 0.02 and recent_win_rate >= 0.45:
-                adaptive_conf_floor -= 0.02
+                adaptive_conf_floor -= 0.03
 
-            adaptive_conf_floor = max(0.66, min(0.74, adaptive_conf_floor))
+            adaptive_conf_floor = max(0.64, min(0.74, adaptive_conf_floor))
 
             if consensus_confidence < adaptive_conf_floor:
                 return True, (
