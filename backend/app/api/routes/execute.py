@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.control_engine import control_engine
 from app.models.schemas import ExecuteTradeRequest, ExecuteTradeResponse
+from app.services.goal_engine import goal_engine
 from app.services.historical_data_service import historical_data_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.regime_detector import regime_detector
@@ -51,6 +52,9 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
     portfolio_manager.configure(balance=payload.account_balance)
     portfolio_state = portfolio_manager.snapshot()
     control_state = control_engine.status()
+    goal_pressure = goal_engine.current_pressure(
+        current_capital=float(portfolio_state["account_balance"])
+    )
 
     risk_level = "HIGH" if payload.confidence < 0.58 else "MEDIUM" if payload.confidence < 0.70 else "LOW"
     inferred_regime, realized_volatility_pct = _derive_market_context(payload.symbol)
@@ -65,6 +69,7 @@ def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
             drawdown_pct=float(control_state["rolling_drawdown_pct"]),
             current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
             realized_volatility_pct=realized_volatility_pct,
+            goal_pressure_multiplier=goal_pressure,
         )
     )
 

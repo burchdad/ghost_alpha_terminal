@@ -16,6 +16,7 @@ Production-oriented MVP for an AI-powered trading intelligence platform that com
 - Backend is deployed and verified on Railway.
 - Frontend is deployed and verified on Vercel.
 - Latest checkpoint commit on `main`: `d63e810`.
+- Latest checkpoint commit on `main`: `48a1e98`.
 
 For a concise feature inventory, see `CAPABILITIES.md`.
 
@@ -63,7 +64,9 @@ backend/
 			autonomous_runner.py
 			capital_allocator.py
 			execution_journal.py
+			goal_engine.py
 			kronos_service.py
+			opportunity_scanner.py
 			options_service.py
 			portfolio_manager.py
 			signal_engine.py
@@ -129,6 +132,9 @@ API endpoints:
 - `POST /control/autonomous`
 - `POST /control/autonomous/run-once`
 - `GET /agents/*` (agent settings, scoring, and diagnostics)
+- `POST /agents/goal` (set target capital + timeframe)
+- `GET /agents/goal/status` (trajectory and pressure tracking)
+- `GET /agents/opportunities?limit=10` (top opportunities + allocation split)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 
 Example trade outcome payload:
@@ -214,6 +220,20 @@ Swarm agent breakdown now exposes both:
 
 - `raw_confidence`
 - `adjusted_confidence`
+
+### Goal Engine + Trajectory Awareness
+
+- Goal layer accepts target inputs (`start_capital`, `target_capital`, `timeframe_days`).
+- System computes required return, remaining required pace, and trajectory gap.
+- A bounded goal-pressure multiplier is produced and injected into allocation sizing.
+- When trajectory falls behind, sizing pressure can increase within hard risk limits.
+
+### Opportunity Scanner + Pre-Filter
+
+- Broad ticker universe includes US/global equities plus crypto symbols.
+- Pre-filter pipeline evaluates liquidity, spread proxy, momentum, and realized volatility.
+- Scanner returns ranked opportunities with risk-adjusted allocation recommendations.
+- API includes capital split suggestions for top tradable setups.
 
 ### Market Regime Detection
 

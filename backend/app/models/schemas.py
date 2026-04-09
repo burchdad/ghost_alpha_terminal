@@ -434,6 +434,7 @@ class AllocationDecision(BaseModel):
     agent_agreement: float = Field(ge=0, le=1)
     realized_volatility_pct: float | None = Field(default=None, ge=0, le=1)
     kelly_fraction: float | None = Field(default=None, ge=0, le=1)
+    goal_pressure_multiplier: float | None = Field(default=None, ge=0.5, le=2.5)
     rationale: list[str]
     reason: str
 
@@ -477,3 +478,64 @@ class AutonomousModeStatusResponse(BaseModel):
     last_run_at: datetime | None = None
     last_error: str | None = None
     cycles_run: int = 0
+
+
+class GoalTargetRequest(BaseModel):
+    start_capital: float = Field(gt=0)
+    target_capital: float = Field(gt=0)
+    timeframe_days: int = Field(ge=1, le=3650)
+
+
+class GoalStatusResponse(BaseModel):
+    enabled: bool
+    start_capital: float | None = None
+    target_capital: float | None = None
+    timeframe_days: int | None = None
+    elapsed_days: float = 0
+    remaining_days: float | None = None
+    required_total_return: float = 0
+    required_daily_return: float = 0
+    required_daily_return_remaining: float = 0
+    trajectory_expected_capital: float | None = None
+    trajectory_gap_pct: float = 0
+    goal_pressure_multiplier: float = 1.0
+    target_unrealistic: bool = False
+    message: str = ""
+
+
+class OpportunityRecommendation(BaseModel):
+    symbol: str
+    asset_class: str
+    region: str
+    regime: str
+    regime_confidence: float
+    signal: str
+    recommended_trade: str
+    consensus_bias: str
+    consensus_confidence: float
+    risk_level: str
+    expected_value: float
+    target_pct: float
+    recommended_notional: float
+    recommended_qty: float
+    goal_pressure_multiplier: float
+    realized_volatility_pct: float
+    avg_dollar_volume: float
+    spread_proxy: float
+    prefilter_score: float
+    tradable: bool
+    opportunity_score: float
+
+
+class CapitalSplitRecommendation(BaseModel):
+    symbol: str
+    recommended_notional: float
+    allocation_weight: float
+
+
+class OpportunitiesResponse(BaseModel):
+    scanned: int
+    passed_prefilter: int
+    opportunities: list[OpportunityRecommendation]
+    capital_allocation_recommendations: list[CapitalSplitRecommendation]
+    goal: GoalStatusResponse

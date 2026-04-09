@@ -5,6 +5,7 @@ from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
 from app.services.control_engine import control_engine
+from app.services.goal_engine import goal_engine
 from app.services.kronos_service import kronos_service
 from app.services.agent_scorer import agent_scorer
 from app.services.learning_store import learning_store
@@ -47,6 +48,9 @@ def get_swarm(symbol: str) -> SwarmResponse:
     risk_level = "HIGH" if regime.regime == "HIGH_VOLATILITY" else "MEDIUM" if regime.regime == "RANGE_BOUND" else "LOW"
     portfolio_state = portfolio_manager.snapshot()
     control_state = control_engine.status()
+    goal_pressure = goal_engine.current_pressure(
+        current_capital=float(portfolio_state["account_balance"])
+    )
 
     allocation = capital_allocator.compute(
         AllocationInput(
@@ -59,6 +63,7 @@ def get_swarm(symbol: str) -> SwarmResponse:
             drawdown_pct=float(control_state["rolling_drawdown_pct"]),
             current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
             realized_volatility_pct=realized_volatility,
+            goal_pressure_multiplier=goal_pressure,
         )
     )
 

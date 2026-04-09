@@ -22,6 +22,7 @@ from typing import Literal
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.control_engine import control_engine
 from app.services.execution_journal import execution_journal
+from app.services.goal_engine import goal_engine
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.base_agent import MarketSnapshot, SwarmSignal
 from app.services.swarm.decision_store import AgentCycleRecord, swarm_decision_store
@@ -91,6 +92,9 @@ class AgentSwarmManager:
 
         portfolio_state = portfolio_manager.snapshot()
         control_state = control_engine.status()
+        goal_pressure = goal_engine.current_pressure(
+            current_capital=float(portfolio_state["account_balance"])
+        )
         allocation = capital_allocator.compute(
             AllocationInput(
                 account_balance=float(portfolio_state["account_balance"]),
@@ -102,6 +106,7 @@ class AgentSwarmManager:
                 drawdown_pct=float(control_state["rolling_drawdown_pct"]),
                 current_exposure_pct=float(portfolio_state["risk_exposure_pct"]),
                 realized_volatility_pct=realized_vol,
+                goal_pressure_multiplier=goal_pressure,
             )
         )
 

@@ -10,6 +10,8 @@ This document is a quick reference for what the platform can currently do.
 - Portfolio and performance tracking with regime-aware analytics.
 - Operator controls for kill switch and autonomous execution mode.
 - Web dashboard for monitoring, controls, and simulation workflows.
+- Target-seeking goal engine with trajectory-aware pressure control.
+- Broad-universe opportunity scanner with allocation recommendations.
 
 ## Backend Capabilities
 
@@ -38,6 +40,8 @@ This document is a quick reference for what the platform can currently do.
   - Records trade outcomes for learning and performance analytics.
 - `POST /execute`
   - Execution path gated by safety checks and control status.
+  - Regime and realized volatility are system-derived from recent candles.
+  - Allocation sizing is goal-pressure aware when a target is active.
 - `GET /control`
   - Returns current system status and risk gate state.
 - `POST /control/kill-switch`
@@ -66,6 +70,12 @@ This document is a quick reference for what the platform can currently do.
 
 - `GET|POST /agents/*`
   - Agent management, diagnostics, and scoring-related endpoints.
+  - Goal APIs:
+    - `POST /agents/goal`
+    - `GET /agents/goal/status`
+  - Opportunity APIs:
+    - `GET /agents/opportunities?limit=10`
+    - Returns top opportunities, risk-adjusted setup ranking, and capital split recommendations.
 - `GET|POST /alpaca/*`
   - Broker account, assets, orders, and positions routes.
 
@@ -84,6 +94,28 @@ This document is a quick reference for what the platform can currently do.
 - Persistence for forecast history, signals, agent predictions, and trade outcomes.
 - Feedback loop improves agent weighting over time via stored outcomes.
 - Regime-aware attribution for better evaluation under varying market conditions.
+
+## Goal and Trajectory Layer
+
+- Goal inputs: starting capital, target capital, timeframe.
+- Derived metrics:
+  - required total return
+  - required daily return
+  - remaining required return pace
+  - expected trajectory vs actual capital gap
+- Output:
+  - bounded `goal_pressure_multiplier` injected into allocator.
+  - risk-aware adaptation when behind or ahead of trajectory.
+
+## Market Scanner Layer
+
+- Universe includes global equities and crypto symbols.
+- Pre-filter pipeline evaluates:
+  - liquidity via average dollar volume
+  - spread proxy
+  - momentum
+  - realized volatility
+- Detailed ranking combines consensus confidence, expected value, and allocation quality.
 
 ## Safety and Risk Controls
 

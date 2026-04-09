@@ -14,6 +14,7 @@ class AllocationInput:
     drawdown_pct: float
     current_exposure_pct: float
     realized_volatility_pct: float = 0.02
+    goal_pressure_multiplier: float = 1.0
 
 
 class CapitalAllocator:
@@ -23,6 +24,7 @@ class CapitalAllocator:
         drawdown_pct = max(0.0, min(payload.drawdown_pct, 1.0))
         exposure_pct = max(0.0, min(payload.current_exposure_pct, 1.0))
         realized_vol = max(0.0005, min(payload.realized_volatility_pct, 1.0))
+        goal_pressure = max(0.5, min(payload.goal_pressure_multiplier, 2.5))
         price = max(payload.current_price, 0.01)
         balance = max(payload.account_balance, 0.0)
 
@@ -71,6 +73,7 @@ class CapitalAllocator:
         target_pct *= agreement_multiplier
         target_pct *= drawdown_multiplier
         target_pct *= portfolio_risk_multiplier
+        target_pct *= goal_pressure
         target_pct = max(0.0, min(target_pct, max_position_pct))
 
         notional = round(balance * target_pct, 2)
@@ -93,6 +96,7 @@ class CapitalAllocator:
             f"agreement_mult={agreement_multiplier:.2f}",
             f"drawdown_mult={drawdown_multiplier:.2f}",
             f"portfolio_risk_mult={portfolio_risk_multiplier:.2f}",
+            f"goal_pressure_mult={goal_pressure:.2f}",
         ]
 
         return {
@@ -105,6 +109,7 @@ class CapitalAllocator:
             "agent_agreement": round(agreement, 4),
             "realized_volatility_pct": round(realized_vol, 6),
             "kelly_fraction": round(kelly_fraction, 6),
+            "goal_pressure_multiplier": round(goal_pressure, 4),
             "rationale": rationale,
             "reason": "Allocation approved." if accepted else "Allocation rejected: confidence/notional below threshold.",
         }

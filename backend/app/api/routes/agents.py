@@ -19,20 +19,29 @@ from app.models.schemas import (
     AgentWeightSnapshot,
     AgentWeightEntry,
     AgentWeightsResponse,
+    CapitalSplitRecommendation,
     DecisionOutcome,
     DecisionOutcomeUpdateRequest,
     ExecutionHistoryEntry,
     ExecutionHistoryResponse,
     ExecutionModeResponse,
     ExecutionModeUpdateRequest,
+    GoalStatusResponse,
+    GoalTargetRequest,
+    OpportunitiesResponse,
+    OpportunityRecommendation,
     SwarmAgentSignal,
     SwarmCycleRequest,
     SwarmCycleResponse,
     SwarmDecisionListResponse,
     SwarmStatusResponse,
 )
+from app.services.control_engine import control_engine
 from app.services.swarm.decision_store import swarm_decision_store
 from app.services.execution_journal import execution_journal
+from app.services.goal_engine import goal_engine
+from app.services.opportunity_scanner import opportunity_scanner
+from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
 from app.services.swarm.weight_engine import dynamic_weight_engine
@@ -73,6 +82,60 @@ def get_execution_mode() -> ExecutionModeResponse:
 def update_execution_mode(payload: ExecutionModeUpdateRequest) -> ExecutionModeResponse:
     mode = execution_bridge.set_mode(payload.mode)
     return ExecutionModeResponse(mode=mode)
+
+
+@router.post(
+    "/goal",
+    response_model=GoalStatusResponse,
+    summary="Set target-based goal for pressure-aware allocation",
+)
+def set_goal(payload: GoalTargetRequest) -> GoalStatusResponse:
+    status = goal_engine.configure(
+        start_capital=payload.start_capital,
+        target_capital=payload.target_capital,
+        timeframe_days=payload.timeframe_days,
+    )
+    return GoalStatusResponse(**status)
+
+
+@router.get(
+    "/goal/status",
+    response_model=GoalStatusResponse,
+    summary="Get current target trajectory and pressure state",
+)
+def get_goal_status() -> GoalStatusResponse:
+    portfolio = portfolio_manager.snapshot()
+    status = goal_engine.status(current_capital=float(portfolio["account_balance"]))
+    return GoalStatusResponse(**status)
+
+
+@router.get(
+    "/opportunities",
+    response_model=OpportunitiesResponse,
+    summary="Top opportunity scan with risk-adjusted allocation recommendations",
+)
+def get_opportunities(limit: int = Query(default=10, ge=1, le=25)) -> OpportunitiesResponse:
+    portfolio = portfolio_manager.snapshot()
+    control = control_engine.status()
+    goal = goal_engine.status(current_capital=float(portfolio["account_balance"]))
+
+    result = opportunity_scanner.scan(
+        limit=limit,
+        account_balance=float(portfolio["account_balance"]),
+        drawdown_pct=float(control["rolling_drawdown_pct"]),
+        current_exposure_pct=float(portfolio["risk_exposure_pct"]),
+        goal_pressure_multiplier=float(goal["goal_pressure_multiplier"]),
+    )
+
+    return OpportunitiesResponse(
+        scanned=result["scanned"],
+        passed_prefilter=result["passed_prefilter"],
+        opportunities=[OpportunityRecommendation(**item) for item in result["opportunities"]],
+        capital_allocation_recommendations=[
+            CapitalSplitRecommendation(**item) for item in result["capital_allocation_recommendations"]
+        ],
+        goal=GoalStatusResponse(**goal),
+    )
 
 
 @router.get(
