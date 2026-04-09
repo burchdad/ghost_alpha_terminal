@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.config import settings
 from app.services.brokers.alpaca_adapter import alpaca_broker_adapter
 from app.services.brokers.base import BrokerAdapter, BrokerOrderRequest, BrokerOrderResult
 from app.services.brokers.coinbase_adapter import coinbase_broker_adapter
@@ -25,9 +26,14 @@ class BrokerRouter:
         return "equity"
 
     def route_broker(self, *, symbol: str, liquidity_score: float = 1.0) -> str:
+        del liquidity_score
         asset_type = self.classify_asset_type(symbol)
         if asset_type == "crypto":
-            if liquidity_score >= 0.55:
+            # Prefer Coinbase for explicitly allowlisted crypto products.
+            upper = symbol.upper()
+            normalized = f"{upper[:-3]}-USD" if upper.endswith("USD") and len(upper) > 3 else upper
+            allowlist = {item.strip().upper() for item in settings.coinbase_trade_products.split(",") if item.strip()}
+            if normalized in allowlist:
                 return "coinbase"
             return "alpaca"
         return "alpaca"

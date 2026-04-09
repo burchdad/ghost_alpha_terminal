@@ -8,6 +8,8 @@ from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
 from app.services.context_intelligence import context_intelligence
+from app.services.brokers.router import broker_router
+from app.services.swarm.execution_bridge import execution_bridge
 from app.services.explainability import build_explainability
 from app.services.historical_data_service import historical_data_service
 from app.services.kronos_service import kronos_service
@@ -427,6 +429,43 @@ class OpportunityScanner:
             "last_price": close[-1],
         }
 
+    def _execution_viability(self, *, symbol: str, asset_class: str, action: str) -> tuple[str, bool, str | None]:
+        broker = broker_router.route_broker(symbol=symbol, liquidity_score=1.0)
+        mode = execution_bridge.get_mode()
+
+        if action == "HOLD":
+            return broker, False, "No directional edge."
+
+        if mode == "SIMULATION":
+            return broker, False, "Execution mode is SIMULATION."
+
+        if broker == "coinbase":
+            if asset_class != "crypto":
+                return broker, False, "Coinbase route only supports crypto assets."
+
+            if not settings.coinbase_api_key_name or not settings.coinbase_api_private_key:
+                return broker, False, "Coinbase credentials are missing."
+
+            if not settings.coinbase_live_trading_enabled:
+                return broker, False, "Coinbase live trading is disabled."
+
+            if mode != "LIVE_TRADING":
+                return broker, False, "Coinbase execution requires LIVE_TRADING mode."
+
+            return broker, True, None
+
+        # Alpaca route
+        if not settings.alpaca_api_key or not settings.alpaca_secret_key:
+            return broker, False, "Alpaca credentials are missing."
+
+        if mode == "LIVE_TRADING" and settings.alpaca_paper:
+            return broker, False, "LIVE_TRADING with Alpaca requires ALPACA_PAPER=false."
+
+        if mode == "PAPER_TRADING" and not settings.alpaca_paper:
+            return broker, False, "PAPER_TRADING with Alpaca requires ALPACA_PAPER=true."
+
+        return broker, True, None
+
     def scan(
         self,
         *,
@@ -525,7 +564,12 @@ class OpportunityScanner:
                     account_balance=account_balance,
                 )
 
-                tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
+                routed_broker, broker_viable, broker_block_reason = self._execution_viability(
+                    symbol=symbol,
+                    asset_class=candidate["asset_class"],
+                    action=action,
+                )
+                tradable = action != "HOLD" and allocation["accepted"] and risk["approved"] and broker_viable
                 validation = context.get("signal_validation", {})
                 reaction = context.get("market_reaction", {})
                 validated_strength = float(validation.get("validated_signal_strength", 0.0))
@@ -558,6 +602,7 @@ class OpportunityScanner:
                     + max(0.0, risk["expected_value"]) * 8.0 * 0.2
                     + float(allocation["target_pct"]) * 3.0 * 0.2
                     + (0.15 if tradable else 0.0)
+                    + (0.05 if broker_viable else -0.03)
                     + news_alpha_boost
                     + float(context["modifiers"]["opportunity_boost"])
                 )
@@ -587,6 +632,9 @@ class OpportunityScanner:
                     "signal_validation": context.get("signal_validation", {}),
                     "market_reaction": context.get("market_reaction", {}),
                     "risk_level": risk["risk_level"],
+                    "broker": routed_broker,
+                    "broker_ready": broker_viable,
+                    "broker_block_reason": broker_block_reason,
                     "expected_value": risk["expected_value"],
                     "target_pct": allocation["target_pct"],
                     "recommended_notional": allocation["recommended_notional"],
