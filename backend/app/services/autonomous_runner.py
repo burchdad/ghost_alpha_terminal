@@ -20,6 +20,8 @@ class AutonomousRunner:
         self._interval_seconds = 300
         self._symbols: list[str] = []
         self._thread: threading.Thread | None = None
+        self._run_once_thread: threading.Thread | None = None
+        self._run_once_active = False
         self._last_run_at: datetime | None = None
         self._last_error: str | None = None
         self._cycles_run = 0
@@ -34,6 +36,28 @@ class AutonomousRunner:
                 "last_error": self._last_error,
                 "cycles_run": self._cycles_run,
             }
+
+    def trigger_run_once(self) -> dict:
+        should_start = False
+        with self._lock:
+            if not self._run_once_active:
+                self._run_once_active = True
+                should_start = True
+
+        if should_start:
+            thread = threading.Thread(target=self._run_once_wrapper, daemon=True)
+            with self._lock:
+                self._run_once_thread = thread
+            thread.start()
+
+        return self.status()
+
+    def _run_once_wrapper(self) -> None:
+        try:
+            self.run_once()
+        finally:
+            with self._lock:
+                self._run_once_active = False
 
     def configure(self, *, enabled: bool | None = None, interval_seconds: int | None = None, symbols: list[str] | None = None) -> dict:
         with self._lock:

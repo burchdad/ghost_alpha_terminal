@@ -18,6 +18,14 @@ from app.services.swarm.execution_bridge import execution_bridge
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
 
+def _as_utc(dt: datetime | None) -> datetime | None:
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 @router.get(
     "/lightweight",
     summary="Lightweight launch metrics summary (scans, trades, strategy mix)",
@@ -47,7 +55,9 @@ def get_runtime_readiness() -> dict:
     scan_age_seconds: float | None = None
     latest_candidates = 0
     if latest_scan is not None:
-        scan_age_seconds = max(0.0, (now - latest_scan.scanned_at).total_seconds())
+        scanned_at = _as_utc(getattr(latest_scan, "scanned_at", None))
+        if scanned_at is not None:
+            scan_age_seconds = max(0.0, (now - scanned_at).total_seconds())
         latest_candidates = len(latest_scan.candidates)
 
     try:
@@ -73,8 +83,8 @@ def get_runtime_readiness() -> dict:
 
     audits_24h = 0
     for audit in audits:
-        ts = audit.get("timestamp")
-        if isinstance(ts, datetime) and ts >= window_start:
+        ts = _as_utc(audit.get("timestamp"))
+        if ts is not None and ts >= window_start:
             audits_24h += 1
 
     try:
@@ -84,8 +94,8 @@ def get_runtime_readiness() -> dict:
 
     news_audit_24h = 0
     for entry in news_entries:
-        ts = entry.get("timestamp")
-        if isinstance(ts, datetime) and ts >= window_start:
+        ts = _as_utc(entry.get("timestamp"))
+        if ts is not None and ts >= window_start:
             news_audit_24h += 1
 
     try:

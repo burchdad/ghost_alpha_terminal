@@ -55,4 +55,4 @@ def update_autonomous(payload: AutonomousModeUpdateRequest) -> AutonomousModeSta
 
 @router.post("/autonomous/run-once", response_model=AutonomousModeStatusResponse)
 def run_autonomous_once() -> AutonomousModeStatusResponse:
-    return AutonomousModeStatusResponse(**autonomous_runner.run_once())
+    return AutonomousModeStatusResponse(**autonomous_runner.trigger_run_once())
