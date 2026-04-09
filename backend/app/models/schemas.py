@@ -407,6 +407,28 @@ class BrokerCapabilitiesResponse(BaseModel):
     capabilities: dict[str, dict]
 
 
+class BrokerConnectionEntryResponse(BaseModel):
+    provider: str
+    label: str
+    connected: bool
+    connectable: bool
+    disconnect_supported: bool
+    auth_type: Literal["oauth", "api_key", "unavailable"]
+    permissions: str
+    mode: str | None = None
+    status_label: str
+    connect_path: str | None = None
+    disconnect_path: str | None = None
+    updated_at: datetime | None = None
+    last_error: str | None = None
+    notes: str | None = None
+    capabilities: dict[str, bool]
+
+
+class BrokerConnectionsResponse(BaseModel):
+    brokers: list[BrokerConnectionEntryResponse]
+
+
 # ---------------------------------------------------------------------------
 # Dynamic Weight Engine schemas
 # ---------------------------------------------------------------------------

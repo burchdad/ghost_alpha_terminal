@@ -11,6 +11,7 @@ WebSocket future hook:
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from sqlalchemy import select
 
 from app.models.schemas import (
     AgentAttribution,
@@ -18,7 +19,9 @@ from app.models.schemas import (
     AgentWeightHistoryResponse,
     AgentWeightSnapshot,
     AgentWeightEntry,
+    BrokerConnectionsResponse,
     AgentWeightsResponse,
+    BrokerConnectionEntryResponse,
     BrokerCapabilitiesResponse,
     CapitalSplitRecommendation,
     ContextSignalResponse,
@@ -47,6 +50,9 @@ from app.models.schemas import (
     SwarmDecisionListResponse,
     SwarmStatusResponse,
 )
+from app.core.config import settings
+from app.db.models import BrokerOAuthConnection
+from app.db.session import get_session
 from app.services.control_engine import control_engine
 from app.services.context_intelligence import context_intelligence
 from app.services.decision_audit_store import decision_audit_store
@@ -105,6 +111,85 @@ def update_execution_mode(payload: ExecutionModeUpdateRequest) -> ExecutionModeR
 )
 def get_broker_capabilities() -> BrokerCapabilitiesResponse:
     return BrokerCapabilitiesResponse(capabilities=execution_bridge.broker_capabilities())
+
+
+@router.get(
+    "/brokers/connections",
+    response_model=BrokerConnectionsResponse,
+    summary="Broker connection inventory for the connection safety banner",
+)
+def get_broker_connections() -> BrokerConnectionsResponse:
+    capability_map = execution_bridge.broker_capabilities()
+    with get_session() as session:
+        rows = session.execute(select(BrokerOAuthConnection)).scalars().all()
+
+    connections = {row.provider: row for row in rows}
+    brokers: list[BrokerConnectionEntryResponse] = []
+
+    for provider, capability in capability_map.items():
+        connection = connections.get(provider)
+        if provider == "alpaca":
+            oauth_ready = bool(
+                settings.alpaca_connect_client_id
+                and settings.alpaca_connect_client_secret
+                and settings.alpaca_connect_redirect_uri
+            )
+            connected = bool(connection and connection.connected and connection.access_token)
+            brokers.append(
+                BrokerConnectionEntryResponse(
+                    provider=provider,
+                    label="Alpaca",
+                    connected=connected,
+                    connectable=oauth_ready,
+                    disconnect_supported=True,
+                    auth_type="oauth",
+                    permissions="Trading (User Authorized)" if connected else "Not Authorized",
+                    mode="Paper Trading" if settings.alpaca_paper else "Live Trading",
+                    status_label="Connected" if connected else ("Ready to Connect" if oauth_ready else "OAuth Not Configured"),
+                    connect_path="/alpaca/oauth/start?next=/alpha",
+                    disconnect_path="/alpaca/oauth/disconnect",
+                    updated_at=connection.updated_at if connection else None,
+                    last_error=connection.last_error if connection else None,
+                    notes="Primary equities and crypto broker with user-authorized OAuth trading access.",
+                    capabilities={
+                        "supports_equities": bool(capability.get("supports_equities")),
+                        "supports_crypto": bool(capability.get("supports_crypto")),
+                        "supports_options": bool(capability.get("supports_options")),
+                        "supports_fractional": bool(capability.get("supports_fractional")),
+                        "supports_leverage": bool(capability.get("supports_leverage")),
+                    },
+                )
+            )
+            continue
+
+        connected = bool(connection and connection.connected and connection.access_token)
+        brokers.append(
+            BrokerConnectionEntryResponse(
+                provider=provider,
+                label=provider.replace("_", " ").title(),
+                connected=connected,
+                connectable=False,
+                disconnect_supported=False,
+                auth_type="unavailable",
+                permissions="Activation Pending",
+                mode=None,
+                status_label="Not Yet Activated",
+                connect_path=None,
+                disconnect_path=None,
+                updated_at=connection.updated_at if connection else None,
+                last_error=connection.last_error if connection else None,
+                notes="Broker is visible in the routing layer, but account authentication has not been implemented yet.",
+                capabilities={
+                    "supports_equities": bool(capability.get("supports_equities")),
+                    "supports_crypto": bool(capability.get("supports_crypto")),
+                    "supports_options": bool(capability.get("supports_options")),
+                    "supports_fractional": bool(capability.get("supports_fractional")),
+                    "supports_leverage": bool(capability.get("supports_leverage")),
+                },
+            )
+        )
+
+    return BrokerConnectionsResponse(brokers=brokers)
 
 
 @router.get(

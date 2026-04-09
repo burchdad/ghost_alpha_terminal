@@ -200,6 +200,28 @@ type AlpacaOauthStatusResponse = {
   oauth_ready: boolean;
 };
 
+type BrokerConnectionEntry = {
+  provider: string;
+  label: string;
+  connected: boolean;
+  connectable: boolean;
+  disconnect_supported: boolean;
+  auth_type: "oauth" | "api_key" | "unavailable";
+  permissions: string;
+  mode: string | null;
+  status_label: string;
+  connect_path: string | null;
+  disconnect_path: string | null;
+  updated_at: string | null;
+  last_error: string | null;
+  notes: string | null;
+  capabilities: Record<string, boolean>;
+};
+
+type BrokerConnectionsResponse = {
+  brokers: BrokerConnectionEntry[];
+};
+
 type LightweightMetricsResponse = {
   window_days: number;
   scans_run: number;
@@ -259,8 +281,8 @@ export default function AlphaPage() {
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
-  const [brokerConnection, setBrokerConnection] = useState<AlpacaOauthStatusResponse | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
+  const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
   const seenExecutionIdsRef = useRef<Set<string>>(new Set());
@@ -335,10 +357,10 @@ export default function AlphaPage() {
     }
   }, []);
 
-  async function refreshBrokerConnection() {
-    const brokerRes = await fetch(`${API_BASE}/alpaca/oauth/status`);
-    const brokerData = await parseJsonOrNull<AlpacaOauthStatusResponse>(brokerRes);
-    setBrokerConnection(brokerData);
+  async function refreshBrokerConnections() {
+    const brokerRes = await fetch(`${API_BASE}/agents/brokers/connections`);
+    const brokerData = await parseJsonOrNull<BrokerConnectionsResponse>(brokerRes);
+    setBrokerConnections(brokerData?.brokers ?? []);
   }
 
   async function refreshLaunchMetrics() {
@@ -489,8 +511,8 @@ export default function AlphaPage() {
       console.error("Failed to load alpha dashboard", err);
     });
 
-    refreshBrokerConnection().catch((err: unknown) => {
-      console.error("Failed to fetch broker connection status", err);
+    refreshBrokerConnections().catch((err: unknown) => {
+      console.error("Failed to fetch broker connection inventory", err);
     });
 
     refreshLaunchMetrics().catch((err: unknown) => {
@@ -512,7 +534,7 @@ export default function AlphaPage() {
       Promise.all([
         refreshRuntimeState(true),
         refreshScanState(false),
-        refreshBrokerConnection(),
+        refreshBrokerConnections(),
       ]).catch((error: unknown) => {
         console.error("Failed to poll live alpha dashboard state", error);
       });
@@ -602,22 +624,25 @@ export default function AlphaPage() {
     setFocusSymbol(symbol);
   }
 
-  async function handleDisconnectAlpaca() {
-    setDisconnecting(true);
+  async function handleDisconnectBroker(provider: string, disconnectPath: string | null) {
+    if (!disconnectPath) {
+      return;
+    }
+    setDisconnectingProvider(provider);
     try {
-      await fetch(`${API_BASE}/alpaca/oauth/disconnect`, { method: "POST" });
-      setOauthStatus("idle");
-      setOauthReason("");
-      await Promise.all([refreshBrokerConnection(), refreshLaunchMetrics(), refreshRuntimeState(false)]);
-      pushRuntimeToast("Alpaca connection removed.", "warning");
+      await fetch(`${API_BASE}${disconnectPath}`, { method: "POST" });
+      if (provider === "alpaca") {
+        setOauthStatus("idle");
+        setOauthReason("");
+      }
+      await Promise.all([refreshBrokerConnections(), refreshLaunchMetrics(), refreshRuntimeState(false)]);
+      pushRuntimeToast(`${provider[0]?.toUpperCase()}${provider.slice(1)} connection removed.`, "warning");
     } finally {
-      setDisconnecting(false);
+      setDisconnectingProvider(null);
     }
   }
 
-  const isConnected = Boolean(brokerConnection?.connected);
-  const modeLabel = brokerConnection?.mode ?? "Paper Trading";
-  const permissionsLabel = brokerConnection?.permissions ?? "Not Authorized";
+  const connectedBrokerCount = brokerConnections.filter((broker) => broker.connected).length;
 
   return (
     <main className="min-h-screen p-4 md:p-6">
@@ -656,34 +681,81 @@ export default function AlphaPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-terminal-accent">Connection Safety Banner</h2>
-            <p className="text-xs text-slate-400">Transparent broker state and explicit user controls</p>
+            <p className="text-xs text-slate-400">Visible broker inventory, connection readiness, and explicit account controls</p>
           </div>
-          <div className="flex items-center gap-2">
-            <a
-              href={`${API_BASE}/alpaca/oauth/start?next=/alpha`}
-              className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent hover:bg-terminal-accent/20"
-            >
-              Connect Alpaca OAuth
-            </a>
-            <button
-              type="button"
-              disabled={!isConnected || disconnecting}
-              onClick={handleDisconnectAlpaca}
-              className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {disconnecting ? "Disconnecting..." : "Disconnect Alpaca"}
-            </button>
+          <div className="rounded border border-terminal-line bg-black/20 px-3 py-2 text-[11px] text-slate-300">
+            {connectedBrokerCount} broker connection{connectedBrokerCount === 1 ? "" : "s"} active
           </div>
         </div>
 
-        <div className={`mt-3 rounded border px-3 py-3 text-xs ${
-          isConnected
-            ? "border-green-500/40 bg-green-500/10 text-green-200"
-            : "border-amber-500/40 bg-amber-500/10 text-amber-200"
-        }`}>
-          <div className="font-semibold">{isConnected ? "Connected to Alpaca" : "Not Connected to Alpaca"}</div>
-          <div className="mt-1">Permissions: {permissionsLabel}</div>
-          <div className="mt-1">Mode: {modeLabel}</div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {brokerConnections.map((broker) => {
+            const isDisconnecting = disconnectingProvider === broker.provider;
+            const capabilityTags = [
+              broker.capabilities.supports_equities ? "Equities" : null,
+              broker.capabilities.supports_crypto ? "Crypto" : null,
+              broker.capabilities.supports_options ? "Options" : null,
+              broker.capabilities.supports_fractional ? "Fractional" : null,
+            ].filter(Boolean);
+
+            return (
+              <div
+                key={broker.provider}
+                className={`rounded-lg border px-3 py-3 text-xs ${
+                  broker.connected
+                    ? "border-green-500/40 bg-green-500/10 text-green-100"
+                    : broker.connectable
+                      ? "border-amber-500/40 bg-amber-500/10 text-amber-100"
+                      : "border-terminal-line bg-black/20 text-slate-300"
+                }`}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">{broker.label}</div>
+                    <div className="mt-1 text-[11px] uppercase tracking-wider opacity-80">{broker.status_label}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {broker.connect_path && broker.connectable && !broker.connected && (
+                      <a
+                        href={`${API_BASE}${broker.connect_path}`}
+                        className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
+                      >
+                        {broker.auth_type === "oauth" ? `Connect ${broker.label}` : `Authorize ${broker.label}`}
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!broker.connected || !broker.disconnect_supported || isDisconnecting}
+                      onClick={() => handleDisconnectBroker(broker.provider, broker.disconnect_path)}
+                      className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isDisconnecting ? "Disconnecting..." : `Disconnect ${broker.label}`}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-1 text-[11px] text-current/90 sm:grid-cols-2">
+                  <div>Permissions: {broker.permissions}</div>
+                  <div>Auth: {broker.auth_type.replace("_", " ")}</div>
+                  <div>Mode: {broker.mode ?? "N/A"}</div>
+                  <div>Updated: {broker.updated_at ? new Date(broker.updated_at).toLocaleString() : "Never"}</div>
+                </div>
+
+                {capabilityTags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {capabilityTags.map((tag) => (
+                      <span key={tag} className="rounded border border-current/20 px-2 py-1 text-[10px] uppercase tracking-wider">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {broker.notes && <div className="mt-3 text-[11px] text-current/80">{broker.notes}</div>}
+                {broker.last_error && <div className="mt-2 text-[11px] text-red-300">Last error: {broker.last_error}</div>}
+              </div>
+            );
+          })}
         </div>
 
         {oauthStatus !== "idle" && (
@@ -700,7 +772,7 @@ export default function AlphaPage() {
           </div>
         )}
 
-        {isConnected && (
+        {brokerConnections.some((broker) => broker.provider === "alpaca" && broker.connected) && (
           <div className="mt-3 rounded border border-terminal-accent/40 bg-terminal-accent/10 px-3 py-3 text-xs text-terminal-accent">
             <div className="font-semibold">Top 3 Opportunities Right Now</div>
             {wowTopThree.length > 0 ? (

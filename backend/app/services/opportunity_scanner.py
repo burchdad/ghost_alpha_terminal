@@ -8,13 +8,14 @@ from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
 from app.services.context_intelligence import context_intelligence
 from app.services.explainability import build_explainability
+from app.services.historical_data_service import historical_data_service
 from app.services.kronos_service import kronos_service
 from app.services.news.news_intelligence import news_intelligence
 from app.services.options_service import options_service
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
+from app.services.scan_health import logger
 from app.services.signal_engine import signal_engine
-from app.services.historical_data_service import historical_data_service
 
 
 @dataclass
@@ -422,7 +423,11 @@ class OpportunityScanner:
     ) -> dict:
         prefiltered: list[dict] = []
         for ticker in UNIVERSE:
-            result = self._prefilter(ticker)
+            try:
+                result = self._prefilter(ticker)
+            except Exception as exc:
+                logger.warning("prefilter_failed symbol=%s error=%s", ticker.symbol, exc)
+                continue
             if result:
                 prefiltered.append(result)
 
@@ -432,79 +437,83 @@ class OpportunityScanner:
         opportunities: list[dict] = []
         for candidate in candidates:
             symbol = candidate["symbol"]
-            forecast = kronos_service.generate_forecast(symbol=symbol, timeframe="1d")
-            regime = regime_detector.detect(symbol=symbol, timeframe="1d")
-            options_data = options_service.get_options_chain(symbol=symbol)
-            outputs = agent_manager.run_agents(
-                symbol=symbol,
-                forecast=forecast,
-                options_data=options_data,
-                regime=regime.regime,
-            )
-            signal = signal_engine.generate_signal(symbol=symbol, forecast=forecast, options_data=options_data)
-            swarm = consensus_engine.generate_consensus(symbol=symbol, outputs=outputs)
-            news = news_intelligence.analyze_symbol(symbol)
-            context = context_intelligence.get_context(symbol)
-            expected_return_pct = 0.0
-            if forecast.forecast_prices:
-                expected_return_pct = (forecast.forecast_prices[-1] / options_data.underlying_price) - 1.0
-
-            action = {
-                "BULLISH": "BUY",
-                "BEARISH": "SELL",
-                "NEUTRAL": "HOLD",
-            }.get(swarm.consensus.final_bias, "HOLD")
-            agreement = (
-                sum(1 for item in outputs if item.bias == swarm.consensus.final_bias) / len(outputs)
-                if outputs
-                else 0.0
-            )
-            risk_level = "HIGH" if regime.regime == "HIGH_VOLATILITY" else "MEDIUM" if regime.regime == "RANGE_BOUND" else "LOW"
-
-            allocation = capital_allocator.compute(
-                AllocationInput(
-                    account_balance=account_balance,
-                    current_price=options_data.underlying_price,
-                    confidence=swarm.consensus.confidence,
+            try:
+                forecast = kronos_service.generate_forecast(symbol=symbol, timeframe="1d")
+                regime = regime_detector.detect(symbol=symbol, timeframe="1d")
+                options_data = options_service.get_options_chain(symbol=symbol)
+                outputs = agent_manager.run_agents(
+                    symbol=symbol,
+                    forecast=forecast,
+                    options_data=options_data,
                     regime=regime.regime,
-                    risk_level=risk_level,
-                    agent_agreement=agreement,
-                    drawdown_pct=drawdown_pct,
-                    current_exposure_pct=current_exposure_pct,
-                    realized_volatility_pct=float(candidate["realized_volatility_pct"]),
-                    goal_pressure_multiplier=goal_pressure_multiplier * float(context["modifiers"]["risk_modifier"]),
                 )
-            )
+                signal = signal_engine.generate_signal(symbol=symbol, forecast=forecast, options_data=options_data)
+                swarm = consensus_engine.generate_consensus(symbol=symbol, outputs=outputs)
+                news = news_intelligence.analyze_symbol(symbol)
+                context = context_intelligence.get_context(symbol)
+                expected_return_pct = 0.0
+                if forecast.forecast_prices:
+                    expected_return_pct = (forecast.forecast_prices[-1] / options_data.underlying_price) - 1.0
 
-            risk = risk_engine.evaluate_trade(
-                entry_price=options_data.underlying_price,
-                stop_loss_pct=float(allocation["stop_loss_pct"]),
-                take_profit_pct=0.03,
-                confidence=swarm.consensus.confidence,
-                max_loss_amount=float(allocation["max_risk_amount"]),
-                account_balance=account_balance,
-            )
+                action = {
+                    "BULLISH": "BUY",
+                    "BEARISH": "SELL",
+                    "NEUTRAL": "HOLD",
+                }.get(swarm.consensus.final_bias, "HOLD")
+                agreement = (
+                    sum(1 for item in outputs if item.bias == swarm.consensus.final_bias) / len(outputs)
+                    if outputs
+                    else 0.0
+                )
+                risk_level = "HIGH" if regime.regime == "HIGH_VOLATILITY" else "MEDIUM" if regime.regime == "RANGE_BOUND" else "LOW"
 
-            tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
-            validation = context.get("signal_validation", {})
-            reaction = context.get("market_reaction", {})
-            validated_strength = float(validation.get("validated_signal_strength", 0.0))
-            reaction_score = float(reaction.get("correlation_score", 0.0))
-            news_alpha_boost = (
-                float(news["sentiment_score"]) * 0.06
-                + float(news["news_momentum_score"]) * 0.05
-                + float(news["event_strength"]) * 0.04
-                + validated_strength * 0.08
-                + max(0.0, reaction_score) * 0.06
-            )
-            risk_adjusted_score = (
-                (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
-                + max(0.0, risk["expected_value"]) * 8.0 * 0.2
-                + float(allocation["target_pct"]) * 3.0 * 0.2
-                + (0.15 if tradable else 0.0)
-                + news_alpha_boost
-                + float(context["modifiers"]["opportunity_boost"])
-            )
+                allocation = capital_allocator.compute(
+                    AllocationInput(
+                        account_balance=account_balance,
+                        current_price=options_data.underlying_price,
+                        confidence=swarm.consensus.confidence,
+                        regime=regime.regime,
+                        risk_level=risk_level,
+                        agent_agreement=agreement,
+                        drawdown_pct=drawdown_pct,
+                        current_exposure_pct=current_exposure_pct,
+                        realized_volatility_pct=float(candidate["realized_volatility_pct"]),
+                        goal_pressure_multiplier=goal_pressure_multiplier * float(context["modifiers"]["risk_modifier"]),
+                    )
+                )
+
+                risk = risk_engine.evaluate_trade(
+                    entry_price=options_data.underlying_price,
+                    stop_loss_pct=float(allocation["stop_loss_pct"]),
+                    take_profit_pct=0.03,
+                    confidence=swarm.consensus.confidence,
+                    max_loss_amount=float(allocation["max_risk_amount"]),
+                    account_balance=account_balance,
+                )
+
+                tradable = action != "HOLD" and allocation["accepted"] and risk["approved"]
+                validation = context.get("signal_validation", {})
+                reaction = context.get("market_reaction", {})
+                validated_strength = float(validation.get("validated_signal_strength", 0.0))
+                reaction_score = float(reaction.get("correlation_score", 0.0))
+                news_alpha_boost = (
+                    float(news["sentiment_score"]) * 0.06
+                    + float(news["news_momentum_score"]) * 0.05
+                    + float(news["event_strength"]) * 0.04
+                    + validated_strength * 0.08
+                    + max(0.0, reaction_score) * 0.06
+                )
+                risk_adjusted_score = (
+                    (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
+                    + max(0.0, risk["expected_value"]) * 8.0 * 0.2
+                    + float(allocation["target_pct"]) * 3.0 * 0.2
+                    + (0.15 if tradable else 0.0)
+                    + news_alpha_boost
+                    + float(context["modifiers"]["opportunity_boost"])
+                )
+            except Exception as exc:
+                logger.warning("candidate_scan_failed symbol=%s error=%s", symbol, exc)
+                continue
 
             opportunities.append(
                 {
