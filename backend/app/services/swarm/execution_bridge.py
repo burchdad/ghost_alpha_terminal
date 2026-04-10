@@ -19,6 +19,7 @@ from typing import Literal
 from app.core.config import settings
 from app.services.brokers.base import BrokerOrderRequest
 from app.services.brokers.router import broker_router
+from app.services.execution_policy_service import execution_policy_service
 from app.services.explainability import build_explainability
 from app.services.kill_switch import kill_switch
 
@@ -189,6 +190,23 @@ class ExecutionBridge:
                     inputs={"symbol": symbol, "mode": self._mode, "broker": routed_broker},
                 ),
             }
+
+        if self._mode == "LIVE_TRADING":
+            allowed, reason = execution_policy_service.is_live_execution_allowed_now()
+            if not allowed:
+                return {
+                    **base,
+                    "reason": reason or "Live execution blocked by execution policy.",
+                    "explainability": build_explainability(
+                        reasoning=reason or "Execution policy blocks live orders at this time.",
+                        confidence=confidence,
+                        risk_level="HIGH",
+                        expected_value=0.0,
+                        accepted=False,
+                        safeguards=["execution_policy_guard"],
+                        inputs={"symbol": symbol, "mode": self._mode, "broker": routed_broker},
+                    ),
+                }
 
         broker_result = broker_router.submit(
             request=BrokerOrderRequest(

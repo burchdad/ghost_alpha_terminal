@@ -10,15 +10,28 @@ type CopilotState = {
   autonomous_enabled: boolean;
   autonomous_cycles_run: number;
   account_balance: number;
+  daily_loss_limit_pct: number;
+  max_drawdown_limit_pct: number;
   goal_enabled: boolean;
   goal_target_capital: number | null;
   goal_timeframe_days: number | null;
+  live_only_during_market_hours: boolean;
+  market_timezone: string;
+  market_open_hhmm: string;
+  market_close_hhmm: string;
+};
+
+type ContextMessage = {
+  role: string;
+  text: string;
+  timestamp: string;
 };
 
 type ContextResponse = {
   greeting: string;
   first_name: string;
   state: CopilotState;
+  history: ContextMessage[];
 };
 
 type ChatResponse = {
@@ -61,13 +74,25 @@ export default function DashboardCopilot() {
         }
         const data = (await res.json()) as ContextResponse;
         setState(data.state);
-        setMessages([
-          {
-            id: `m-${Date.now()}`,
-            role: "assistant",
-            text: data.greeting,
-          },
-        ]);
+        const historyMessages = (data.history ?? [])
+          .map((item, index) => ({
+            id: `${item.timestamp || Date.now().toString()}-${index}`,
+            role: item.role === "user" ? "user" : "assistant",
+            text: item.text,
+          }))
+          .slice(-30);
+
+        if (historyMessages.length > 0) {
+          setMessages(historyMessages as Msg[]);
+        } else {
+          setMessages([
+            {
+              id: `m-${Date.now()}`,
+              role: "assistant",
+              text: data.greeting,
+            },
+          ]);
+        }
       } finally {
         setLoading(false);
       }
@@ -200,8 +225,32 @@ export default function DashboardCopilot() {
                 <div className="rounded border border-slate-800 px-2 py-1">
                   Target: {state.goal_target_capital ? `$${state.goal_target_capital.toLocaleString()}` : "-"}
                 </div>
+                <div className="rounded border border-slate-800 px-2 py-1">Daily risk: {(state.daily_loss_limit_pct * 100).toFixed(1)}%</div>
+                <div className="rounded border border-slate-800 px-2 py-1">Max DD: {(state.max_drawdown_limit_pct * 100).toFixed(1)}%</div>
+                <div className="col-span-2 rounded border border-slate-800 px-2 py-1">
+                  Live-hours policy: {state.live_only_during_market_hours ? `ON (${state.market_open_hhmm}-${state.market_close_hhmm} ${state.market_timezone})` : "OFF"}
+                </div>
               </div>
             )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                "Enable autonomous execution",
+                "Set daily risk to 2% and max drawdown to 10%",
+                "Only run live during market hours",
+                "I need an additional $5000 in 30 days",
+                "$250 weekly for 12 weeks",
+              ].map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  onClick={() => setInput(prompt)}
+                  className="rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>

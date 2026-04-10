@@ -109,6 +109,32 @@ class UserSession(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
+class CopilotConversationMessage(Base):
+    __tablename__ = "copilot_conversation_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16), index=True)  # user | assistant | system
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class ExecutionPolicyState(Base):
+    __tablename__ = "execution_policy_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    live_only_during_market_hours: Mapped[bool] = mapped_column(Boolean, default=False)
+    market_timezone: Mapped[str] = mapped_column(String(64), default="America/New_York")
+    market_open_hhmm: Mapped[str] = mapped_column(String(8), default="09:30")
+    market_close_hhmm: Mapped[str] = mapped_column(String(8), default="16:00")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
 class BrokerOAuthConnection(Base):
     __tablename__ = "broker_oauth_connections"
     __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_broker_oauth_user_provider"),)
