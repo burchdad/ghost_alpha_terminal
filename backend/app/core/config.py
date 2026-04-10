@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     kronos_model_id: str = "NeoQuasar/Kronos-tiny"
     use_mock_data: bool = False
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4.1-mini"
+    copilot_openai_enabled: bool = False
+    copilot_openai_rollout_pct: int = 0
 
     # ---------------------------------------------------------------------------
     # Alpaca credentials — set via Railway environment variables, never committed
@@ -143,6 +147,12 @@ class Settings(BaseSettings):
             
             if not self.alpaca_connect_redirect_uri:
                 errors.append("ALPACA_CONNECT_REDIRECT_URI must be set")
+
+            if self.copilot_openai_enabled and not self.openai_api_key:
+                errors.append("OPENAI_API_KEY must be set when COPILOT_OPENAI_ENABLED=true")
+
+            if self.copilot_openai_rollout_pct < 0 or self.copilot_openai_rollout_pct > 100:
+                errors.append("COPILOT_OPENAI_ROLLOUT_PCT must be between 0 and 100")
         
         if errors:
             raise ValueError(

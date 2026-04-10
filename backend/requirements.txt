@@ -7,6 +7,7 @@ numpy==2.2.5
 redis==5.2.1
 celery==5.4.0
 httpx==0.28.1
+openai==1.75.0
 python-dotenv==1.1.0
 SQLAlchemy==2.0.40
 psycopg[binary]==3.2.6

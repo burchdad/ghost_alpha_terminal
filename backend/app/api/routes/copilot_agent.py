@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps.auth import CurrentUser
-from app.db.models import CopilotConversationMessage, User
+from app.core.config import settings
+from app.db.models import CopilotConversationMessage, CopilotTelemetryEvent, User
 from app.db.session import get_session
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
+from app.services.copilot_llm_service import copilot_llm_service
 from app.services.execution_policy_service import execution_policy_service
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
@@ -33,6 +37,7 @@ class CopilotContextResponse(BaseModel):
     first_name: str
     state: dict
     history: list[CopilotMessageItem] = Field(default_factory=list)
+    copilot_mode: str = "rule-based"
 
 
 class CopilotChatRequest(BaseModel):
@@ -48,6 +53,18 @@ class CopilotChatResponse(BaseModel):
     requires_confirmation: bool = False
     confirmation_prompt: str | None = None
     pending_action: dict | None = None
+    copilot_mode: str = "rule-based"
+    parser_used: str = "rule"
+
+
+class CopilotTelemetrySummaryResponse(BaseModel):
+    window_days: int
+    total_events: int
+    mode_breakdown: dict[str, int]
+    parser_breakdown: dict[str, int]
+    action_breakdown: dict[str, int]
+    success_rate: float
+    confirmation_rate: float
 
 
 @dataclass
@@ -104,6 +121,16 @@ def _state_snapshot() -> dict:
     }
 
 
+def _assign_mode(user_id: str) -> str:
+    if not settings.copilot_openai_enabled or settings.copilot_openai_rollout_pct <= 0:
+        return "rule-based"
+
+    bucket = int(hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:8], 16) % 100
+    if bucket < settings.copilot_openai_rollout_pct and copilot_llm_service.is_available():
+        return "hybrid"
+    return "rule-based"
+
+
 def _log_message(user_id: str, role: str, message: str) -> None:
     with get_session() as session:
         session.add(
@@ -113,6 +140,41 @@ def _log_message(user_id: str, role: str, message: str) -> None:
                 message=message,
             )
         )
+
+
+def _log_telemetry(
+    *,
+    user_id: str,
+    mode_assigned: str,
+    parser_used: str,
+    action_detected: bool,
+    action_name: str | None,
+    action_applied: bool,
+    requires_confirmation: bool,
+    success: bool,
+    latency_ms: int | None,
+    error: str | None,
+    message: str,
+) -> None:
+    try:
+        with get_session() as session:
+            session.add(
+                CopilotTelemetryEvent(
+                    user_id=str(user_id),
+                    mode_assigned=mode_assigned,
+                    parser_used=parser_used,
+                    action_detected=action_detected,
+                    action_name=action_name,
+                    action_applied=action_applied,
+                    requires_confirmation=requires_confirmation,
+                    success=success,
+                    latency_ms=latency_ms,
+                    error=error,
+                    message_excerpt=message[:512],
+                )
+            )
+    except Exception:
+        pass
 
 
 def _recent_history(user_id: str, limit: int = 24) -> list[CopilotMessageItem]:
@@ -160,9 +222,6 @@ def _extract_target_and_days(text: str) -> tuple[float | None, int | None]:
 
 
 def _extract_contribution_plan(text: str) -> tuple[float | None, int | None]:
-    # Examples:
-    #  - "add 500 per week for 12 weeks"
-    #  - "contribute $250 weekly for 3 months"
     amount_match = re.search(r"\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:per\s*week|weekly)", text)
     duration_match = re.search(r"for\s*(\d+)\s*(week|weeks|month|months)", text)
 
@@ -202,7 +261,7 @@ def _extract_market_window(text: str) -> tuple[str | None, str | None]:
     return m.group(1), m.group(2)
 
 
-def _parse_action(message: str, state: dict) -> ParsedAction | None:
+def _rule_parse_action(message: str, state: dict) -> ParsedAction | None:
     text = message.lower()
 
     if "run once" in text or "run now" in text:
@@ -225,7 +284,6 @@ def _parse_action(message: str, state: dict) -> ParsedAction | None:
     if "simulation" in text or "insight only" in text:
         return ParsedAction(action="set_execution_mode", params={"mode": "SIMULATION"}, requires_confirmation=False)
 
-    # Policy: live only during market hours.
     if "market hours" in text and any(k in text for k in ["only", "restrict", "limit"]):
         open_hhmm, close_hhmm = _extract_market_window(text)
         params: dict = {"live_only_during_market_hours": True}
@@ -235,13 +293,8 @@ def _parse_action(message: str, state: dict) -> ParsedAction | None:
         return ParsedAction(action="set_execution_policy", params=params, requires_confirmation=True)
 
     if "market hours" in text and any(k in text for k in ["disable", "remove", "24/7", "any time", "anytime"]):
-        return ParsedAction(
-            action="set_execution_policy",
-            params={"live_only_during_market_hours": False},
-            requires_confirmation=False,
-        )
+        return ParsedAction(action="set_execution_policy", params={"live_only_during_market_hours": False}, requires_confirmation=False)
 
-    # Risk limits: daily loss and drawdown constraints
     daily_pct = _extract_percent(text, "daily_loss_limit_pct")
     dd_pct = _extract_percent(text, "max_drawdown_limit_pct")
     if daily_pct is not None or dd_pct is not None:
@@ -252,7 +305,6 @@ def _parse_action(message: str, state: dict) -> ParsedAction | None:
             params["max_drawdown_limit_pct"] = max(0.1, min(50.0, dd_pct)) / 100.0
         return ParsedAction(action="set_risk_limits", params=params, requires_confirmation=False)
 
-    # Goal from contribution plan
     weekly_amount, weeks = _extract_contribution_plan(text)
     if weekly_amount is not None and weeks is not None:
         capital = float(state.get("account_balance", 0.0) or 0.0)
@@ -268,7 +320,6 @@ def _parse_action(message: str, state: dict) -> ParsedAction | None:
             requires_confirmation=True,
         )
 
-    # Goal-oriented prompts: "need additional $X in Y days"
     if "need" in text and ("additional" in text or "extra" in text or "target" in text):
         amount, days = _extract_target_and_days(text)
         if amount is not None and days is not None:
@@ -281,6 +332,55 @@ def _parse_action(message: str, state: dict) -> ParsedAction | None:
             )
 
     return None
+
+
+def _apply_confirmation_contract(parsed: ParsedAction, state_before: dict) -> ParsedAction:
+    if parsed.action == "set_execution_mode" and str(parsed.params.get("mode")) == "LIVE_TRADING":
+        parsed.requires_confirmation = True
+
+    if parsed.action == "set_autonomous" and bool(parsed.params.get("enabled", False)):
+        parsed.requires_confirmation = True
+
+    if parsed.action == "set_goal":
+        parsed.requires_confirmation = True
+
+    if parsed.action == "set_execution_policy" and bool(parsed.params.get("live_only_during_market_hours", False)):
+        parsed.requires_confirmation = True
+
+    if parsed.action == "set_risk_limits":
+        current_daily = float(state_before.get("daily_loss_limit_pct", 0.05) or 0.05)
+        current_dd = float(state_before.get("max_drawdown_limit_pct", 0.10) or 0.10)
+        next_daily = parsed.params.get("daily_loss_limit_pct")
+        next_dd = parsed.params.get("max_drawdown_limit_pct")
+        if (next_daily is not None and float(next_daily) > current_daily) or (next_dd is not None and float(next_dd) > current_dd):
+            parsed.requires_confirmation = True
+
+    return parsed
+
+
+def _parse_action(message: str, state: dict, *, mode_assigned: str, user_id: str) -> tuple[ParsedAction | None, str, str | None, int | None]:
+    parser_used = "rule"
+    assistant_hint: str | None = None
+    latency_ms: int | None = None
+
+    if mode_assigned == "hybrid":
+        history = [{"role": item.role, "text": item.text} for item in _recent_history(user_id, limit=8)]
+        llm = copilot_llm_service.infer_action(message=message, state=state, history=history)
+        latency_ms = llm.latency_ms
+        if llm.reply:
+            assistant_hint = llm.reply
+        if llm.action:
+            parser_used = "llm"
+            return _apply_confirmation_contract(
+                ParsedAction(action=str(llm.action), params=dict(llm.params), requires_confirmation=bool(llm.requires_confirmation)),
+                state,
+            ), parser_used, assistant_hint, latency_ms
+        parser_used = "rule-fallback"
+
+    parsed = _rule_parse_action(message, state)
+    if parsed is not None:
+        parsed = _apply_confirmation_contract(parsed, state)
+    return parsed, parser_used, assistant_hint, latency_ms
 
 
 def _apply_action(parsed: ParsedAction) -> list[str]:
@@ -358,6 +458,8 @@ def _apply_action(parsed: ParsedAction) -> list[str]:
 def copilot_context(user: User = CurrentUser) -> CopilotContextResponse:
     first_name = _first_name_from_email(str(user.email))
     state = _state_snapshot()
+    mode_assigned = _assign_mode(str(user.id))
+    state["copilot_mode_assigned"] = mode_assigned
     history = _recent_history(str(user.id))
     return CopilotContextResponse(
         greeting=(
@@ -367,27 +469,40 @@ def copilot_context(user: User = CurrentUser) -> CopilotContextResponse:
         first_name=first_name,
         state=state,
         history=history,
+        copilot_mode=mode_assigned,
     )
 
 
 @router.post("/chat", response_model=CopilotChatResponse)
 def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> CopilotChatResponse:
     state_before = _state_snapshot()
+    mode_assigned = _assign_mode(str(user.id))
+    state_before["copilot_mode_assigned"] = mode_assigned
 
     parsed: ParsedAction | None = None
+    parser_used = "rule"
+    assistant_hint: str | None = None
+    latency_ms: int | None = None
+
     if payload.confirm and payload.pending_action:
         parsed = ParsedAction(
             action=str(payload.pending_action.get("action", "")),
             params=dict(payload.pending_action.get("params", {}) or {}),
             requires_confirmation=False,
         )
+        parser_used = "confirmation"
         _log_message(str(user.id), "user", "[CONFIRM ACTION]")
     else:
-        parsed = _parse_action(payload.message, state_before)
+        parsed, parser_used, assistant_hint, latency_ms = _parse_action(
+            payload.message,
+            state_before,
+            mode_assigned=mode_assigned,
+            user_id=str(user.id),
+        )
         _log_message(str(user.id), "user", payload.message)
 
     if parsed is None:
-        reply = (
+        reply = assistant_hint or (
             "I can help with: enabling/disabling autonomous execution, toggling scan auto mode, "
             "switching execution mode (simulation/paper/live), running one autonomous cycle, "
             "setting goals like 'need an additional $5,000 in 30 days', contribution plans like "
@@ -395,10 +510,25 @@ def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> Copil
             "and policy controls like 'only run live during market hours'."
         )
         _log_message(str(user.id), "assistant", reply)
+        _log_telemetry(
+            user_id=str(user.id),
+            mode_assigned=mode_assigned,
+            parser_used=parser_used,
+            action_detected=False,
+            action_name=None,
+            action_applied=False,
+            requires_confirmation=False,
+            success=True,
+            latency_ms=latency_ms,
+            error=None,
+            message=payload.message,
+        )
         return CopilotChatResponse(
             reply=reply,
             state=state_before,
             actions_applied=[],
+            copilot_mode=mode_assigned,
+            parser_used=parser_used,
         )
 
     if parsed.requires_confirmation and not payload.confirm:
@@ -414,10 +544,25 @@ def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> Copil
             )
         elif parsed.action == "set_execution_policy" and parsed.params.get("live_only_during_market_hours"):
             prompt = "This restricts LIVE_TRADING orders to configured market hours. Confirm policy update."
+        elif parsed.action == "set_risk_limits":
+            prompt = "This loosens one or more risk limits. Confirm policy update."
         else:
             prompt = "Please confirm this control change."
 
         _log_message(str(user.id), "assistant", prompt)
+        _log_telemetry(
+            user_id=str(user.id),
+            mode_assigned=mode_assigned,
+            parser_used=parser_used,
+            action_detected=True,
+            action_name=parsed.action,
+            action_applied=False,
+            requires_confirmation=True,
+            success=True,
+            latency_ms=latency_ms,
+            error=None,
+            message=payload.message,
+        )
         return CopilotChatResponse(
             reply=prompt,
             state=state_before,
@@ -425,24 +570,103 @@ def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> Copil
             requires_confirmation=True,
             confirmation_prompt=prompt,
             pending_action={"action": parsed.action, "params": parsed.params},
+            copilot_mode=mode_assigned,
+            parser_used=parser_used,
         )
 
     actions = _apply_action(parsed)
     state_after = _state_snapshot()
+    state_after["copilot_mode_assigned"] = mode_assigned
 
     if not actions:
         reply = "I understood your request but couldn't apply a supported action yet."
         _log_message(str(user.id), "assistant", reply)
+        _log_telemetry(
+            user_id=str(user.id),
+            mode_assigned=mode_assigned,
+            parser_used=parser_used,
+            action_detected=True,
+            action_name=parsed.action,
+            action_applied=False,
+            requires_confirmation=False,
+            success=False,
+            latency_ms=latency_ms,
+            error="Unsupported action",
+            message=payload.message,
+        )
         return CopilotChatResponse(
             reply=reply,
             state=state_after,
             actions_applied=[],
+            copilot_mode=mode_assigned,
+            parser_used=parser_used,
         )
 
-    reply = "Done. " + " | ".join(actions)
+    reply = assistant_hint if (assistant_hint and len(assistant_hint.strip()) > 0) else ("Done. " + " | ".join(actions))
     _log_message(str(user.id), "assistant", reply)
+    _log_telemetry(
+        user_id=str(user.id),
+        mode_assigned=mode_assigned,
+        parser_used=parser_used,
+        action_detected=True,
+        action_name=parsed.action,
+        action_applied=True,
+        requires_confirmation=False,
+        success=True,
+        latency_ms=latency_ms,
+        error=None,
+        message=payload.message,
+    )
     return CopilotChatResponse(
         reply=reply,
         state=state_after,
         actions_applied=actions,
+        copilot_mode=mode_assigned,
+        parser_used=parser_used,
+    )
+
+
+@router.get("/telemetry/summary", response_model=CopilotTelemetrySummaryResponse)
+def copilot_telemetry_summary(days: int = 7, user: User = CurrentUser) -> CopilotTelemetrySummaryResponse:
+    window_days = max(1, min(days, 30))
+    since = datetime.now(tz=timezone.utc) - timedelta(days=window_days)
+
+    with get_session() as session:
+        rows = (
+            session.execute(
+                select(CopilotTelemetryEvent)
+                .where(CopilotTelemetryEvent.user_id == str(user.id))
+                .where(CopilotTelemetryEvent.created_at >= since)
+                .order_by(CopilotTelemetryEvent.created_at.desc())
+                .limit(5000)
+            )
+            .scalars()
+            .all()
+        )
+
+    mode_breakdown: dict[str, int] = {}
+    parser_breakdown: dict[str, int] = {}
+    action_breakdown: dict[str, int] = {}
+    success_count = 0
+    confirm_count = 0
+
+    for row in rows:
+        mode_breakdown[row.mode_assigned] = mode_breakdown.get(row.mode_assigned, 0) + 1
+        parser_breakdown[row.parser_used] = parser_breakdown.get(row.parser_used, 0) + 1
+        key = row.action_name or "none"
+        action_breakdown[key] = action_breakdown.get(key, 0) + 1
+        if row.success:
+            success_count += 1
+        if row.requires_confirmation:
+            confirm_count += 1
+
+    total = len(rows)
+    return CopilotTelemetrySummaryResponse(
+        window_days=window_days,
+        total_events=total,
+        mode_breakdown=mode_breakdown,
+        parser_breakdown=parser_breakdown,
+        action_breakdown=action_breakdown,
+        success_rate=(success_count / total) if total else 0.0,
+        confirmation_rate=(confirm_count / total) if total else 0.0,
     )

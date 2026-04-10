@@ -121,6 +121,26 @@ class CopilotConversationMessage(Base):
     )
 
 
+class CopilotTelemetryEvent(Base):
+    __tablename__ = "copilot_telemetry_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    mode_assigned: Mapped[str] = mapped_column(String(32), index=True, default="rule-based")
+    parser_used: Mapped[str] = mapped_column(String(32), index=True, default="rule")
+    action_detected: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    action_name: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    action_applied: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=False)
+    success: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    message_excerpt: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
 class ExecutionPolicyState(Base):
     __tablename__ = "execution_policy_state"
 

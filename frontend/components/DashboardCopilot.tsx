@@ -6,6 +6,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type CopilotState = {
   execution_mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+  copilot_mode_assigned?: string;
   scan_auto_mode: boolean;
   autonomous_enabled: boolean;
   autonomous_cycles_run: number;
@@ -41,6 +42,8 @@ type ChatResponse = {
   requires_confirmation: boolean;
   confirmation_prompt: string | null;
   pending_action: { action: string; params: Record<string, unknown> } | null;
+  copilot_mode?: string;
+  parser_used?: string;
 };
 
 type Msg = {
@@ -103,6 +106,9 @@ export default function DashboardCopilot() {
   const badge = useMemo(() => {
     if (!state) return "Loading";
     const bits = [shortMode(state.execution_mode)];
+    if (state.copilot_mode_assigned) {
+      bits.push(state.copilot_mode_assigned.toUpperCase());
+    }
     bits.push(state.autonomous_enabled ? "AUTO-EXEC ON" : "AUTO-EXEC OFF");
     bits.push(state.scan_auto_mode ? "AUTO-SCAN ON" : "AUTO-SCAN OFF");
     return bits.join(" · ");
@@ -141,7 +147,8 @@ export default function DashboardCopilot() {
       const data = (await res.json()) as ChatResponse;
       setState(data.state);
       setPendingAction(data.pending_action);
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", text: data.reply }]);
+      const parserSuffix = data.parser_used ? ` (${data.parser_used})` : "";
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", text: `${data.reply}${parserSuffix}` }]);
     } finally {
       setSending(false);
     }
