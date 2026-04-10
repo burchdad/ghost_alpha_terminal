@@ -87,18 +87,9 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    twofa_method: Mapped[str | None] = mapped_column(String(32), nullable=True)  # totp | sms | email
+    twofa_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     twofa_verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    twofa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # TOTP secret or phone
-    privacy_policy_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
-    terms_of_use_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
-    risk_disclosure_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
-    agreements_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    twofa_method: Mapped[str | None] = mapped_column(String(32), nullable=True)  # totp | sms | email
-    twofa_verified: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
-    twofa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # TOTP secret or phone
+    twofa_secret: Mapped[str | None] = mapped_column(String(255), nullable=True)
     privacy_policy_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     terms_of_use_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
     risk_disclosure_accepted: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -286,24 +277,22 @@ class LandingTelemetryEvent(Base):
     variant_id: Mapped[str] = mapped_column(String(32), index=True)
     event_type: Mapped[str] = mapped_column(String(32), index=True)  # variant_shown | cta_click
     cta_label: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-
-
-    class User2FASetup(Base):
-        """Temporary storage for 2FA data during user registration"""
-        __tablename__ = "user_2fa_setup"
-
-        id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-        email: Mapped[str] = mapped_column(String(320), index=True, unique=True)
-        twofa_method: Mapped[str] = mapped_column(String(32))  # totp | sms | email
-        twofa_secret: Mapped[str] = mapped_column(String(255))  # TOTP secret or phone
-        verification_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
-        verified: Mapped[bool] = mapped_column(Boolean, default=False)
-        created_at: Mapped[datetime] = mapped_column(
-            DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
-        )
-        expires_at: Mapped[datetime] = mapped_column(
-            DateTime(timezone=True), index=True
-        )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
+
+
+class User2FASetup(Base):
+    """Temporary storage for 2FA data during user registration"""
+    __tablename__ = "user_2fa_setup"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True, unique=True)
+    twofa_method: Mapped[str] = mapped_column(String(32))
+    twofa_secret: Mapped[str] = mapped_column(String(255))
+    verification_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
