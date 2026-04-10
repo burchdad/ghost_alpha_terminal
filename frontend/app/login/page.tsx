@@ -15,6 +15,27 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  function parseApiError(payload: unknown, fallback: string): string {
+    if (!payload || typeof payload !== "object") {
+      return fallback;
+    }
+    const asRecord = payload as Record<string, unknown>;
+    const detail = asRecord.detail;
+    const message = asRecord.message;
+    const errorCode = asRecord.error;
+
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+    if (typeof message === "string" && message.trim()) {
+      return message;
+    }
+    if (typeof errorCode === "string" && errorCode.trim()) {
+      return errorCode;
+    }
+    return fallback;
+  }
+
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("next");
     if (value && value.startsWith("/")) {
@@ -34,8 +55,8 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       if (!res.ok) {
-        const payload = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(payload.detail || "Login failed");
+        const payload = await res.json().catch(() => null);
+        throw new Error(parseApiError(payload, "Login failed"));
       }
       router.replace(nextPath);
     } catch (err) {
@@ -50,6 +71,7 @@ export default function LoginPage() {
       <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
         <h1 className="text-2xl font-semibold">Login</h1>
         <p className="mt-2 text-sm text-slate-400">Access Ghost Alpha Terminal</p>
+        <p className="mt-1 text-xs text-slate-500">Use your existing account or create one below.</p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
           <div>
@@ -79,7 +101,11 @@ export default function LoginPage() {
             />
           </div>
 
-          {error ? <p className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</p> : null}
+          {error ? (
+            <p className="rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200" role="alert">
+              {error}
+            </p>
+          ) : null}
 
           <button
             type="submit"
