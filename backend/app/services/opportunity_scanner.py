@@ -383,6 +383,13 @@ DEFAULT_HIGH_RISK_SPRINT_SYMBOLS: tuple[str, ...] = (
 
 
 class OpportunityScanner:
+    def _high_risk_sprint_active(self, *, goal_pressure_multiplier: float) -> bool:
+        if settings.high_risk_sprint_mode_enabled:
+            return True
+        if not settings.high_risk_sprint_auto_enabled:
+            return False
+        return goal_pressure_multiplier >= settings.high_risk_sprint_auto_trigger_pressure
+
     def _coinbase_priority_symbols(self) -> set[str]:
         symbols: set[str] = set()
         for product in settings.coinbase_trade_products.split(","):
@@ -402,9 +409,9 @@ class OpportunityScanner:
         symbols = configured or list(DEFAULT_HIGH_RISK_SPRINT_SYMBOLS)
         return [UniverseTicker(symbol, "equity", "US") for symbol in symbols]
 
-    def _scan_universe(self) -> list[tuple[UniverseTicker, bool]]:
+    def _scan_universe(self, *, goal_pressure_multiplier: float) -> list[tuple[UniverseTicker, bool]]:
         scan_universe: list[tuple[UniverseTicker, bool]] = [(ticker, False) for ticker in UNIVERSE]
-        if not settings.high_risk_sprint_mode_enabled:
+        if not self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier):
             return scan_universe
 
         existing_symbols = {ticker.symbol for ticker in UNIVERSE}
@@ -540,7 +547,8 @@ class OpportunityScanner:
         goal_pressure_multiplier: float,
     ) -> dict:
         prefiltered: list[dict] = []
-        scan_universe = self._scan_universe()
+        sprint_active = self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier)
+        scan_universe = self._scan_universe(goal_pressure_multiplier=goal_pressure_multiplier)
         for ticker, sprint_mode in scan_universe:
             try:
                 result = self._prefilter(ticker, sprint_mode=sprint_mode)
@@ -569,7 +577,7 @@ class OpportunityScanner:
                 candidates.append(item)
                 existing_symbols.add(item["symbol"])
 
-        if settings.high_risk_sprint_mode_enabled:
+        if sprint_active:
             sprint_tail = [item for item in prefiltered if item.get("scan_mode") == "high_risk_sprint"][:6]
             for item in sprint_tail:
                 if item["symbol"] not in existing_symbols:
