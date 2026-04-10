@@ -340,6 +340,22 @@ type MissionIntelligenceResponse = {
     probation_strategies?: string[];
     strategy_kill_switches?: Array<{ strategy: string; window_trades: number; win_rate: number; threshold: number; disabled: boolean }>;
   };
+  live_experiment_mode?: {
+    variant: string;
+    source: string;
+    promoted_at: string | null;
+    enable_evolution: boolean;
+    enable_compounding: boolean;
+  };
+  meta_risk_governor?: {
+    mode: string;
+    global_exposure_multiplier: number;
+    cooldown_active?: boolean;
+    cooldown_until?: string | null;
+    transitions_last_24h?: number;
+    confidence_collapse?: { collapse: boolean; recent_avg_confidence: number };
+    correlation_spike?: { spike: boolean; recent_avg_correlation: number };
+  };
   parity_watchdog: {
     status: "GREEN" | "YELLOW" | "RED";
     mode: string;
@@ -1305,6 +1321,10 @@ export default function AlphaPage() {
             <div className="text-slate-300">Min confidence {(missionIntel?.mission.tuning.min_confidence_floor ?? 0).toFixed(2)}</div>
             <div className="text-slate-300">Concurrency {(missionIntel?.mission.tuning.concurrency_target ?? 0)}</div>
             <div className="text-slate-300">Posture {missionIntel?.mission.risk_posture?.mode ?? "normal"}</div>
+            <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">Live Experiment Mode</div>
+            <div className="mt-1 text-cyan-300">{missionIntel?.live_experiment_mode?.variant ?? "evolution_on_compounding_on"}</div>
+            <div className="text-slate-400">Evolution {missionIntel?.live_experiment_mode?.enable_evolution ? "ON" : "OFF"} · Compounding {missionIntel?.live_experiment_mode?.enable_compounding ? "ON" : "OFF"}</div>
+            <div className="text-slate-500">Source: {missionIntel?.live_experiment_mode?.source ?? "default"}</div>
             <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">System Confidence</div>
             <div className={`mt-1 font-semibold ${(missionIntel?.system_confidence?.label ?? "LOW") === "HIGH" ? "text-green-300" : (missionIntel?.system_confidence?.label ?? "LOW") === "MEDIUM" ? "text-amber-300" : "text-red-300"}`}>
               {(missionIntel?.system_confidence?.label ?? "LOW")} {(missionIntel?.system_confidence?.score ?? 0).toFixed(2)}
@@ -1320,6 +1340,13 @@ export default function AlphaPage() {
                 <div key={bucket}>{bucket.replaceAll("_", " ")}: {(weight * 100).toFixed(1)}%</div>
               ))}
             </div>
+            <div className="mt-2 border-t border-terminal-line pt-2 text-[10px] uppercase tracking-wider text-slate-500">Meta-Risk Posture</div>
+            <div className={`mt-1 font-semibold ${(missionIntel?.meta_risk_governor?.mode ?? "normal") === "critical" ? "text-red-300" : (missionIntel?.meta_risk_governor?.mode ?? "normal") === "elevated" ? "text-amber-300" : "text-green-300"}`}>
+              {(missionIntel?.meta_risk_governor?.mode ?? "normal").toUpperCase()} · Exposure x{(missionIntel?.meta_risk_governor?.global_exposure_multiplier ?? 1).toFixed(2)}
+            </div>
+            <div className="text-slate-400">Transitions 24h: {missionIntel?.meta_risk_governor?.transitions_last_24h ?? 0}</div>
+            <div className="text-slate-400">Confidence collapse: {missionIntel?.meta_risk_governor?.confidence_collapse?.collapse ? "YES" : "NO"} ({(missionIntel?.meta_risk_governor?.confidence_collapse?.recent_avg_confidence ?? 0).toFixed(2)})</div>
+            <div className="text-slate-400">Correlation spike: {missionIntel?.meta_risk_governor?.correlation_spike?.spike ? "YES" : "NO"} ({(missionIntel?.meta_risk_governor?.correlation_spike?.recent_avg_correlation ?? 0).toFixed(2)})</div>
           </div>
 
           <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">

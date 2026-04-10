@@ -23,8 +23,11 @@ from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.mission_intelligence_service import mission_intelligence_service
+from app.services.live_experiment_promotion_service import live_experiment_promotion_service
+from app.services.meta_risk_governor import meta_risk_governor
 from app.services.portfolio_manager import portfolio_manager
 from app.services.strategy_kill_switch_service import strategy_kill_switch_service
+from app.services.strategy_lifecycle_transition_store import strategy_lifecycle_transition_store
 from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
@@ -286,3 +289,36 @@ def clear_strategy_kill_switch_override(strategy: str) -> dict:
         **result,
         "manual_force_enabled": strategy_kill_switch_service.list_force_enabled(),
     }
+
+
+@router.get("/strategy-lifecycle-transitions")
+def get_strategy_lifecycle_transitions(limit: int = 200, since_hours: int = 168) -> dict:
+    bounded_limit = max(1, min(limit, 1000))
+    bounded_since = max(1, min(since_hours, 24 * 30))
+    return {
+        "recent": strategy_lifecycle_transition_store.recent(limit=bounded_limit, since_hours=bounded_since),
+        "summary": strategy_lifecycle_transition_store.summary(since_hours=bounded_since),
+    }
+
+
+@router.post("/admin/reset-runtime-state")
+def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool = True) -> dict:
+    result: dict = {
+        "reset_live_mode": bool(reset_live_mode),
+        "reset_meta_risk": bool(reset_meta_risk),
+    }
+
+    if reset_live_mode:
+        result["live_experiment_mode"] = live_experiment_promotion_service.reset_to_default(source="admin_reset")
+    else:
+        result["live_experiment_mode"] = live_experiment_promotion_service.status()
+
+    if reset_meta_risk:
+        result["meta_risk_governor"] = meta_risk_governor.reset_cooldown()
+    else:
+        control = control_engine.status()
+        result["meta_risk_governor"] = meta_risk_governor.evaluate(
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0)
+        )
+
+    return result

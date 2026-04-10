@@ -155,6 +155,8 @@ class BacktestRequest(BaseModel):
     take_profit_pct: float = Field(default=0.03, gt=0, le=0.5)
     stop_loss_pct: float = Field(default=0.02, gt=0, le=0.5)
     max_hold_periods: int = Field(default=5, ge=1, le=50)
+    enable_evolution: bool = True
+    enable_compounding: bool = True
 
 
 class SimulatedTrade(BaseModel):
@@ -186,8 +188,45 @@ class BacktestResponse(BaseModel):
     total_pnl: float
     max_drawdown: float
     sharpe_ratio: float
+    stability_score: float = 0.0
     equity_curve: list[EquityPoint]
     trade_history: list[SimulatedTrade]
+
+
+class ControlledExperimentRun(BaseModel):
+    label: str
+    enable_evolution: bool
+    enable_compounding: bool
+    total_trades: int
+    win_rate: float = Field(ge=0, le=1)
+    total_pnl: float
+    max_drawdown: float
+    sharpe_ratio: float
+    stability_score: float
+    ending_balance: float
+
+
+class ControlledExperimentComparison(BaseModel):
+    metric: Literal["win_rate", "total_pnl", "max_drawdown", "stability_score"]
+    mode_a_label: str
+    mode_b_label: str
+    mode_a_value: float
+    mode_b_value: float
+    delta_b_minus_a: float
+
+
+class ControlledExperimentResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    start_date: datetime
+    end_date: datetime
+    runs: list[ControlledExperimentRun]
+    comparisons: list[ControlledExperimentComparison]
+    recommended_mode: str
+    control_mode: str
+    promotion_applied: bool
+    promotion_reason: str
+    live_mode: dict
 
 
 class ExecuteTradeRequest(BaseModel):

@@ -135,3 +135,32 @@ class ExecutionJournalDB(Base):
     )
     outcome_label: Mapped[str | None] = mapped_column(String(16), nullable=True)
     pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class LiveExperimentModeState(Base):
+    __tablename__ = "live_experiment_mode_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    variant: Mapped[str] = mapped_column(String(64), index=True, default="evolution_on_compounding_on")
+    source: Mapped[str] = mapped_column(String(128), default="default")
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class MetaRiskCooldownState(Base):
+    __tablename__ = "meta_risk_cooldown_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    mode: Mapped[str] = mapped_column(String(32), default="normal")
+    cooldown_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exposure_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
+    disable_evolution_temporarily: Mapped[bool] = mapped_column(Boolean, default=False)
+    frozen_strategies_json: Mapped[str] = mapped_column(Text, default="[]")
+    last_transitions_24h: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )

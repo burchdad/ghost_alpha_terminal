@@ -9,8 +9,10 @@ from app.services.compounding_engine import compounding_engine
 from app.services.control_engine import control_engine
 from app.services.execution_quality_engine import execution_quality_engine
 from app.services.goal_engine import goal_engine
+from app.services.live_experiment_promotion_service import live_experiment_promotion_service
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
+from app.services.meta_risk_governor import meta_risk_governor
 from app.services.mission_policy_engine import mission_policy_engine
 from app.services.parity_watchdog_service import parity_watchdog_service
 from app.services.portfolio_manager import portfolio_manager
@@ -149,6 +151,10 @@ class MissionIntelligenceService:
             quality=quality,
             drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
         )
+        meta_risk = meta_risk_governor.evaluate(
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0)
+        )
+        live_mode = live_experiment_promotion_service.status()
 
         best_symbols = sorted(
             quality.get("symbol_quality", {}).items(),
@@ -166,6 +172,8 @@ class MissionIntelligenceService:
             "strategy_evolution": evolution,
             "time_weighted_confidence": time_weighted_confidence,
             "system_confidence": system_confidence,
+            "meta_risk_governor": meta_risk,
+            "live_experiment_mode": live_mode,
             "sprint_governance": {
                 "active": sprint_active,
                 "manual_override": bool(settings.high_risk_sprint_mode_enabled),
@@ -187,8 +195,11 @@ class MissionIntelligenceService:
                 "bucket_quality": quality.get("bucket_quality", {}),
                 "disabled_strategies": quality.get("disabled_strategies", []),
                 "probation_strategies": quality.get("probation_strategies", []),
+                "forced_retest_strategies": quality.get("forced_retest_strategies", []),
                 "strategy_kill_switches": quality.get("strategy_kill_switches", []),
                 "strategy_states": quality.get("strategy_states", []),
+                "strategy_lifecycle_transitions": quality.get("strategy_lifecycle_transitions", []),
+                "strategy_lifecycle_transition_summary": quality.get("strategy_lifecycle_transition_summary", {}),
             },
             "parity_watchdog": parity_watchdog_service.status(),
         }
