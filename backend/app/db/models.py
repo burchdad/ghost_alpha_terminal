@@ -164,3 +164,19 @@ class MetaRiskCooldownState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
+
+
+class SystemModeState(Base):
+    __tablename__ = "system_mode_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    confirmed_mode: Mapped[str] = mapped_column(String(32), default="BALANCED")
+    pending_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    pending_confirmation_count: Mapped[int] = mapped_column(Integer, default=0)
+    confirmation_required: Mapped[int] = mapped_column(Integer, default=2)
+    last_evaluation_bucket: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    mode_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )

@@ -23,6 +23,59 @@ from app.services.execution_journal import execution_journal
 
 class MissionIntelligenceService:
     @staticmethod
+    def _operator_alerts(*, system_mode: dict) -> list[dict]:
+        predictive = system_mode.get("predictive_prevention", {}) or {}
+        warning_score = float(predictive.get("warning_score", 0.0) or 0.0)
+        early_warning = bool(predictive.get("early_warning", False))
+        preventive_shift_applied = bool(predictive.get("preventive_shift_applied", False))
+        signals = [str(signal) for signal in (predictive.get("signals", []) or []) if str(signal)]
+        target_mode = str(predictive.get("preventive_mode") or "DEFENSIVE")
+
+        if warning_score < 0.22 and not early_warning and not preventive_shift_applied:
+            return []
+
+        if preventive_shift_applied:
+            phase = "PREVENTIVE_SHIFT"
+            severity = "WARNING"
+            title = "Predictive Defensive Shift Active"
+            message = (
+                f"Predictive warning score {warning_score:.2f} shifted controls toward "
+                f"{target_mode.replace('_', ' ')} before hard failure thresholds."
+            )
+        elif early_warning:
+            phase = "EARLY_WARNING"
+            severity = "WARNING"
+            title = "Predictive Failure Warning"
+            message = (
+                f"Predictive warning score {warning_score:.2f} indicates a likely "
+                f"{target_mode.replace('_', ' ')} downgrade if deterioration continues."
+            )
+        else:
+            phase = "WATCH"
+            severity = "INFO"
+            message = (
+                f"Predictive warning score {warning_score:.2f} is rising; operators should watch for a "
+                f"{target_mode.replace('_', ' ')} downgrade."
+            )
+            title = "Predictive Degradation Watch"
+
+        if signals:
+            message = f"{message} Signals: {', '.join(signals[:3])}."
+
+        return [
+            {
+                "code": "system_mode_predictive_prevention",
+                "phase": phase,
+                "severity": severity,
+                "title": title,
+                "message": message,
+                "score": round(warning_score, 4),
+                "target_mode": target_mode,
+                "signals": signals,
+            }
+        ]
+
+    @staticmethod
     def _window_confidence(*, days: int, now: datetime) -> dict:
         start = now - timedelta(days=days)
         rows = [
@@ -190,6 +243,7 @@ class MissionIntelligenceService:
             "time_weighted_confidence": time_weighted_confidence,
             "system_confidence": system_confidence,
             "system_mode": system_mode,
+            "operator_alerts": self._operator_alerts(system_mode=system_mode),
             "meta_risk_governor": meta_risk,
             "live_experiment_mode": live_mode,
             "sprint_governance": {

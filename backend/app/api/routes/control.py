@@ -19,6 +19,7 @@ from app.models.schemas import (
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
 from app.services.decision_audit_store import decision_audit_store
+from app.services.execution_quality_engine import execution_quality_engine
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
@@ -28,6 +29,7 @@ from app.services.meta_risk_governor import meta_risk_governor
 from app.services.portfolio_manager import portfolio_manager
 from app.services.strategy_kill_switch_service import strategy_kill_switch_service
 from app.services.strategy_lifecycle_transition_store import strategy_lifecycle_transition_store
+from app.services.system_mode_service import system_mode_service
 from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
@@ -302,10 +304,11 @@ def get_strategy_lifecycle_transitions(limit: int = 200, since_hours: int = 168)
 
 
 @router.post("/admin/reset-runtime-state")
-def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool = True) -> dict:
+def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool = True, reset_system_mode: bool = True) -> dict:
     result: dict = {
         "reset_live_mode": bool(reset_live_mode),
         "reset_meta_risk": bool(reset_meta_risk),
+        "reset_system_mode": bool(reset_system_mode),
     }
 
     if reset_live_mode:
@@ -319,6 +322,19 @@ def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool =
         control = control_engine.status()
         result["meta_risk_governor"] = meta_risk_governor.evaluate(
             drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0)
+        )
+
+    if reset_system_mode:
+        result["system_mode"] = system_mode_service.reset_to_default(source="admin_reset")
+    else:
+        control = control_engine.status()
+        goal = goal_engine.status(current_capital=float((live_portfolio_service.snapshot() or portfolio_manager.snapshot()).get("account_balance", 0.0) or 0.0))
+        result["system_mode"] = system_mode_service.evaluate(
+            goal_pressure=float(goal.get("goal_pressure_multiplier", 1.0) or 1.0),
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
+            quality=execution_quality_engine.summary(limit=500),
+            meta_risk=result["meta_risk_governor"],
+            live_mode=live_experiment_promotion_service.status(),
         )
 
     return result

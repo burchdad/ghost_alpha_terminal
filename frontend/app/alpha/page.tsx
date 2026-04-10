@@ -277,6 +277,16 @@ type TruthDashboardResponse = {
 };
 
 type MissionIntelligenceResponse = {
+  operator_alerts?: Array<{
+    code: string;
+    phase: "WATCH" | "EARLY_WARNING" | "PREVENTIVE_SHIFT";
+    severity: "INFO" | "WARNING" | "CRITICAL";
+    title: string;
+    message: string;
+    score: number;
+    target_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+    signals?: string[];
+  }>;
   mission: {
     mission_style: string;
     risk_posture?: {
@@ -358,8 +368,102 @@ type MissionIntelligenceResponse = {
   };
   system_mode?: {
     mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+    candidate_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
     reason: string;
+    candidate_reason?: string;
     experiment_instability?: { score: number };
+    system_health?: {
+      score: number;
+      label: "GREEN" | "YELLOW" | "RED";
+      components?: {
+        persistence_penalty: number;
+        retry_penalty: number;
+        backoff_penalty: number;
+        conflict_penalty: number;
+        drift_penalty: number;
+        instability_penalty: number;
+      };
+    };
+    predictive_prevention?: {
+      early_warning: boolean;
+      warning_score: number;
+      signals: string[];
+      health_delta: number;
+      trend_drop: number;
+      preventive_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL" | null;
+      preventive_shift_weight?: number;
+      preventive_shift_applied?: boolean;
+      base_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      effective_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+    };
+    mode_confidence?: {
+      score: number;
+      decayed_score?: number;
+      decay_factor?: number;
+      elapsed_minutes?: number;
+      time_source?: string;
+      drift_detected?: boolean;
+      drift_magnitude_seconds?: number;
+      drift_severity?: string;
+      drift_confidence_reset_applied?: boolean;
+      drift_confidence_reset_multiplier?: number;
+      label: "HIGH" | "MEDIUM" | "LOW";
+      risk_pressure_score: number;
+      growth_pressure_score: number;
+      components?: {
+        drawdown_signal: number;
+        confidence_signal: number;
+        thrash_signal: number;
+        correlation_signal: number;
+      };
+    };
+    hysteresis?: {
+      confirmed_mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      pending_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL" | null;
+      candidate_mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      confirmation_required: number;
+      confirmation_count: number;
+      window_minutes?: number;
+      progress: number;
+      active: boolean;
+      evaluation_bucket?: string | null;
+      write_verification_ok?: boolean;
+      write_verification_error?: string | null;
+      write_retry_count?: number;
+      write_backoff_seconds?: number;
+    };
+    blend?: {
+      active: boolean;
+      from_mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      to_mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      from_weight: number;
+      to_weight: number;
+    };
+    assurance?: {
+      forced_survival?: boolean;
+      reason?: string | null;
+      persistence_backoff_seconds?: number;
+      drift_confidence_reset_applied?: boolean;
+      drift_confidence_reset_multiplier?: number;
+        recovery_hooks?: {
+          db_reconnect_attempted: boolean;
+          db_reconnect_success: boolean;
+          state_rebuild_applied: boolean;
+          rehydration_target_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL" | null;
+        };
+        recovery_phase?: {
+          active: boolean;
+          cycles_remaining: number;
+          relearning_factor: number;
+          rehydration_target_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL" | null;
+        };
+      cross_signal_conflict?: {
+        detected: boolean;
+        score: number;
+        confidence_multiplier: number;
+        reasons: string[];
+      };
+    };
     controls?: {
       allocation_multiplier: number;
       trade_frequency_multiplier: number;
@@ -466,6 +570,7 @@ export default function AlphaPage() {
   const executionBaselineReadyRef = useRef(false);
   const autonomousCycleBaselineRef = useRef<number | null>(null);
   const killSwitchDisabledBaselineRef = useRef<Set<string> | null>(null);
+  const predictiveAlertBaselineRef = useRef<Set<string> | null>(null);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -685,6 +790,29 @@ export default function AlphaPage() {
     }
 
     killSwitchDisabledBaselineRef.current = disabled;
+  }, [missionIntel]);
+
+  useEffect(() => {
+    const alerts = missionIntel?.operator_alerts ?? [];
+    const signatures = new Set(alerts.map((alert) => `${alert.code}:${alert.phase}:${alert.target_mode ?? "UNKNOWN"}`));
+    const baseline = predictiveAlertBaselineRef.current;
+    if (baseline === null) {
+      predictiveAlertBaselineRef.current = signatures;
+      return;
+    }
+
+    for (const alert of alerts) {
+      const signature = `${alert.code}:${alert.phase}:${alert.target_mode ?? "UNKNOWN"}`;
+      if (baseline.has(signature)) {
+        continue;
+      }
+      pushRuntimeToast(
+        `${alert.title}: ${alert.message}`,
+        alert.severity === "CRITICAL" ? "error" : "warning"
+      );
+    }
+
+    predictiveAlertBaselineRef.current = signatures;
   }, [missionIntel]);
 
   async function refreshScanState(triggerScan = false) {
@@ -1338,9 +1466,41 @@ export default function AlphaPage() {
             <div className={`mt-1 font-semibold ${(missionIntel?.system_mode?.mode ?? "BALANCED") === "SURVIVAL" ? "text-red-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "DEFENSIVE" ? "text-amber-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "AGGRESSIVE_GROWTH" ? "text-cyan-300" : "text-green-300"}`}>
               {(missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}
             </div>
+            <div className="text-slate-400">Candidate: {(missionIntel?.system_mode?.candidate_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}</div>
             <div className="text-slate-400">Risk tolerance: {missionIntel?.system_mode?.controls?.risk_tolerance ?? "medium"}</div>
             <div className="text-slate-400">Trade frequency x{(missionIntel?.system_mode?.controls?.trade_frequency_multiplier ?? 1).toFixed(2)} · Allocation x{(missionIntel?.system_mode?.controls?.allocation_multiplier ?? 1).toFixed(2)}</div>
             <div className="text-slate-400">Experiment instability {(missionIntel?.system_mode?.experiment_instability?.score ?? 0).toFixed(2)}</div>
+            <div className="text-slate-400">Mode confidence {(missionIntel?.system_mode?.mode_confidence?.label ?? "LOW")} {(missionIntel?.system_mode?.mode_confidence?.score ?? 0).toFixed(2)}</div>
+            <div className={`text-slate-400 ${(missionIntel?.system_mode?.system_health?.label ?? "GREEN") === "RED" ? "text-red-300" : (missionIntel?.system_mode?.system_health?.label ?? "GREEN") === "YELLOW" ? "text-amber-300" : "text-green-300"}`}>
+              Health {(missionIntel?.system_mode?.system_health?.label ?? "GREEN")} {(missionIntel?.system_mode?.system_health?.score ?? 1).toFixed(2)}
+            </div>
+            <div className="text-slate-500">Risk pressure {(missionIntel?.system_mode?.mode_confidence?.risk_pressure_score ?? 0).toFixed(2)} · Growth pressure {(missionIntel?.system_mode?.mode_confidence?.growth_pressure_score ?? 0).toFixed(2)}</div>
+            <div className="text-slate-500">Decay {(missionIntel?.system_mode?.mode_confidence?.decayed_score ?? 0).toFixed(2)} x{(missionIntel?.system_mode?.mode_confidence?.decay_factor ?? 1).toFixed(2)} over {(missionIntel?.system_mode?.mode_confidence?.elapsed_minutes ?? 0).toFixed(1)}m</div>
+            <div className="text-slate-500">Time {(missionIntel?.system_mode?.mode_confidence?.time_source ?? "wall_clock")} · Drift {(missionIntel?.system_mode?.mode_confidence?.drift_severity ?? "none")} {(missionIntel?.system_mode?.mode_confidence?.drift_magnitude_seconds ?? 0).toFixed(1)}s</div>
+            <div className="mt-1 text-slate-400">
+              Hysteresis {missionIntel?.system_mode?.hysteresis?.active ? `pending ${missionIntel.system_mode.hysteresis.confirmation_count}/${missionIntel.system_mode.hysteresis.confirmation_required}` : "locked"}
+              {` · window ${missionIntel?.system_mode?.hysteresis?.window_minutes ?? 5}m`}
+              {missionIntel?.system_mode?.blend?.active ? ` · blend ${Math.round((missionIntel.system_mode.blend.to_weight ?? 0) * 100)}% ${(missionIntel.system_mode.blend.to_mode ?? missionIntel.system_mode.mode).replaceAll("_", " ")}` : ""}
+            </div>
+            <div className="text-slate-500">Writes {(missionIntel?.system_mode?.hysteresis?.write_verification_ok ?? true) ? "verified" : "degraded"} · retries {missionIntel?.system_mode?.hysteresis?.write_retry_count ?? 0} · backoff {(missionIntel?.system_mode?.hysteresis?.write_backoff_seconds ?? 0).toFixed(2)}s</div>
+            <div className="text-slate-500">Assurance {(missionIntel?.system_mode?.assurance?.forced_survival ?? false) ? "FORCED SURVIVAL" : "normal"} · conflict {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.score ?? 0).toFixed(2)} · multiplier {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.confidence_multiplier ?? 1).toFixed(2)}</div>
+            <div className={`text-slate-500 ${(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? "text-amber-300" : "text-slate-500"}`}>
+              Predictive {(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? `warning ${(missionIntel?.system_mode?.predictive_prevention?.warning_score ?? 0).toFixed(2)} -> ${((missionIntel?.system_mode?.predictive_prevention?.preventive_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED")).replaceAll("_", " ")}` : "clear"}
+            </div>
+            <div className="text-slate-500">
+              Trend Δ {(missionIntel?.system_mode?.predictive_prevention?.health_delta ?? 0).toFixed(2)} · drop {(missionIntel?.system_mode?.predictive_prevention?.trend_drop ?? 0).toFixed(2)}
+              {(missionIntel?.system_mode?.predictive_prevention?.preventive_shift_applied ?? false)
+                ? ` · shifted from ${((missionIntel?.system_mode?.predictive_prevention?.base_mode ?? "BALANCED")).replaceAll("_", " ")}`
+                : ""}
+            </div>
+            <div className="text-slate-500">
+              Signals {((missionIntel?.system_mode?.predictive_prevention?.signals?.length ?? 0) > 0)
+                ? (missionIntel?.system_mode?.predictive_prevention?.signals ?? []).join(", ")
+                : "none"}
+            </div>
+            <div className="text-slate-500">Recovery {(missionIntel?.system_mode?.assurance?.recovery_phase?.active ?? false) ? `active ${missionIntel?.system_mode?.assurance?.recovery_phase?.cycles_remaining ?? 0} cycles · relearn ${((missionIntel?.system_mode?.assurance?.recovery_phase?.relearning_factor ?? 1)).toFixed(2)}` : "inactive"}</div>
+            <div className="text-slate-500">Rehydrate {(missionIntel?.system_mode?.assurance?.recovery_hooks?.db_reconnect_success ?? false) ? "db-reconnected" : (missionIntel?.system_mode?.assurance?.recovery_hooks?.state_rebuild_applied ?? false) ? `rebuilt -> ${(missionIntel?.system_mode?.assurance?.recovery_hooks?.rehydration_target_mode ?? "BALANCED").replaceAll("_", " ")}` : "not-needed"}</div>
+            <div className="text-slate-500">{missionIntel?.system_mode?.reason ?? "System operating in steady-state growth mode."}</div>
             <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">Live Experiment Mode</div>
             <div className="mt-1 text-cyan-300">{missionIntel?.live_experiment_mode?.variant ?? "evolution_on_compounding_on"}</div>
             <div className="text-slate-400">Evolution {missionIntel?.live_experiment_mode?.enable_evolution ? "ON" : "OFF"} · Compounding {missionIntel?.live_experiment_mode?.enable_compounding ? "ON" : "OFF"}</div>
