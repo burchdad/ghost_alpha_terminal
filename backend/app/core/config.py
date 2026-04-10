@@ -75,9 +75,13 @@ class Settings(BaseSettings):
     # Twilio SMS
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
-    twilio_from_number: str = ""
+    twilio_phone_number: str = ""  # matches TWILIO_PHONE_NUMBER env var
 
-    # SMTP email
+    # SendGrid (preferred when API key is set)
+    sendgrid_api_key: str = ""
+    sendgrid_from: str = ""
+
+    # SMTP email (fallback when SendGrid is not configured)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

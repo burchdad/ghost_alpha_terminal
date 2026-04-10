@@ -19,6 +19,13 @@ try:
 except Exception:  # pragma: no cover
     TwilioClient = None
 
+try:
+    import sendgrid
+    from sendgrid.helpers.mail import Mail
+except Exception:  # pragma: no cover
+    sendgrid = None
+    Mail = None
+
 
 class TwoFAService:
     def _utcnow(self) -> datetime:
@@ -45,7 +52,7 @@ class TwoFAService:
         return bool(totp.verify(candidate, valid_window=1))
 
     def send_sms_code(self, *, phone_number: str, code: str) -> None:
-        if not settings.twilio_account_sid or not settings.twilio_auth_token or not settings.twilio_from_number:
+        if not settings.twilio_account_sid or not settings.twilio_auth_token or not settings.twilio_phone_number:
             raise HTTPException(status_code=503, detail="SMS provider is not configured")
         if TwilioClient is None:
             raise HTTPException(status_code=500, detail="Twilio dependency is not installed")
@@ -55,23 +62,50 @@ class TwoFAService:
             client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
             client.messages.create(
                 body=body,
-                from_=settings.twilio_from_number,
+                from_=settings.twilio_phone_number,
                 to=phone_number,
             )
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Failed to send SMS code: {exc}") from exc
 
     def send_email_code(self, *, to_email: str, code: str) -> None:
-        if not settings.smtp_host or not settings.smtp_from_email:
+        subject = "Your Ghost Alpha Terminal verification code"
+        body = f"Your verification code is {code}. This code expires in {settings.otp_code_ttl_minutes} minutes."
+
+        # Prefer SendGrid when API key is configured
+        if settings.sendgrid_api_key:
+            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+        elif settings.smtp_host and settings.smtp_from_email:
+            self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+        else:
             raise HTTPException(status_code=503, detail="Email provider is not configured")
 
+    def _send_via_sendgrid(self, *, to_email: str, subject: str, body: str) -> None:
+        if sendgrid is None or Mail is None:
+            raise HTTPException(status_code=500, detail="SendGrid dependency is not installed")
+        from_email = settings.sendgrid_from or settings.smtp_from_email
+        if not from_email:
+            raise HTTPException(status_code=503, detail="SendGrid sender address is not configured")
+        try:
+            message = Mail(
+                from_email=from_email,
+                to_emails=to_email,
+                subject=subject,
+                plain_text_content=body,
+            )
+            sg = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key)
+            response = sg.send(message)
+            if response.status_code >= 400:
+                raise RuntimeError(f"SendGrid returned HTTP {response.status_code}")
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to send email via SendGrid: {exc}") from exc
+
+    def _send_via_smtp(self, *, to_email: str, subject: str, body: str) -> None:
         msg = EmailMessage()
-        msg["Subject"] = "Your Ghost Alpha Terminal verification code"
+        msg["Subject"] = subject
         msg["From"] = settings.smtp_from_email
         msg["To"] = to_email
-        msg.set_content(
-            f"Your verification code is {code}. This code expires in {settings.otp_code_ttl_minutes} minutes."
-        )
+        msg.set_content(body)
 
         try:
             if settings.smtp_use_ssl:
@@ -88,7 +122,7 @@ class TwoFAService:
                         server.login(settings.smtp_username, settings.smtp_password)
                     server.send_message(msg)
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Failed to send email code: {exc}") from exc
+            raise HTTPException(status_code=502, detail=f"Failed to send email via SMTP: {exc}") from exc
 
 
 twofa_service = TwoFAService()
