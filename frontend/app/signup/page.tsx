@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import QRCode from "react-qr-code";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -369,9 +370,7 @@ export default function SignupPage() {
                     Scan this QR code with your authenticator app (Google Authenticator, Authy, Microsoft Authenticator):
                   </p>
                   <div className="bg-white p-4 rounded inline-block mb-3">
-                    <div className="text-xs text-center text-slate-600">
-                      QR Code
-                    </div>
+                    <QRCode value={totpQRCode} size={160} />
                   </div>
                   <p className="text-xs text-slate-400">
                     Or enter manually: <code className="text-emerald-400 text-[10px]">{totpSecret}</code>
