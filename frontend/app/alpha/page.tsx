@@ -671,6 +671,14 @@ export default function AlphaPage() {
       setOauthStatus("error");
       setOauthReason(reason);
     }
+
+    if (oauth === "connected" || oauth === "error") {
+      qs.delete("alpaca_oauth");
+      qs.delete("reason");
+      const nextSearch = qs.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
   }, []);
 
   useEffect(() => {

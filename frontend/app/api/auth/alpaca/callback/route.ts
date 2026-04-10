@@ -50,8 +50,17 @@ export async function GET(request: NextRequest) {
   try {
     const exchangeRes = await fetch(
       `${backendUrl}/alpaca/oauth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-      { method: "GET", cache: "no-store" },
+      {
+        method: "GET",
+        cache: "no-store",
+        redirect: "manual",
+      },
     );
+
+    const redirectLocation = exchangeRes.headers.get("location");
+    if (redirectLocation) {
+      return NextResponse.redirect(new URL(redirectLocation, url.origin));
+    }
 
     if (!exchangeRes.ok) {
       const text = await exchangeRes.text();
@@ -61,10 +70,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(next);
     }
 
-    const payload = (await exchangeRes.json()) as { connected?: boolean; next?: string };
-    const nextPath = payload.next && payload.next.startsWith("/") ? payload.next : "/alpha";
+    const payload = (await exchangeRes.json().catch(() => null)) as { connected?: boolean; next?: string } | null;
+    const nextPath = payload?.next && payload.next.startsWith("/") ? payload.next : "/alpha";
     const next = new URL(nextPath, url.origin);
-    next.searchParams.set("alpaca_oauth", payload.connected ? "connected" : "error");
+    next.searchParams.set("alpaca_oauth", payload?.connected ? "connected" : "error");
     return NextResponse.redirect(next);
   } catch (err) {
     const next = new URL("/alpha", url.origin);
