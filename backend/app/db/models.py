@@ -259,3 +259,15 @@ class SystemModeState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
+
+
+class LandingTelemetryEvent(Base):
+    __tablename__ = "landing_telemetry_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    variant_id: Mapped[str] = mapped_column(String(32), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)  # variant_shown | cta_click
+    cta_label: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
