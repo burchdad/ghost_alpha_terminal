@@ -19,6 +19,7 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.strategy_evolution_service import strategy_evolution_service
 from app.services.system_mode_service import system_mode_service
 from app.services.execution_journal import execution_journal
+from app.services.global_signal_intelligence import global_signal_intelligence
 
 
 class MissionIntelligenceService:
@@ -276,7 +277,57 @@ class MissionIntelligenceService:
                 "strategy_lifecycle_transition_summary": quality.get("strategy_lifecycle_transition_summary", {}),
             },
             "parity_watchdog": parity_watchdog_service.status(),
+            "global_signal_intelligence": self._global_intelligence_snapshot(quality=quality),
         }
+
+    @staticmethod
+    def _global_intelligence_snapshot(*, quality: dict) -> dict:
+        """
+        Build a cross-system signal intelligence snapshot.
+
+        Feeds execution quality regime/strategy data into the global learning layer
+        so the cross-domain precision map reflects trade-level outcomes alongside
+        system-mode signal history.
+        """
+        strategy_quality = quality.get("strategy_quality", {}) or {}
+        regime_quality = quality.get("regime_quality", {}) or {}
+
+        # Translate execution quality into signal-like observations for cross-domain learning.
+        # For each strategy: if win_rate < 0.45 it signals stress → outcome_positive=True (degradation real).
+        for strategy_name, stats in strategy_quality.items():
+            if not isinstance(stats, dict):
+                continue
+            win_rate = float(stats.get("win_rate", 0.5) or 0.5)
+            settled = int(stats.get("settled", 0) or 0)
+            if settled < 5:
+                continue
+            # "strategy_underperformance" fires when a strategy drops below threshold
+            stress_signal = "strategy_underperformance"
+            fired = win_rate < 0.45
+            outcome_positive = win_rate < 0.40  # real degradation if very low
+            global_signal_intelligence.record_signal(
+                domain=f"strategy:{strategy_name}",
+                signal_name=stress_signal,
+                fired=fired,
+                outcome_positive=outcome_positive,
+            )
+
+        # For each regime: low win rate is a signal of regime-driven degradation
+        for regime_name, regime_stats in regime_quality.items():
+            if not isinstance(regime_stats, dict):
+                continue
+            win_rate = float(regime_stats.get("win_rate", 0.5) or 0.5)
+            total_trades = int(regime_stats.get("total_trades", 0) or 0)
+            if total_trades < 3:
+                continue
+            global_signal_intelligence.record_signal(
+                domain=f"regime:{regime_name}",
+                signal_name="regime_underperformance",
+                fired=win_rate < 0.48,
+                outcome_positive=win_rate < 0.40,
+            )
+
+        return global_signal_intelligence.summary()
 
     def simulate_mission(self, *, target_capital: float, timeframe_days: int, start_capital: float | None = None) -> dict:
         portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()

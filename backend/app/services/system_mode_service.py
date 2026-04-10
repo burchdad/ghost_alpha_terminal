@@ -11,6 +11,7 @@ from typing import Literal
 
 from app.db.models import SystemModeState
 from app.db.session import get_session
+from app.services.global_signal_intelligence import global_signal_intelligence
 
 
 SystemMode = Literal["AGGRESSIVE_GROWTH", "BALANCED", "DEFENSIVE", "SURVIVAL"]
@@ -40,6 +41,11 @@ class SystemModeService:
     PREDICTIVE_MIN_WARNING_THRESHOLD = 0.28
     PREDICTIVE_MAX_WARNING_THRESHOLD = 0.52
     PREDICTIVE_WATCH_THRESHOLD_RATIO = 0.72
+    PREDICTIVE_IDEAL_LEAD_HOURS = 1.8
+    PREDICTIVE_MAX_LEAD_HOURS = 8.0
+    SIM_FEEDBACK_CALIBRATION_MIN = 0.55
+    SIM_FEEDBACK_CALIBRATION_MAX = 1.35
+    SIM_FEEDBACK_LEARNING_RATE = 0.22
     PREDICTIVE_SIGNAL_BASE_WEIGHTS: dict[str, float] = {
         "health_trending_down": 0.35,
         "rising_retry_counts": 0.18,
@@ -138,7 +144,14 @@ class SystemModeService:
         }
         self._health_history: deque[dict] = deque(maxlen=self.HEALTH_HISTORY_WINDOW)
         self._predictive_signal_stats: dict[str, dict[str, float]] = {
-            name: {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0}
+            name: {
+                "true_positive": 0.0,
+                "false_positive": 0.0,
+                "support": 0.0,
+                "lead_time_sum_hours": 0.0,
+                "lead_time_samples": 0.0,
+                "recent_false_positive_pressure": 0.0,
+            }
             for name in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS
         }
         self._predictive_event_stats: dict[str, float] = {
@@ -146,8 +159,32 @@ class SystemModeService:
             "false_positive": 0.0,
             "watch_true_positive": 0.0,
             "watch_false_positive": 0.0,
+            "lead_time_sum_hours": 0.0,
+            "lead_time_samples": 0.0,
         }
         self._last_predictive_observation: dict | None = None
+        # ── Causal Signal Attribution ──────────────────────────────────────────────
+        # Tracks per-signal causal precision: how often the signal preceded a real
+        # mode rank drop (as opposed to just correlating with health degradation).
+        self._causal_signal_stats: dict[str, dict[str, float]] = {}
+        self._last_confirmed_mode_rank: int = self._mode_rank("BALANCED")
+        # ── end causal attribution ─────────────────────────────────────────────
+        # Execution feedback loop state: compare predicted protection against
+        # realized protection and calibrate scenario prediction strength.
+        self._simulation_calibration_factor: float = 1.0
+        self._pending_simulation_feedback: dict | None = None
+        self._simulation_feedback_stats: dict[str, float] = {
+            "samples": 0.0,
+            "mae_sum": 0.0,
+            "bias_sum": 0.0,
+            "last_error": 0.0,
+            "last_predicted": 0.0,
+            "last_actual": 0.0,
+        }
+        self._last_simulation_feedback: dict = {
+            "evaluated": False,
+            "note": "No execution feedback sample yet.",
+        }
         self._last_predictive_tuning: dict = {
             "warning_threshold": self.PREDICTIVE_BASE_WARNING_THRESHOLD,
             "watch_threshold": round(self.PREDICTIVE_BASE_WARNING_THRESHOLD * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4),
@@ -155,8 +192,11 @@ class SystemModeService:
             "bias_aggressiveness": 0.45,
             "samples": 0,
             "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+            "signal_quality": {},
+            "signal_rankings": [],
             "event_precision": 0.5,
             "false_positive_rate": 0.0,
+            "average_lead_hours": 0.0,
         }
 
     @staticmethod
@@ -642,38 +682,86 @@ class SystemModeService:
         learned_weights: dict[str, float] = {}
         reliability_sum = 0.0
         sample_sum = 0.0
+        signal_quality: dict[str, dict[str, float | bool]] = {}
+        signal_rankings: list[dict[str, float | str | bool]] = []
         for signal, base_weight in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS.items():
             stats = self._predictive_signal_stats.get(signal, {})
             support = float(stats.get("support", 0.0) or 0.0)
             tp = float(stats.get("true_positive", 0.0) or 0.0)
             fp = float(stats.get("false_positive", 0.0) or 0.0)
+            lead_time_sum_hours = float(stats.get("lead_time_sum_hours", 0.0) or 0.0)
+            lead_time_samples = float(stats.get("lead_time_samples", 0.0) or 0.0)
+            recent_false_positive_pressure = float(stats.get("recent_false_positive_pressure", 0.0) or 0.0)
             sample_factor = self._clamp(support / max(self.PREDICTIVE_TUNING_MIN_SAMPLES, 1))
             precision = tp / max(tp + fp, 1.0)
-            reliability = ((1.0 - sample_factor) * 0.5) + (sample_factor * precision)
-            learned_weights[signal] = round(base_weight * (0.7 + reliability * 0.8), 4)
+            avg_lead_hours = lead_time_sum_hours / max(lead_time_samples, 1.0) if lead_time_samples > 0.0 else 0.0
+            if lead_time_samples > 0.0:
+                lead_distance = min(abs(avg_lead_hours - self.PREDICTIVE_IDEAL_LEAD_HOURS) / max(self.PREDICTIVE_IDEAL_LEAD_HOURS, 0.1), 1.0)
+                lead_quality = 1.0 - lead_distance
+            else:
+                lead_quality = 0.5
+            false_positive_rate = fp / max(tp + fp, 1.0)
+            pressure_factor = self._clamp(recent_false_positive_pressure / 2.0, minimum=0.0, maximum=1.0)
+            reliability = ((1.0 - sample_factor) * 0.5) + (sample_factor * (precision * 0.7 + lead_quality * 0.3))
+            contribution_multiplier = self._clamp(1.0 - false_positive_rate * 0.42 - pressure_factor * 0.18, minimum=0.45, maximum=1.12)
+            suppressed = bool(false_positive_rate >= 0.60 and support >= float(self.PREDICTIVE_TUNING_MIN_SAMPLES))
+            learned_weights[signal] = round(base_weight * (0.64 + reliability * 0.86) * contribution_multiplier, 4)
             reliability_sum += reliability * max(support, 1.0)
             sample_sum += max(support, 1.0)
+            signal_quality[signal] = {
+                "precision": round(precision, 4),
+                "false_positive_rate": round(false_positive_rate, 4),
+                "avg_lead_hours": round(avg_lead_hours, 4),
+                "lead_quality": round(lead_quality, 4),
+                "support": round(support, 4),
+                "contribution_multiplier": round(contribution_multiplier, 4),
+                "suppressed": suppressed,
+            }
+            signal_rankings.append(
+                {
+                    "signal": signal,
+                    "weight": learned_weights[signal],
+                    "precision": round(precision, 4),
+                    "lead_quality": round(lead_quality, 4),
+                    "false_positive_rate": round(false_positive_rate, 4),
+                    "suppressed": suppressed,
+                }
+            )
 
         tp_events = float(self._predictive_event_stats.get("true_positive", 0.0) or 0.0)
         fp_events = float(self._predictive_event_stats.get("false_positive", 0.0) or 0.0)
         watch_tp = float(self._predictive_event_stats.get("watch_true_positive", 0.0) or 0.0)
         watch_fp = float(self._predictive_event_stats.get("watch_false_positive", 0.0) or 0.0)
+        lead_time_sum_hours = float(self._predictive_event_stats.get("lead_time_sum_hours", 0.0) or 0.0)
+        lead_time_samples = float(self._predictive_event_stats.get("lead_time_samples", 0.0) or 0.0)
         event_precision = tp_events / max(tp_events + fp_events, 1.0)
         false_positive_rate = fp_events / max(tp_events + fp_events, 1.0)
         watch_precision = watch_tp / max(watch_tp + watch_fp, 1.0)
         average_reliability = reliability_sum / max(sample_sum, 1.0)
+        average_lead_hours = lead_time_sum_hours / max(lead_time_samples, 1.0) if lead_time_samples > 0.0 else 0.0
+        lead_quality_global = self._clamp(1.0 - min(abs(average_lead_hours - self.PREDICTIVE_IDEAL_LEAD_HOURS) / max(self.PREDICTIVE_IDEAL_LEAD_HOURS, 0.1), 1.0))
         warning_threshold = self._clamp(
             self.PREDICTIVE_BASE_WARNING_THRESHOLD
             + max(false_positive_rate - 0.32, 0.0) * 0.16
+            + max(0.45 - lead_quality_global, 0.0) * 0.06
             - max(event_precision - 0.70, 0.0) * 0.08,
             minimum=self.PREDICTIVE_MIN_WARNING_THRESHOLD,
             maximum=self.PREDICTIVE_MAX_WARNING_THRESHOLD,
         )
         watch_threshold = round(warning_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4)
         bias_aggressiveness = round(
-            self._clamp(0.30 + average_reliability * 0.35 + watch_precision * 0.20, minimum=0.25, maximum=0.78),
+            self._clamp(
+                0.26
+                + average_reliability * 0.34
+                + watch_precision * 0.18
+                + lead_quality_global * 0.12
+                - false_positive_rate * 0.18,
+                minimum=0.25,
+                maximum=0.82,
+            ),
             4,
         )
+        signal_rankings.sort(key=lambda item: float(item.get("weight", 0.0) or 0.0), reverse=True)
         total_samples = int(sum(float(stats.get("support", 0.0) or 0.0) for stats in self._predictive_signal_stats.values()))
         snapshot = {
             "warning_threshold": round(warning_threshold, 4),
@@ -682,8 +770,11 @@ class SystemModeService:
             "bias_aggressiveness": bias_aggressiveness,
             "samples": total_samples,
             "weights": learned_weights,
+            "signal_quality": signal_quality,
+            "signal_rankings": signal_rankings,
             "event_precision": round(event_precision, 4),
             "false_positive_rate": round(false_positive_rate, 4),
+            "average_lead_hours": round(average_lead_hours, 4),
         }
         self._last_predictive_tuning = snapshot
         return snapshot
@@ -691,6 +782,7 @@ class SystemModeService:
     def _update_predictive_tuning(
         self,
         *,
+        now: datetime | None = None,
         health: dict,
         meta_risk_mode: str,
         sanity: dict,
@@ -706,16 +798,36 @@ class SystemModeService:
             candidate_mode=candidate_mode,
             confirmed_mode=confirmed_mode,
         )
+        observed_at = now or datetime.now(tz=timezone.utc)
         previous_observation = self._last_predictive_observation
         if previous_observation is not None:
             observed_signals = previous_observation.get("signals", []) or []
+            previous_ts = self._safe_iso_age_hours(str(previous_observation.get("timestamp") or "") or None)
+            lead_hours = 0.0
+            if previous_ts is not None:
+                lead_hours = self._clamp(previous_ts, minimum=0.0, maximum=self.PREDICTIVE_MAX_LEAD_HOURS)
             for signal in observed_signals:
-                stats = self._predictive_signal_stats.setdefault(signal, {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0})
+                stats = self._predictive_signal_stats.setdefault(
+                    signal,
+                    {
+                        "true_positive": 0.0,
+                        "false_positive": 0.0,
+                        "support": 0.0,
+                        "lead_time_sum_hours": 0.0,
+                        "lead_time_samples": 0.0,
+                        "recent_false_positive_pressure": 0.0,
+                    },
+                )
+                stats["recent_false_positive_pressure"] = float(stats.get("recent_false_positive_pressure", 0.0) or 0.0) * 0.92
                 stats["support"] = float(stats.get("support", 0.0) or 0.0) + 1.0
                 if outcome_positive:
                     stats["true_positive"] = float(stats.get("true_positive", 0.0) or 0.0) + 1.0
+                    if lead_hours > 0.0:
+                        stats["lead_time_sum_hours"] = float(stats.get("lead_time_sum_hours", 0.0) or 0.0) + lead_hours
+                        stats["lead_time_samples"] = float(stats.get("lead_time_samples", 0.0) or 0.0) + 1.0
                 else:
                     stats["false_positive"] = float(stats.get("false_positive", 0.0) or 0.0) + 1.0
+                    stats["recent_false_positive_pressure"] = float(stats.get("recent_false_positive_pressure", 0.0) or 0.0) + 1.0
 
             previous_score = float(previous_observation.get("warning_score", 0.0) or 0.0)
             previous_threshold = float(previous_observation.get("warning_threshold", self.PREDICTIVE_BASE_WARNING_THRESHOLD) or self.PREDICTIVE_BASE_WARNING_THRESHOLD)
@@ -723,11 +835,316 @@ class SystemModeService:
             if previous_score >= previous_threshold:
                 event_key = "true_positive" if outcome_positive else "false_positive"
                 self._predictive_event_stats[event_key] = float(self._predictive_event_stats.get(event_key, 0.0) or 0.0) + 1.0
+                if outcome_positive and lead_hours > 0.0:
+                    self._predictive_event_stats["lead_time_sum_hours"] = float(self._predictive_event_stats.get("lead_time_sum_hours", 0.0) or 0.0) + lead_hours
+                    self._predictive_event_stats["lead_time_samples"] = float(self._predictive_event_stats.get("lead_time_samples", 0.0) or 0.0) + 1.0
             elif previous_score >= previous_watch_threshold:
                 event_key = "watch_true_positive" if outcome_positive else "watch_false_positive"
                 self._predictive_event_stats[event_key] = float(self._predictive_event_stats.get(event_key, 0.0) or 0.0) + 1.0
+                if outcome_positive and lead_hours > 0.0:
+                    self._predictive_event_stats["lead_time_sum_hours"] = float(self._predictive_event_stats.get("lead_time_sum_hours", 0.0) or 0.0) + lead_hours
+                    self._predictive_event_stats["lead_time_samples"] = float(self._predictive_event_stats.get("lead_time_samples", 0.0) or 0.0) + 1.0
+
+        del observed_at
 
         return self._predictive_tuning_snapshot()
+
+    # ------------------------------------------------------------------
+    # Causal Signal Attribution
+    # ------------------------------------------------------------------
+
+    def _update_causal_attribution(
+        self,
+        *,
+        confirmed_mode: SystemMode,
+        active_signals: list[str],
+    ) -> None:
+        """
+        Update causal precision stats when a mode-rank transition is confirmed.
+
+        For every signal that fired in the prior observation cycle, record whether
+        a real rank-drop followed.  Over time this surfaces which signals genuinely
+        *cause* degradation rather than merely correlating with it.
+
+        Called inside the lock in evaluate() after confirmed_mode is finalised.
+        """
+        new_rank = self._mode_rank(confirmed_mode)
+        rank_dropped = new_rank < self._last_confirmed_mode_rank
+
+        for sig in active_signals:
+            stats = self._causal_signal_stats.setdefault(
+                sig,
+                {"causal_hits": 0.0, "total_firings": 0.0},
+            )
+            stats["total_firings"] += 1.0
+            if rank_dropped:
+                stats["causal_hits"] += 1.0
+
+        self._last_confirmed_mode_rank = new_rank
+
+    def _causal_attribution_snapshot(self, *, active_signals: list[str]) -> dict:
+        """
+        Build a causal attribution report for the currently active signals.
+
+        Returns a narrative identifying which active signal most reliably PRECEDES
+        a mode rank-drop (causal precision = causal_hits / total_firings).
+        """
+        all_scores: dict[str, float] = {}
+        for sig, stats in self._causal_signal_stats.items():
+            total = float(stats.get("total_firings", 0.0) or 0.0)
+            hits = float(stats.get("causal_hits", 0.0) or 0.0)
+            if total >= 1.0:
+                all_scores[sig] = round(hits / total, 4)
+
+        active_scores = {sig: all_scores.get(sig, 0.0) for sig in active_signals}
+
+        top_signal: str | None = None
+        top_score = 0.0
+        if active_scores:
+            top_signal = max(active_scores, key=lambda k: active_scores[k])
+            top_score = active_scores[top_signal]
+
+        if not top_signal or top_score < 0.1:
+            narrative = "Insufficient causal history — correlation-based weighting active."
+        else:
+            narrative = (
+                f"'{top_signal}' most reliably CAUSED mode degradation "
+                f"(causal precision {top_score:.0%} across {int(self._causal_signal_stats.get(top_signal, {}).get('total_firings', 0))} cycles)."
+            )
+
+        return {
+            "top_causal_signal": top_signal,
+            "top_causal_score": round(top_score, 4),
+            "active_signal_causal_scores": active_scores,
+            "all_signal_causal_scores": all_scores,
+            "narrative": narrative,
+        }
+
+    # ------------------------------------------------------------------
+    # Scenario Simulation Layer
+    # ------------------------------------------------------------------
+
+    def _simulate_mode_scenarios(
+        self,
+        *,
+        signals: dict,
+        effective_mode: SystemMode,
+        candidate_mode: SystemMode,
+        calibration_factor: float,
+    ) -> dict:
+        """
+        Before applying DEFENSIVE mode, simulate the two paths:
+          A) Stay at current mode  → risk exposure X
+          B) Shift to DEFENSIVE    → opportunity cost Y, protection gain Z
+
+        Returns a structured comparison so callers can make an informed shift decision
+        and the result is surfaced in the mission intelligence snapshot.
+        """
+        risk_pressure = float(signals.get("risk_pressure_score", 0.0) or 0.0)
+        growth_pressure = float(signals.get("growth_pressure_score", 0.0) or 0.0)
+        drawdown_signal = float(signals.get("drawdown_signal", 0.0) or 0.0)
+
+        current_controls = self._MODE_CONTROLS.get(effective_mode, self._MODE_CONTROLS["BALANCED"])
+        defensive_controls = self._MODE_CONTROLS["DEFENSIVE"]
+
+        current_alloc = float(current_controls["allocation_multiplier"])
+        defensive_alloc = float(defensive_controls["allocation_multiplier"])
+        current_freq = float(current_controls["trade_frequency_multiplier"])
+        defensive_freq = float(defensive_controls["trade_frequency_multiplier"])
+
+        # --- Scenario A: stay current mode ---
+        # Risk load = how much capital is exposed given current settings and stress signals
+        stay_risk_score = self._clamp(
+            risk_pressure * current_alloc * (1.0 + drawdown_signal * 0.30)
+        )
+        # Rough expected drawdown exposure as % of account (signal-implied, not realized)
+        stay_drawdown_exposure_pct = round(risk_pressure * current_alloc * 0.10 * 100.0, 3)
+
+        # --- Scenario B: shift to DEFENSIVE ---
+        alloc_delta = max(0.0, current_alloc - defensive_alloc)
+        freq_delta = max(0.0, current_freq - defensive_freq)
+
+        # Protection: reducing allocation under high risk pressure saves proportional capital
+        protection_gain_raw = self._clamp(risk_pressure * alloc_delta * 1.35)
+        protection_gain = self._clamp(protection_gain_raw * calibration_factor)
+        # Opportunity cost: reduced allocation + lower frequency hurts growth potential
+        opportunity_cost = self._clamp(
+            growth_pressure * alloc_delta * 0.55
+            + growth_pressure * freq_delta * 0.30
+        )
+        shift_net_benefit = round(protection_gain - opportunity_cost * 0.65, 4)
+
+        calibration_confidence = self._simulation_calibration_confidence()
+        base_prediction_confidence = self._clamp(
+            0.34 + risk_pressure * 0.38 + max(shift_net_benefit, 0.0) * 0.42
+        )
+        prediction_confidence = self._clamp(base_prediction_confidence * calibration_confidence)
+
+        # Shift is favoured when protection outweighs opportunity cost and confidence is sufficient.
+        dynamic_deadband = 0.03 + (1.0 - calibration_confidence) * 0.05
+        shift_favored = (
+            shift_net_benefit > dynamic_deadband
+            and risk_pressure >= 0.26
+            and prediction_confidence >= 0.46
+        )
+        recommended_action = (
+            "SHIFT_DEFENSIVE"
+            if shift_favored
+            else "STAY_CURRENT"
+        )
+        rationale = (
+            f"Protection gain {protection_gain:.2f} vs. opportunity cost {opportunity_cost:.2f} "
+            f"(net benefit {shift_net_benefit:+.3f}). "
+            + ("Shift favoured." if shift_favored else "Stay favoured.")
+        )
+
+        return {
+            "evaluated": True,
+            "current_mode": effective_mode,
+            "evaluated_against": "DEFENSIVE",
+            "calibration_factor": round(calibration_factor, 4),
+            "calibration_confidence": round(calibration_confidence, 4),
+            "base_prediction_confidence": round(base_prediction_confidence, 4),
+            "prediction_confidence": round(prediction_confidence, 4),
+            "stay_current": {
+                "risk_score": round(stay_risk_score, 4),
+                "expected_drawdown_exposure_pct": stay_drawdown_exposure_pct,
+                "allocation_multiplier": round(current_alloc, 4),
+                "trade_frequency_multiplier": round(current_freq, 4),
+            },
+            "shift_defensive": {
+                "protection_gain_score": round(protection_gain, 4),
+                "protection_gain_raw_score": round(protection_gain_raw, 4),
+                "opportunity_cost_score": round(opportunity_cost, 4),
+                "net_benefit": shift_net_benefit,
+                "allocation_multiplier": round(defensive_alloc, 4),
+                "trade_frequency_multiplier": round(defensive_freq, 4),
+            },
+            "shift_favored": shift_favored,
+            "recommended_action": recommended_action,
+            "rationale": rationale,
+        }
+
+    def _simulation_calibration_confidence(self) -> float:
+        """
+        Returns a trust score in [0, 1] for simulation predictions.
+
+        High MAE lowers trust globally, while low MAE with sufficient samples raises trust.
+        """
+        samples = float(self._simulation_feedback_stats.get("samples", 0.0) or 0.0)
+        if samples <= 0.0:
+            return 0.62
+
+        mae = float(self._simulation_feedback_stats.get("mae_sum", 0.0) or 0.0) / max(samples, 1.0)
+        bias = float(self._simulation_feedback_stats.get("bias_sum", 0.0) or 0.0) / max(samples, 1.0)
+        sample_confidence = self._clamp(samples / 8.0)
+        mae_quality = self._clamp(1.0 - (mae / 0.22))
+        bias_quality = self._clamp(1.0 - (abs(bias) / 0.16))
+
+        return self._clamp(
+            0.12 + mae_quality * 0.58 + sample_confidence * 0.20 + bias_quality * 0.10,
+            minimum=0.30,
+            maximum=1.0,
+        )
+
+    def _execution_feedback_loop(
+        self,
+        *,
+        now: datetime,
+        preventive_shift_applied: bool,
+        scenario_simulation: dict,
+        current_risk_pressure: float,
+    ) -> dict:
+        """
+        Compare predicted protection from a prior defensive-shift decision against
+        realized protection in the subsequent evaluation, then calibrate future
+        simulation output.
+        """
+        last_evaluation = self._last_simulation_feedback
+
+        pending = self._pending_simulation_feedback
+        if pending is not None:
+            predicted = float(pending.get("predicted_protection", 0.0) or 0.0)
+            baseline_risk = float(pending.get("baseline_risk_score", 0.0) or 0.0)
+            actual = self._clamp(baseline_risk - current_risk_pressure, minimum=-1.0, maximum=1.0)
+            error = actual - predicted
+
+            self._simulation_feedback_stats["samples"] = float(self._simulation_feedback_stats.get("samples", 0.0) or 0.0) + 1.0
+            self._simulation_feedback_stats["mae_sum"] = float(self._simulation_feedback_stats.get("mae_sum", 0.0) or 0.0) + abs(error)
+            self._simulation_feedback_stats["bias_sum"] = float(self._simulation_feedback_stats.get("bias_sum", 0.0) or 0.0) + error
+            self._simulation_feedback_stats["last_error"] = error
+            self._simulation_feedback_stats["last_predicted"] = predicted
+            self._simulation_feedback_stats["last_actual"] = actual
+
+            previous_factor = self._simulation_calibration_factor
+            self._simulation_calibration_factor = self._clamp(
+                self._simulation_calibration_factor + error * self.SIM_FEEDBACK_LEARNING_RATE,
+                minimum=self.SIM_FEEDBACK_CALIBRATION_MIN,
+                maximum=self.SIM_FEEDBACK_CALIBRATION_MAX,
+            )
+
+            samples = max(float(self._simulation_feedback_stats.get("samples", 0.0) or 0.0), 1.0)
+            mae = float(self._simulation_feedback_stats.get("mae_sum", 0.0) or 0.0) / samples
+            bias = float(self._simulation_feedback_stats.get("bias_sum", 0.0) or 0.0) / samples
+
+            last_evaluation = {
+                "evaluated": True,
+                "decision_timestamp": pending.get("decision_timestamp"),
+                "evaluated_at": now.isoformat(),
+                "predicted_protection_score": round(predicted, 4),
+                "actual_protection_score": round(actual, 4),
+                "prediction_error": round(error, 4),
+                "absolute_error": round(abs(error), 4),
+                "baseline_risk_score": round(baseline_risk, 4),
+                "realized_risk_score": round(current_risk_pressure, 4),
+                "calibration_factor_before": round(previous_factor, 4),
+                "calibration_factor_after": round(self._simulation_calibration_factor, 4),
+                "mean_absolute_error": round(mae, 4),
+                "mean_bias": round(bias, 4),
+                "samples": int(samples),
+                "model_adjustment": (
+                    "decrease_prediction_strength"
+                    if error < -0.01
+                    else "increase_prediction_strength"
+                    if error > 0.01
+                    else "hold"
+                ),
+            }
+            self._last_simulation_feedback = last_evaluation
+            self._pending_simulation_feedback = None
+
+        if preventive_shift_applied:
+            predicted_protection = float(
+                (scenario_simulation.get("shift_defensive") or {}).get("protection_gain_score", 0.0) or 0.0
+            )
+            baseline_risk = float((scenario_simulation.get("stay_current") or {}).get("risk_score", 0.0) or 0.0)
+            self._pending_simulation_feedback = {
+                "decision_timestamp": now.isoformat(),
+                "predicted_protection": predicted_protection,
+                "baseline_risk_score": baseline_risk,
+            }
+
+        samples = max(float(self._simulation_feedback_stats.get("samples", 0.0) or 0.0), 0.0)
+        mae = (
+            float(self._simulation_feedback_stats.get("mae_sum", 0.0) or 0.0) / samples
+            if samples > 0.0
+            else 0.0
+        )
+        bias = (
+            float(self._simulation_feedback_stats.get("bias_sum", 0.0) or 0.0) / samples
+            if samples > 0.0
+            else 0.0
+        )
+
+        return {
+            "calibration_factor": round(self._simulation_calibration_factor, 4),
+            "calibration_confidence": round(self._simulation_calibration_confidence(), 4),
+            "samples": int(samples),
+            "mean_absolute_error": round(mae, 4),
+            "mean_bias": round(bias, 4),
+            "pending_evaluation": self._pending_simulation_feedback is not None,
+            "last_evaluation": last_evaluation,
+        }
 
     def _predictive_failure_prevention(
         self,
@@ -742,6 +1159,7 @@ class SystemModeService:
         confirmed_mode: SystemMode,
     ) -> dict:
         tuning = self._update_predictive_tuning(
+            now=now,
             health=health,
             meta_risk_mode=meta_risk_mode,
             sanity=sanity,
@@ -764,23 +1182,31 @@ class SystemModeService:
 
         warning_score = 0.0
         signals: list[str] = []
+        quality = tuning.get("signal_quality", {}) or {}
+
+        def _weighted_signal(name: str, fallback: float) -> float:
+            base = float(learned_weights.get(name, fallback) or fallback)
+            profile = quality.get(name, {}) if isinstance(quality, dict) else {}
+            multiplier = float((profile or {}).get("contribution_multiplier", 1.0) or 1.0)
+            return self._clamp(base * multiplier, minimum=0.0, maximum=1.0)
+
         if len(previous_scores) >= 2 and (health_delta <= -0.04 or trend_drop >= 0.10):
-            warning_score += float(learned_weights.get("health_trending_down", 0.35) or 0.35)
+            warning_score += _weighted_signal("health_trending_down", 0.35)
             signals.append("health_trending_down")
         if self._last_write_retry_count > 0 and self._last_write_retry_count >= (previous_retries[-1] if previous_retries else 0):
-            warning_score += float(learned_weights.get("rising_retry_counts", 0.18) or 0.18)
+            warning_score += _weighted_signal("rising_retry_counts", 0.18)
             signals.append("rising_retry_counts")
         avg_prev_drift = sum(previous_drifts) / max(len(previous_drifts), 1) if previous_drifts else 0.0
         if drift_magnitude >= max(self.CLOCK_DRIFT_SMALL_SECONDS * 0.75, avg_prev_drift + 8.0):
-            warning_score += float(learned_weights.get("increasing_drift", 0.17) or 0.17)
+            warning_score += _weighted_signal("increasing_drift", 0.17)
             signals.append("increasing_drift")
         conflict_score = float(sanity.get("score", 0.0) or 0.0)
         avg_prev_conflict = sum(previous_conflicts) / max(len(previous_conflicts), 1) if previous_conflicts else 0.0
         if conflict_score >= max(0.18, avg_prev_conflict + 0.08):
-            warning_score += float(learned_weights.get("growing_conflict", 0.16) or 0.16)
+            warning_score += _weighted_signal("growing_conflict", 0.16)
             signals.append("growing_conflict")
         if float(experiment_instability.get("score", 0.0) or 0.0) >= 0.52 and current_score <= 0.80:
-            warning_score += float(learned_weights.get("instability_pressure", 0.14) or 0.14)
+            warning_score += _weighted_signal("instability_pressure", 0.14)
             signals.append("instability_pressure")
 
         warning_score = self._clamp(warning_score)
@@ -811,6 +1237,7 @@ class SystemModeService:
             "watch_threshold": round(watch_threshold, 4),
             "phase": phase,
         }
+        causal_attribution = self._causal_attribution_snapshot(active_signals=signals)
         return {
             "early_warning": early_warning,
             "watch_active": watch_active,
@@ -821,6 +1248,7 @@ class SystemModeService:
             "trend_drop": round(trend_drop, 4),
             "preventive_mode": "DEFENSIVE" if early_warning else None,
             "preventive_shift_weight": preventive_shift_weight,
+            "causal_attribution": causal_attribution,
             "tuning": tuning,
         }
 
@@ -1084,6 +1512,19 @@ class SystemModeService:
                 candidate_mode=candidate_mode,
                 confirmed_mode=effective_mode,
             )
+            # Update causal attribution now that confirmed_mode is final
+            active_predictive_signals: list[str] = list(predictive.get("signals", []) or [])
+            self._update_causal_attribution(
+                confirmed_mode=effective_mode,
+                active_signals=active_predictive_signals,
+            )
+            # Scenario simulation: evaluate stay-vs-shift before applying preventive logic
+            scenario_simulation = self._simulate_mode_scenarios(
+                signals=signals,
+                effective_mode=effective_mode,
+                candidate_mode=candidate_mode,
+                calibration_factor=self._simulation_calibration_factor,
+            )
             controls, recovery_phase = self._apply_health_overlays(
                 controls=controls,
                 health_score=float(health.get("score", 1.0) or 1.0),
@@ -1091,10 +1532,12 @@ class SystemModeService:
             )
             preventive_shift_applied = False
             preventive_base_mode = effective_mode
+            scenario_prediction_confidence = float(scenario_simulation.get("prediction_confidence", 0.5) or 0.5)
             if (
                 bool(predictive.get("early_warning", False))
                 and effective_mode in {"AGGRESSIVE_GROWTH", "BALANCED"}
                 and not assurance_forced_survival
+                and str(scenario_simulation.get("recommended_action", "STAY_CURRENT")) == "SHIFT_DEFENSIVE"
             ):
                 preventive_shift_applied = True
                 effective_mode = "DEFENSIVE"
@@ -1102,12 +1545,39 @@ class SystemModeService:
                 controls = self._blend_controls(
                     from_mode=preventive_base_mode,
                     to_mode="DEFENSIVE",
-                    to_weight=float(predictive.get("preventive_shift_weight", 0.45) or 0.45),
+                    to_weight=self._clamp(
+                        float(predictive.get("preventive_shift_weight", 0.45) or 0.45)
+                        * scenario_prediction_confidence,
+                        minimum=0.12,
+                        maximum=0.92,
+                    ),
                 )
                 controls, recovery_phase = self._apply_health_overlays(
                     controls=controls,
                     health_score=float(health.get("score", 1.0) or 1.0),
                     recovery_cycles_remaining=self._recovery_cycles_remaining,
+                )
+            execution_feedback = self._execution_feedback_loop(
+                now=now,
+                preventive_shift_applied=preventive_shift_applied,
+                scenario_simulation=scenario_simulation,
+                current_risk_pressure=float(signals.get("risk_pressure_score", 0.0) or 0.0),
+            )
+            # Share signal intelligence with global cross-system learning layer
+            outcome_positive = effective_mode in {"DEFENSIVE", "SURVIVAL"}
+            for sig_name in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS:
+                global_signal_intelligence.record_signal(
+                    domain="system_mode",
+                    signal_name=sig_name,
+                    fired=sig_name in active_predictive_signals,
+                    outcome_positive=outcome_positive,
+                )
+            # Also bulk-ingest the tuning's signal_quality for richer cross-domain precision
+            tuning_signal_quality = (predictive.get("tuning") or {}).get("signal_quality") or {}
+            if tuning_signal_quality:
+                global_signal_intelligence.ingest_domain_signal_quality(
+                    domain="system_mode_tuning",
+                    signal_quality=tuning_signal_quality,
                 )
 
         return {
@@ -1141,6 +1611,8 @@ class SystemModeService:
                 "growth_pressure_score": signals["growth_pressure_score"],
             },
             "experiment_instability": experiment_instability,
+            "scenario_simulation": scenario_simulation,
+            "execution_feedback_loop": execution_feedback,
             "predictive_prevention": {
                 **predictive,
                 "preventive_shift_applied": preventive_shift_applied,
@@ -1209,8 +1681,31 @@ class SystemModeService:
             self._last_evaluation_bucket = None
             self._mode_confidence = 0.0
             self._health_history.clear()
+            self._causal_signal_stats = {}
+            self._last_confirmed_mode_rank = self._mode_rank("BALANCED")
+            self._simulation_calibration_factor = 1.0
+            self._pending_simulation_feedback = None
+            self._simulation_feedback_stats = {
+                "samples": 0.0,
+                "mae_sum": 0.0,
+                "bias_sum": 0.0,
+                "last_error": 0.0,
+                "last_predicted": 0.0,
+                "last_actual": 0.0,
+            }
+            self._last_simulation_feedback = {
+                "evaluated": False,
+                "note": "No execution feedback sample yet.",
+            }
             self._predictive_signal_stats = {
-                name: {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0}
+                name: {
+                    "true_positive": 0.0,
+                    "false_positive": 0.0,
+                    "support": 0.0,
+                    "lead_time_sum_hours": 0.0,
+                    "lead_time_samples": 0.0,
+                    "recent_false_positive_pressure": 0.0,
+                }
                 for name in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS
             }
             self._predictive_event_stats = {
@@ -1218,6 +1713,8 @@ class SystemModeService:
                 "false_positive": 0.0,
                 "watch_true_positive": 0.0,
                 "watch_false_positive": 0.0,
+                "lead_time_sum_hours": 0.0,
+                "lead_time_samples": 0.0,
             }
             self._last_predictive_observation = None
             self._last_predictive_tuning = {
@@ -1227,14 +1724,43 @@ class SystemModeService:
                 "bias_aggressiveness": 0.45,
                 "samples": 0,
                 "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+                "signal_quality": {},
+                "signal_rankings": [],
                 "event_precision": 0.5,
                 "false_positive_rate": 0.0,
+                "average_lead_hours": 0.0,
             }
             self._persist_state()
         return {
             "mode": "BALANCED",
             "candidate_mode": "BALANCED",
             "reason": self._MODE_REASON["BALANCED"],
+            "scenario_simulation": {
+                "evaluated": False,
+                "current_mode": "BALANCED",
+                "evaluated_against": "DEFENSIVE",
+                "calibration_factor": 1.0,
+                "calibration_confidence": 0.62,
+                "base_prediction_confidence": 0.0,
+                "prediction_confidence": 0.0,
+                "stay_current": {},
+                "shift_defensive": {},
+                "shift_favored": False,
+                "recommended_action": "STAY_CURRENT",
+                "rationale": "Reset — no scenario data available.",
+            },
+            "execution_feedback_loop": {
+                "calibration_factor": 1.0,
+                "calibration_confidence": 0.62,
+                "samples": 0,
+                "mean_absolute_error": 0.0,
+                "mean_bias": 0.0,
+                "pending_evaluation": False,
+                "last_evaluation": {
+                    "evaluated": False,
+                    "note": "No execution feedback sample yet.",
+                },
+            },
             "predictive_prevention": {
                 "early_warning": False,
                 "watch_active": False,
@@ -1245,6 +1771,13 @@ class SystemModeService:
                 "trend_drop": 0.0,
                 "preventive_mode": None,
                 "preventive_shift_weight": 0.0,
+                "causal_attribution": {
+                    "top_causal_signal": None,
+                    "top_causal_score": 0.0,
+                    "active_signal_causal_scores": {},
+                    "all_signal_causal_scores": {},
+                    "narrative": "No causal history — reset.",
+                },
                 "preventive_shift_applied": False,
                 "base_mode": "BALANCED",
                 "effective_mode": "BALANCED",
@@ -1255,8 +1788,11 @@ class SystemModeService:
                     "bias_aggressiveness": 0.45,
                     "samples": 0,
                     "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+                    "signal_quality": {},
+                    "signal_rankings": [],
                     "event_precision": 0.5,
                     "false_positive_rate": 0.0,
+                    "average_lead_hours": 0.0,
                 },
             },
             "system_health": {

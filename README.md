@@ -180,6 +180,9 @@ Open `http://localhost:3000` and go to `/dashboard`.
 
 ## Deployment Notes
 
+- Database (recommended now): Neon Postgres using pooled URL with `sslmode=require`.
+- Set backend `DATABASE_URL` to Neon connection string.
+- Set backend auth vars: `AUTH_SESSION_SECRET`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAMESITE`, `FRONTEND_BASE_URL`.
 - Frontend (Vercel): set `NEXT_PUBLIC_API_BASE` to your backend URL (for example, Railway service URL).
 - Backend (Railway): ensure all required env values are configured in Railway project variables.
 - Coinbase key-mode broker visibility uses backend vars `COINBASE_API_KEY_NAME` and `COINBASE_API_PRIVATE_KEY`.

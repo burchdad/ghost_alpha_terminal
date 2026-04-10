@@ -51,7 +51,8 @@ from app.models.schemas import (
     SwarmStatusResponse,
 )
 from app.core.config import settings
-from app.db.models import BrokerOAuthConnection
+from app.api.deps.auth import CurrentUser
+from app.db.models import BrokerOAuthConnection, User
 from app.db.session import get_session
 from app.services.control_engine import control_engine
 from app.services.context_intelligence import context_intelligence
@@ -119,10 +120,12 @@ def get_broker_capabilities() -> BrokerCapabilitiesResponse:
     response_model=BrokerConnectionsResponse,
     summary="Broker connection inventory for the connection safety banner",
 )
-def get_broker_connections() -> BrokerConnectionsResponse:
+def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsResponse:
     capability_map = execution_bridge.broker_capabilities()
     with get_session() as session:
-        rows = session.execute(select(BrokerOAuthConnection)).scalars().all()
+        rows = session.execute(
+            select(BrokerOAuthConnection).where(BrokerOAuthConnection.user_id == str(user.id))
+        ).scalars().all()
 
     connections = {row.provider: row for row in rows}
     brokers: list[BrokerConnectionEntryResponse] = []

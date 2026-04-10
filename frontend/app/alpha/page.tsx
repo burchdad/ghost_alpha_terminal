@@ -404,8 +404,29 @@ type MissionIntelligenceResponse = {
         bias_aggressiveness: number;
         samples: number;
         weights: Record<string, number>;
+        signal_quality?: Record<
+          string,
+          {
+            precision: number;
+            false_positive_rate: number;
+            avg_lead_hours: number;
+            lead_quality: number;
+            support: number;
+            contribution_multiplier: number;
+            suppressed: boolean;
+          }
+        >;
+        signal_rankings?: Array<{
+          signal: string;
+          weight: number;
+          precision: number;
+          lead_quality: number;
+          false_positive_rate: number;
+          suppressed: boolean;
+        }>;
         event_precision: number;
         false_positive_rate: number;
+        average_lead_hours?: number;
       };
     };
     mode_confidence?: {
@@ -1518,6 +1539,42 @@ export default function AlphaPage() {
                     .map(([signal, weight]) => `${signal}:${Number(weight).toFixed(2)}`)
                     .join(" · ")
                 : "default"}
+            </div>
+            <div className="mt-2 rounded border border-terminal-line/80 bg-terminal-panel/30 p-2">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Predictive Intelligence Tuning</div>
+              <div className="mt-1 text-slate-400">
+                Avg lead {(missionIntel?.system_mode?.predictive_prevention?.tuning?.average_lead_hours ?? 0).toFixed(2)}h
+                {" · "}
+                Ranked signals {(missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).length}
+              </div>
+              <div className="mt-1 space-y-1 text-slate-400">
+                {(missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).slice(0, 5).map((ranking, index) => {
+                  const quality = missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_quality?.[ranking.signal];
+                  return (
+                    <div
+                      key={`${ranking.signal}-${index}`}
+                      className={`rounded border px-2 py-1 ${ranking.suppressed ? "border-red-500/35 bg-red-500/10 text-red-200" : "border-current/20"}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-200">#{index + 1} {ranking.signal}</span>
+                        <span className={`${ranking.suppressed ? "text-red-300" : "text-green-300"}`}>
+                          {ranking.suppressed ? "suppressed" : "active"}
+                        </span>
+                      </div>
+                      <div>
+                        w {Number(ranking.weight ?? 0).toFixed(2)} · p {Number(ranking.precision ?? 0).toFixed(2)} · fp {Number(ranking.false_positive_rate ?? 0).toFixed(2)}
+                        {" · "}
+                        lead {(Number(quality?.avg_lead_hours ?? 0)).toFixed(2)}h · lq {Number(ranking.lead_quality ?? 0).toFixed(2)}
+                        {" · "}
+                        mult {(Number(quality?.contribution_multiplier ?? 1)).toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+                {((missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).length === 0) && (
+                  <div className="text-slate-500">No ranked signal history yet.</div>
+                )}
+              </div>
             </div>
             <div className="text-slate-500">
               Signals {((missionIntel?.system_mode?.predictive_prevention?.signals?.length ?? 0) > 0)

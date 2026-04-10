@@ -7,6 +7,8 @@ from starlette.responses import Response
 
 from app.api.routes.agents import router as agents_router
 from app.api.routes.alpaca import router as alpaca_router
+from app.api.routes.auth import router as auth_router
+from app.api.routes.brokers import router as brokers_router
 from app.api.routes.orchestrator import router as orchestrator_router
 from app.api.routes.backtest import router as backtest_router
 from app.api.routes.control import router as control_router
@@ -61,6 +63,8 @@ app.include_router(alpaca_router)
 app.include_router(agents_router)
 app.include_router(orchestrator_router)
 app.include_router(metrics_router)
+app.include_router(auth_router)
+app.include_router(brokers_router)
 
 
 @app.on_event("startup")

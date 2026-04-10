@@ -15,7 +15,8 @@ from app.models.schemas import (
     AlpacaRequestIdEntry,
     AlpacaRequestIdsResponse,
 )
-from app.db.models import BrokerOAuthConnection
+from app.api.deps.auth import CurrentUser
+from app.db.models import BrokerOAuthConnection, User
 from app.db.session import get_session
 from app.services.alpaca_client import alpaca_client
 from app.core.config import settings
@@ -43,14 +44,17 @@ def _alpaca_oauth_ready() -> bool:
     )
 
 
-def _save_oauth_tokens(payload: dict) -> None:
+def _save_oauth_tokens(*, payload: dict, user_id: str) -> None:
     now = datetime.now(timezone.utc)
     with get_session() as session:
         connection = session.execute(
-            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+            select(BrokerOAuthConnection).where(
+                BrokerOAuthConnection.provider == _OAUTH_PROVIDER,
+                BrokerOAuthConnection.user_id == user_id,
+            )
         ).scalar_one_or_none()
         if connection is None:
-            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER)
+            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER, user_id=user_id)
             session.add(connection)
 
         # Stored for broker continuity only; never returned in API responses.
@@ -66,24 +70,30 @@ def _save_oauth_tokens(payload: dict) -> None:
         connection.updated_at = now
 
 
-def _mark_oauth_error(message: str) -> None:
+def _mark_oauth_error(*, message: str, user_id: str) -> None:
     now = datetime.now(timezone.utc)
     with get_session() as session:
         connection = session.execute(
-            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+            select(BrokerOAuthConnection).where(
+                BrokerOAuthConnection.provider == _OAUTH_PROVIDER,
+                BrokerOAuthConnection.user_id == user_id,
+            )
         ).scalar_one_or_none()
         if connection is None:
-            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER)
+            connection = BrokerOAuthConnection(provider=_OAUTH_PROVIDER, user_id=user_id)
             session.add(connection)
         connection.last_error = message
         connection.updated_at = now
 
 
 @router.get("/oauth/status", summary="Get persisted Alpaca OAuth connection status")
-def get_oauth_status() -> dict:
+def get_oauth_status(user: User = CurrentUser) -> dict:
     with get_session() as session:
         connection = session.execute(
-            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+            select(BrokerOAuthConnection).where(
+                BrokerOAuthConnection.provider == _OAUTH_PROVIDER,
+                BrokerOAuthConnection.user_id == str(user.id),
+            )
         ).scalar_one_or_none()
 
     connected = bool(connection and connection.connected and connection.access_token)
@@ -103,11 +113,14 @@ def get_oauth_status() -> dict:
 
 
 @router.post("/oauth/disconnect", summary="Disconnect Alpaca OAuth and clear persisted broker tokens")
-def disconnect_oauth() -> dict:
+def disconnect_oauth(user: User = CurrentUser) -> dict:
     now = datetime.now(timezone.utc)
     with get_session() as session:
         connection = session.execute(
-            select(BrokerOAuthConnection).where(BrokerOAuthConnection.provider == _OAUTH_PROVIDER)
+            select(BrokerOAuthConnection).where(
+                BrokerOAuthConnection.provider == _OAUTH_PROVIDER,
+                BrokerOAuthConnection.user_id == str(user.id),
+            )
         ).scalar_one_or_none()
         if connection is None:
             return {
@@ -203,6 +216,7 @@ def alpaca_config_check() -> dict:
 @router.get("/oauth/start", summary="Start Alpaca Connect OAuth flow")
 def start_oauth_flow(
     next_path: str = Query(default="/alpha", alias="next"),
+    user: User = CurrentUser,
 ) -> RedirectResponse:
     if not _alpaca_oauth_ready():
         raise HTTPException(
@@ -217,6 +231,7 @@ def start_oauth_flow(
     state = secrets.token_urlsafe(24)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=_OAUTH_STATE_TTL_SECONDS)
     _oauth_states[state] = {
+        "user_id": str(user.id),
         "next": next_path if next_path.startswith("/") else "/alpha",
         "expires_at": expires_at,
     }
@@ -235,7 +250,7 @@ def start_oauth_flow(
 def complete_oauth_flow(
     code: str = Query(..., min_length=1),
     state: str = Query(..., min_length=1),
-) -> dict:
+) -> RedirectResponse:
     if not _alpaca_oauth_ready():
         raise HTTPException(status_code=500, detail="Alpaca Connect OAuth is not configured")
 
@@ -262,23 +277,27 @@ def complete_oauth_flow(
         resp.raise_for_status()
         payload = resp.json()
     except httpx.HTTPStatusError as err:
-        _mark_oauth_error(str(err.response.text or err))
+        state_user_id = str(state_payload.get("user_id", "") or "")
+        if state_user_id:
+            _mark_oauth_error(message=str(err.response.text or err), user_id=state_user_id)
         _raise_alpaca_error(err)
     except Exception as err:
-        _mark_oauth_error(str(err))
+        state_user_id = str(state_payload.get("user_id", "") or "")
+        if state_user_id:
+            _mark_oauth_error(message=str(err), user_id=state_user_id)
         raise HTTPException(status_code=502, detail=f"OAuth token exchange failed: {err}")
 
-    _save_oauth_tokens(payload)
+    state_user_id = str(state_payload.get("user_id", "") or "")
+    if not state_user_id:
+        raise HTTPException(status_code=400, detail="OAuth state missing user identity")
 
-    # Do not return raw tokens to frontend callback handlers.
-    return {
-        "connected": True,
-        "token_type": payload.get("token_type"),
-        "scope": payload.get("scope"),
-        "expires_in": payload.get("expires_in"),
-        "obtained_at": datetime.now(timezone.utc).isoformat(),
-        "next": state_payload.get("next", "/alpha"),
-    }
+    _save_oauth_tokens(payload=payload, user_id=state_user_id)
+
+    next_path = str(state_payload.get("next", "/alpha") or "/alpha")
+    if not next_path.startswith("/"):
+        next_path = "/alpha"
+    redirect_to = f"{settings.frontend_base_url.rstrip('/')}{next_path}?alpaca_oauth=connected"
+    return RedirectResponse(url=redirect_to, status_code=307)
 
 
 @router.get(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
@@ -145,6 +146,60 @@ class SystemModePredictivePreventionTests(unittest.TestCase):
             service.PREDICTIVE_SIGNAL_BASE_WEIGHTS["rising_retry_counts"],
         )
         self.assertGreaterEqual(tuning["event_precision"], 0.5)
+
+    def test_predictive_tuning_reports_signal_rankings_and_lead_time(self) -> None:
+        service = self.make_service()
+        service._last_predictive_observation = {
+            "timestamp": (datetime.now(tz=timezone.utc) - timedelta(minutes=90)).isoformat(),
+            "signals": ["rising_retry_counts", "increasing_drift"],
+            "warning_score": 0.46,
+            "warning_threshold": 0.35,
+            "watch_threshold": 0.25,
+            "phase": "EARLY_WARNING",
+        }
+
+        tuning = service._update_predictive_tuning(
+            health={"score": 0.65},
+            meta_risk_mode="elevated",
+            sanity={"score": 0.22},
+            experiment_instability={"score": 0.62},
+            candidate_mode="DEFENSIVE",
+            confirmed_mode="BALANCED",
+        )
+
+        self.assertGreater(tuning["average_lead_hours"], 0.0)
+        self.assertTrue(len(tuning["signal_rankings"]) > 0)
+        self.assertIn("rising_retry_counts", tuning["signal_quality"])
+
+    def test_predictive_tuning_suppresses_repeated_false_positive_signal(self) -> None:
+        service = self.make_service()
+
+        for _ in range(4):
+            service._last_predictive_observation = {
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                "signals": ["health_trending_down"],
+                "warning_score": 0.42,
+                "warning_threshold": 0.35,
+                "watch_threshold": 0.25,
+                "phase": "EARLY_WARNING",
+            }
+            service._update_predictive_tuning(
+                health={"score": 0.96},
+                meta_risk_mode="normal",
+                sanity={"score": 0.0},
+                experiment_instability={"score": 0.10},
+                candidate_mode="BALANCED",
+                confirmed_mode="BALANCED",
+            )
+
+        tuning = service._predictive_tuning_snapshot()
+        quality = tuning["signal_quality"]["health_trending_down"]
+        self.assertLess(quality["contribution_multiplier"], 1.0)
+        self.assertTrue(bool(quality["suppressed"]))
+        self.assertLess(
+            tuning["weights"]["health_trending_down"],
+            service.PREDICTIVE_SIGNAL_BASE_WEIGHTS["health_trending_down"],
+        )
 
     def test_operator_alerts_warn_before_visible_shift(self) -> None:
         system_mode = {
