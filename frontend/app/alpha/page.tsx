@@ -386,6 +386,8 @@ type MissionIntelligenceResponse = {
     };
     predictive_prevention?: {
       early_warning: boolean;
+      watch_active?: boolean;
+      phase?: "CLEAR" | "WATCH" | "EARLY_WARNING" | "PREVENTIVE_SHIFT";
       warning_score: number;
       signals: string[];
       health_delta: number;
@@ -395,6 +397,16 @@ type MissionIntelligenceResponse = {
       preventive_shift_applied?: boolean;
       base_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
       effective_mode?: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+      tuning?: {
+        warning_threshold: number;
+        watch_threshold: number;
+        average_reliability: number;
+        bias_aggressiveness: number;
+        samples: number;
+        weights: Record<string, number>;
+        event_precision: number;
+        false_positive_rate: number;
+      };
     };
     mode_confidence?: {
       score: number;
@@ -1485,13 +1497,27 @@ export default function AlphaPage() {
             <div className="text-slate-500">Writes {(missionIntel?.system_mode?.hysteresis?.write_verification_ok ?? true) ? "verified" : "degraded"} · retries {missionIntel?.system_mode?.hysteresis?.write_retry_count ?? 0} · backoff {(missionIntel?.system_mode?.hysteresis?.write_backoff_seconds ?? 0).toFixed(2)}s</div>
             <div className="text-slate-500">Assurance {(missionIntel?.system_mode?.assurance?.forced_survival ?? false) ? "FORCED SURVIVAL" : "normal"} · conflict {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.score ?? 0).toFixed(2)} · multiplier {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.confidence_multiplier ?? 1).toFixed(2)}</div>
             <div className={`text-slate-500 ${(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? "text-amber-300" : "text-slate-500"}`}>
-              Predictive {(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? `warning ${(missionIntel?.system_mode?.predictive_prevention?.warning_score ?? 0).toFixed(2)} -> ${((missionIntel?.system_mode?.predictive_prevention?.preventive_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED")).replaceAll("_", " ")}` : "clear"}
+              Predictive {((missionIntel?.system_mode?.predictive_prevention?.phase ?? "CLEAR")).replaceAll("_", " ")} {(missionIntel?.system_mode?.predictive_prevention?.warning_score ?? 0).toFixed(2)}
+              {(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? ` -> ${((missionIntel?.system_mode?.predictive_prevention?.preventive_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED")).replaceAll("_", " ")}` : ""}
             </div>
             <div className="text-slate-500">
               Trend Δ {(missionIntel?.system_mode?.predictive_prevention?.health_delta ?? 0).toFixed(2)} · drop {(missionIntel?.system_mode?.predictive_prevention?.trend_drop ?? 0).toFixed(2)}
               {(missionIntel?.system_mode?.predictive_prevention?.preventive_shift_applied ?? false)
                 ? ` · shifted from ${((missionIntel?.system_mode?.predictive_prevention?.base_mode ?? "BALANCED")).replaceAll("_", " ")}`
                 : ""}
+            </div>
+            <div className="text-slate-500">
+              Thresholds watch {(missionIntel?.system_mode?.predictive_prevention?.tuning?.watch_threshold ?? 0).toFixed(2)} · warn {(missionIntel?.system_mode?.predictive_prevention?.tuning?.warning_threshold ?? 0).toFixed(2)} · bias {(missionIntel?.system_mode?.predictive_prevention?.tuning?.bias_aggressiveness ?? 0).toFixed(2)}
+            </div>
+            <div className="text-slate-500">
+              Tuning reliability {(missionIntel?.system_mode?.predictive_prevention?.tuning?.average_reliability ?? 0).toFixed(2)} · precision {(missionIntel?.system_mode?.predictive_prevention?.tuning?.event_precision ?? 0).toFixed(2)} · false+ {(missionIntel?.system_mode?.predictive_prevention?.tuning?.false_positive_rate ?? 0).toFixed(2)} · samples {missionIntel?.system_mode?.predictive_prevention?.tuning?.samples ?? 0}
+            </div>
+            <div className="text-slate-500">
+              Weights {Object.entries(missionIntel?.system_mode?.predictive_prevention?.tuning?.weights ?? {}).length > 0
+                ? Object.entries(missionIntel?.system_mode?.predictive_prevention?.tuning?.weights ?? {})
+                    .map(([signal, weight]) => `${signal}:${Number(weight).toFixed(2)}`)
+                    .join(" · ")
+                : "default"}
             </div>
             <div className="text-slate-500">
               Signals {((missionIntel?.system_mode?.predictive_prevention?.signals?.length ?? 0) > 0)

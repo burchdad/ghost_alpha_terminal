@@ -96,15 +96,77 @@ class SystemModePredictivePreventionTests(unittest.TestCase):
         self.assertEqual(result["mode"], "DEFENSIVE")
         self.assertEqual(result["predictive_prevention"]["effective_mode"], "DEFENSIVE")
 
+    def test_predictive_tuning_raises_threshold_after_false_positive(self) -> None:
+        service = self.make_service()
+        service._last_predictive_observation = {
+            "signals": ["health_trending_down"],
+            "warning_score": 0.41,
+            "warning_threshold": 0.35,
+            "watch_threshold": 0.25,
+            "phase": "EARLY_WARNING",
+        }
+
+        tuning = service._update_predictive_tuning(
+            health={"score": 0.92},
+            meta_risk_mode="normal",
+            sanity={"score": 0.0},
+            experiment_instability={"score": 0.12},
+            candidate_mode="BALANCED",
+            confirmed_mode="BALANCED",
+        )
+
+        self.assertGreaterEqual(tuning["warning_threshold"], service.PREDICTIVE_BASE_WARNING_THRESHOLD)
+        self.assertLess(
+            tuning["weights"]["health_trending_down"],
+            service.PREDICTIVE_SIGNAL_BASE_WEIGHTS["health_trending_down"],
+        )
+
+    def test_predictive_tuning_rewards_true_positive_signal(self) -> None:
+        service = self.make_service()
+        service._last_predictive_observation = {
+            "signals": ["rising_retry_counts"],
+            "warning_score": 0.41,
+            "warning_threshold": 0.35,
+            "watch_threshold": 0.25,
+            "phase": "EARLY_WARNING",
+        }
+
+        tuning = service._update_predictive_tuning(
+            health={"score": 0.64},
+            meta_risk_mode="elevated",
+            sanity={"score": 0.12},
+            experiment_instability={"score": 0.44},
+            candidate_mode="DEFENSIVE",
+            confirmed_mode="BALANCED",
+        )
+
+        self.assertGreater(
+            tuning["weights"]["rising_retry_counts"],
+            service.PREDICTIVE_SIGNAL_BASE_WEIGHTS["rising_retry_counts"],
+        )
+        self.assertGreaterEqual(tuning["event_precision"], 0.5)
+
     def test_operator_alerts_warn_before_visible_shift(self) -> None:
         system_mode = {
             "mode": "BALANCED",
             "predictive_prevention": {
                 "early_warning": False,
+                "watch_active": True,
+                "phase": "WATCH",
                 "warning_score": 0.35,
                 "signals": ["health_trending_down"],
                 "preventive_mode": "DEFENSIVE",
                 "preventive_shift_applied": False,
+                "tuning": {
+                    "warning_threshold": 0.39,
+                    "watch_threshold": 0.28,
+                    "average_reliability": 0.5,
+                    "bias_aggressiveness": 0.45,
+                    "samples": 0,
+                    "weights": {"health_trending_down": 0.35},
+                    "event_precision": 0.5,
+                    "false_positive_rate": 0.0,
+                },
             },
         }
 

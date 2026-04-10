@@ -35,6 +35,18 @@ class SystemModeService:
     SEVERE_DRIFT_CONFIDENCE_MULTIPLIER = 0.45
     RECOVERY_CYCLE_BUDGET = 4
     HEALTH_HISTORY_WINDOW = 6
+    PREDICTIVE_TUNING_MIN_SAMPLES = 3
+    PREDICTIVE_BASE_WARNING_THRESHOLD = 0.35
+    PREDICTIVE_MIN_WARNING_THRESHOLD = 0.28
+    PREDICTIVE_MAX_WARNING_THRESHOLD = 0.52
+    PREDICTIVE_WATCH_THRESHOLD_RATIO = 0.72
+    PREDICTIVE_SIGNAL_BASE_WEIGHTS: dict[str, float] = {
+        "health_trending_down": 0.35,
+        "rising_retry_counts": 0.18,
+        "increasing_drift": 0.17,
+        "growing_conflict": 0.16,
+        "instability_pressure": 0.14,
+    }
 
     _MODE_CONTROLS: dict[SystemMode, dict] = {
         "AGGRESSIVE_GROWTH": {
@@ -125,6 +137,27 @@ class SystemModeService:
             "rehydration_target_mode": None,
         }
         self._health_history: deque[dict] = deque(maxlen=self.HEALTH_HISTORY_WINDOW)
+        self._predictive_signal_stats: dict[str, dict[str, float]] = {
+            name: {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0}
+            for name in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS
+        }
+        self._predictive_event_stats: dict[str, float] = {
+            "true_positive": 0.0,
+            "false_positive": 0.0,
+            "watch_true_positive": 0.0,
+            "watch_false_positive": 0.0,
+        }
+        self._last_predictive_observation: dict | None = None
+        self._last_predictive_tuning: dict = {
+            "warning_threshold": self.PREDICTIVE_BASE_WARNING_THRESHOLD,
+            "watch_threshold": round(self.PREDICTIVE_BASE_WARNING_THRESHOLD * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4),
+            "average_reliability": 0.5,
+            "bias_aggressiveness": 0.45,
+            "samples": 0,
+            "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+            "event_precision": 0.5,
+            "false_positive_rate": 0.0,
+        }
 
     @staticmethod
     def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
@@ -586,6 +619,116 @@ class SystemModeService:
         }
         return adjusted, recovery_phase
 
+    def _predictive_outcome_positive(
+        self,
+        *,
+        health: dict,
+        meta_risk_mode: str,
+        sanity: dict,
+        experiment_instability: dict,
+        candidate_mode: SystemMode,
+        confirmed_mode: SystemMode,
+    ) -> bool:
+        return bool(
+            float(health.get("score", 1.0) or 1.0) <= 0.72
+            or meta_risk_mode in {"elevated", "critical"}
+            or float(sanity.get("score", 0.0) or 0.0) >= 0.24
+            or float(experiment_instability.get("score", 0.0) or 0.0) >= 0.58
+            or candidate_mode in {"DEFENSIVE", "SURVIVAL"}
+            or confirmed_mode in {"DEFENSIVE", "SURVIVAL"}
+        )
+
+    def _predictive_tuning_snapshot(self) -> dict:
+        learned_weights: dict[str, float] = {}
+        reliability_sum = 0.0
+        sample_sum = 0.0
+        for signal, base_weight in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS.items():
+            stats = self._predictive_signal_stats.get(signal, {})
+            support = float(stats.get("support", 0.0) or 0.0)
+            tp = float(stats.get("true_positive", 0.0) or 0.0)
+            fp = float(stats.get("false_positive", 0.0) or 0.0)
+            sample_factor = self._clamp(support / max(self.PREDICTIVE_TUNING_MIN_SAMPLES, 1))
+            precision = tp / max(tp + fp, 1.0)
+            reliability = ((1.0 - sample_factor) * 0.5) + (sample_factor * precision)
+            learned_weights[signal] = round(base_weight * (0.7 + reliability * 0.8), 4)
+            reliability_sum += reliability * max(support, 1.0)
+            sample_sum += max(support, 1.0)
+
+        tp_events = float(self._predictive_event_stats.get("true_positive", 0.0) or 0.0)
+        fp_events = float(self._predictive_event_stats.get("false_positive", 0.0) or 0.0)
+        watch_tp = float(self._predictive_event_stats.get("watch_true_positive", 0.0) or 0.0)
+        watch_fp = float(self._predictive_event_stats.get("watch_false_positive", 0.0) or 0.0)
+        event_precision = tp_events / max(tp_events + fp_events, 1.0)
+        false_positive_rate = fp_events / max(tp_events + fp_events, 1.0)
+        watch_precision = watch_tp / max(watch_tp + watch_fp, 1.0)
+        average_reliability = reliability_sum / max(sample_sum, 1.0)
+        warning_threshold = self._clamp(
+            self.PREDICTIVE_BASE_WARNING_THRESHOLD
+            + max(false_positive_rate - 0.32, 0.0) * 0.16
+            - max(event_precision - 0.70, 0.0) * 0.08,
+            minimum=self.PREDICTIVE_MIN_WARNING_THRESHOLD,
+            maximum=self.PREDICTIVE_MAX_WARNING_THRESHOLD,
+        )
+        watch_threshold = round(warning_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4)
+        bias_aggressiveness = round(
+            self._clamp(0.30 + average_reliability * 0.35 + watch_precision * 0.20, minimum=0.25, maximum=0.78),
+            4,
+        )
+        total_samples = int(sum(float(stats.get("support", 0.0) or 0.0) for stats in self._predictive_signal_stats.values()))
+        snapshot = {
+            "warning_threshold": round(warning_threshold, 4),
+            "watch_threshold": watch_threshold,
+            "average_reliability": round(average_reliability, 4),
+            "bias_aggressiveness": bias_aggressiveness,
+            "samples": total_samples,
+            "weights": learned_weights,
+            "event_precision": round(event_precision, 4),
+            "false_positive_rate": round(false_positive_rate, 4),
+        }
+        self._last_predictive_tuning = snapshot
+        return snapshot
+
+    def _update_predictive_tuning(
+        self,
+        *,
+        health: dict,
+        meta_risk_mode: str,
+        sanity: dict,
+        experiment_instability: dict,
+        candidate_mode: SystemMode,
+        confirmed_mode: SystemMode,
+    ) -> dict:
+        outcome_positive = self._predictive_outcome_positive(
+            health=health,
+            meta_risk_mode=meta_risk_mode,
+            sanity=sanity,
+            experiment_instability=experiment_instability,
+            candidate_mode=candidate_mode,
+            confirmed_mode=confirmed_mode,
+        )
+        previous_observation = self._last_predictive_observation
+        if previous_observation is not None:
+            observed_signals = previous_observation.get("signals", []) or []
+            for signal in observed_signals:
+                stats = self._predictive_signal_stats.setdefault(signal, {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0})
+                stats["support"] = float(stats.get("support", 0.0) or 0.0) + 1.0
+                if outcome_positive:
+                    stats["true_positive"] = float(stats.get("true_positive", 0.0) or 0.0) + 1.0
+                else:
+                    stats["false_positive"] = float(stats.get("false_positive", 0.0) or 0.0) + 1.0
+
+            previous_score = float(previous_observation.get("warning_score", 0.0) or 0.0)
+            previous_threshold = float(previous_observation.get("warning_threshold", self.PREDICTIVE_BASE_WARNING_THRESHOLD) or self.PREDICTIVE_BASE_WARNING_THRESHOLD)
+            previous_watch_threshold = float(previous_observation.get("watch_threshold", previous_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO) or (previous_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO))
+            if previous_score >= previous_threshold:
+                event_key = "true_positive" if outcome_positive else "false_positive"
+                self._predictive_event_stats[event_key] = float(self._predictive_event_stats.get(event_key, 0.0) or 0.0) + 1.0
+            elif previous_score >= previous_watch_threshold:
+                event_key = "watch_true_positive" if outcome_positive else "watch_false_positive"
+                self._predictive_event_stats[event_key] = float(self._predictive_event_stats.get(event_key, 0.0) or 0.0) + 1.0
+
+        return self._predictive_tuning_snapshot()
+
     def _predictive_failure_prevention(
         self,
         *,
@@ -594,7 +737,18 @@ class SystemModeService:
         drift_magnitude: float,
         sanity: dict,
         experiment_instability: dict,
+        meta_risk_mode: str,
+        candidate_mode: SystemMode,
+        confirmed_mode: SystemMode,
     ) -> dict:
+        tuning = self._update_predictive_tuning(
+            health=health,
+            meta_risk_mode=meta_risk_mode,
+            sanity=sanity,
+            experiment_instability=experiment_instability,
+            candidate_mode=candidate_mode,
+            confirmed_mode=confirmed_mode,
+        )
         previous = list(self._health_history)
         previous_scores = [float(item.get("score", 1.0) or 1.0) for item in previous]
         previous_drifts = [float(item.get("drift_magnitude", 0.0) or 0.0) for item in previous]
@@ -606,31 +760,38 @@ class SystemModeService:
         baseline_score = previous_scores[0] if previous_scores else current_score
         health_delta = current_score - latest_prev_score
         trend_drop = max(0.0, baseline_score - current_score)
+        learned_weights = tuning.get("weights", self.PREDICTIVE_SIGNAL_BASE_WEIGHTS)
 
         warning_score = 0.0
         signals: list[str] = []
         if len(previous_scores) >= 2 and (health_delta <= -0.04 or trend_drop >= 0.10):
-            warning_score += 0.35
+            warning_score += float(learned_weights.get("health_trending_down", 0.35) or 0.35)
             signals.append("health_trending_down")
         if self._last_write_retry_count > 0 and self._last_write_retry_count >= (previous_retries[-1] if previous_retries else 0):
-            warning_score += 0.18
+            warning_score += float(learned_weights.get("rising_retry_counts", 0.18) or 0.18)
             signals.append("rising_retry_counts")
         avg_prev_drift = sum(previous_drifts) / max(len(previous_drifts), 1) if previous_drifts else 0.0
         if drift_magnitude >= max(self.CLOCK_DRIFT_SMALL_SECONDS * 0.75, avg_prev_drift + 8.0):
-            warning_score += 0.17
+            warning_score += float(learned_weights.get("increasing_drift", 0.17) or 0.17)
             signals.append("increasing_drift")
         conflict_score = float(sanity.get("score", 0.0) or 0.0)
         avg_prev_conflict = sum(previous_conflicts) / max(len(previous_conflicts), 1) if previous_conflicts else 0.0
         if conflict_score >= max(0.18, avg_prev_conflict + 0.08):
-            warning_score += 0.16
+            warning_score += float(learned_weights.get("growing_conflict", 0.16) or 0.16)
             signals.append("growing_conflict")
         if float(experiment_instability.get("score", 0.0) or 0.0) >= 0.52 and current_score <= 0.80:
-            warning_score += 0.14
+            warning_score += float(learned_weights.get("instability_pressure", 0.14) or 0.14)
             signals.append("instability_pressure")
 
         warning_score = self._clamp(warning_score)
-        early_warning = warning_score >= 0.35 and current_score <= 0.86
-        preventive_shift_weight = round(0.30 + warning_score * 0.45, 4) if early_warning else 0.0
+        warning_threshold = float(tuning.get("warning_threshold", self.PREDICTIVE_BASE_WARNING_THRESHOLD) or self.PREDICTIVE_BASE_WARNING_THRESHOLD)
+        watch_threshold = float(tuning.get("watch_threshold", warning_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO) or (warning_threshold * self.PREDICTIVE_WATCH_THRESHOLD_RATIO))
+        early_warning = warning_score >= warning_threshold and current_score <= 0.88
+        watch_active = not early_warning and warning_score >= watch_threshold and current_score <= 0.92
+        bias_aggressiveness = float(tuning.get("bias_aggressiveness", 0.45) or 0.45)
+        normalized_warning = self._clamp((warning_score - watch_threshold) / max(1.0 - watch_threshold, 0.01))
+        preventive_shift_weight = round(self._clamp(0.22 + normalized_warning * bias_aggressiveness, minimum=0.0, maximum=0.84), 4) if early_warning else 0.0
+        phase = "EARLY_WARNING" if early_warning else "WATCH" if watch_active else "CLEAR"
 
         self._health_history.append(
             {
@@ -642,14 +803,25 @@ class SystemModeService:
                 "warning_score": round(warning_score, 4),
             }
         )
+        self._last_predictive_observation = {
+            "timestamp": now.isoformat(),
+            "signals": list(signals),
+            "warning_score": round(warning_score, 4),
+            "warning_threshold": round(warning_threshold, 4),
+            "watch_threshold": round(watch_threshold, 4),
+            "phase": phase,
+        }
         return {
             "early_warning": early_warning,
+            "watch_active": watch_active,
+            "phase": phase,
             "warning_score": round(warning_score, 4),
             "signals": signals,
             "health_delta": round(health_delta, 4),
             "trend_drop": round(trend_drop, 4),
             "preventive_mode": "DEFENSIVE" if early_warning else None,
             "preventive_shift_weight": preventive_shift_weight,
+            "tuning": tuning,
         }
 
     def _apply_time_decay(
@@ -908,6 +1080,9 @@ class SystemModeService:
                 drift_magnitude=drift_magnitude,
                 sanity=sanity,
                 experiment_instability=experiment_instability,
+                meta_risk_mode=meta_risk_mode,
+                candidate_mode=candidate_mode,
+                confirmed_mode=effective_mode,
             )
             controls, recovery_phase = self._apply_health_overlays(
                 controls=controls,
@@ -1034,6 +1209,27 @@ class SystemModeService:
             self._last_evaluation_bucket = None
             self._mode_confidence = 0.0
             self._health_history.clear()
+            self._predictive_signal_stats = {
+                name: {"true_positive": 0.0, "false_positive": 0.0, "support": 0.0}
+                for name in self.PREDICTIVE_SIGNAL_BASE_WEIGHTS
+            }
+            self._predictive_event_stats = {
+                "true_positive": 0.0,
+                "false_positive": 0.0,
+                "watch_true_positive": 0.0,
+                "watch_false_positive": 0.0,
+            }
+            self._last_predictive_observation = None
+            self._last_predictive_tuning = {
+                "warning_threshold": self.PREDICTIVE_BASE_WARNING_THRESHOLD,
+                "watch_threshold": round(self.PREDICTIVE_BASE_WARNING_THRESHOLD * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4),
+                "average_reliability": 0.5,
+                "bias_aggressiveness": 0.45,
+                "samples": 0,
+                "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+                "event_precision": 0.5,
+                "false_positive_rate": 0.0,
+            }
             self._persist_state()
         return {
             "mode": "BALANCED",
@@ -1041,6 +1237,8 @@ class SystemModeService:
             "reason": self._MODE_REASON["BALANCED"],
             "predictive_prevention": {
                 "early_warning": False,
+                "watch_active": False,
+                "phase": "CLEAR",
                 "warning_score": 0.0,
                 "signals": [],
                 "health_delta": 0.0,
@@ -1050,6 +1248,16 @@ class SystemModeService:
                 "preventive_shift_applied": False,
                 "base_mode": "BALANCED",
                 "effective_mode": "BALANCED",
+                "tuning": {
+                    "warning_threshold": self.PREDICTIVE_BASE_WARNING_THRESHOLD,
+                    "watch_threshold": round(self.PREDICTIVE_BASE_WARNING_THRESHOLD * self.PREDICTIVE_WATCH_THRESHOLD_RATIO, 4),
+                    "average_reliability": 0.5,
+                    "bias_aggressiveness": 0.45,
+                    "samples": 0,
+                    "weights": dict(self.PREDICTIVE_SIGNAL_BASE_WEIGHTS),
+                    "event_precision": 0.5,
+                    "false_positive_rate": 0.0,
+                },
             },
             "system_health": {
                 "score": 1.0,

@@ -27,14 +27,16 @@ class MissionIntelligenceService:
         predictive = system_mode.get("predictive_prevention", {}) or {}
         warning_score = float(predictive.get("warning_score", 0.0) or 0.0)
         early_warning = bool(predictive.get("early_warning", False))
+        watch_active = bool(predictive.get("watch_active", False))
         preventive_shift_applied = bool(predictive.get("preventive_shift_applied", False))
         signals = [str(signal) for signal in (predictive.get("signals", []) or []) if str(signal)]
         target_mode = str(predictive.get("preventive_mode") or "DEFENSIVE")
+        phase_hint = str(predictive.get("phase", "CLEAR") or "CLEAR").upper()
 
-        if warning_score < 0.22 and not early_warning and not preventive_shift_applied:
+        if warning_score < 0.22 and not early_warning and not preventive_shift_applied and not watch_active:
             return []
 
-        if preventive_shift_applied:
+        if preventive_shift_applied or phase_hint == "PREVENTIVE_SHIFT":
             phase = "PREVENTIVE_SHIFT"
             severity = "WARNING"
             title = "Predictive Defensive Shift Active"
@@ -42,7 +44,7 @@ class MissionIntelligenceService:
                 f"Predictive warning score {warning_score:.2f} shifted controls toward "
                 f"{target_mode.replace('_', ' ')} before hard failure thresholds."
             )
-        elif early_warning:
+        elif early_warning or phase_hint == "EARLY_WARNING":
             phase = "EARLY_WARNING"
             severity = "WARNING"
             title = "Predictive Failure Warning"
