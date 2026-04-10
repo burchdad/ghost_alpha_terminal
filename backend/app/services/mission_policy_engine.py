@@ -94,6 +94,7 @@ class MissionPolicyEngine:
         dominant_regime: str,
         regime_quality: dict,
         bucket_quality: dict | None = None,
+        system_mode: dict | None = None,
     ) -> dict[str, float]:
         buckets: dict[MissionStyle | str, dict[str, float]] = {
             "capital_preservation": {
@@ -150,6 +151,12 @@ class MissionPolicyEngine:
                 adjustment = max(-0.05, min((q - 0.5) * 0.20, 0.05))
                 weights[bucket] = max(0.05, weights[bucket] + adjustment)
 
+        controls = (system_mode or {}).get("controls", {}) if isinstance(system_mode, dict) else {}
+        bucket_bias = controls.get("bucket_bias", {}) if isinstance(controls, dict) else {}
+        for bucket, multiplier in bucket_bias.items():
+            if bucket in weights:
+                weights[bucket] = max(0.03, float(weights[bucket]) * max(0.10, float(multiplier or 1.0)))
+
         total = sum(max(v, 0.01) for v in weights.values())
         normalized = {k: round(max(v, 0.01) / total, 4) for k, v in weights.items()}
         return normalized
@@ -163,6 +170,7 @@ class MissionPolicyEngine:
         dominant_regime: str,
         regime_quality: dict,
         bucket_quality: dict | None = None,
+        system_mode: dict | None = None,
     ) -> dict:
         goal_pressure = float(goal_status.get("goal_pressure_multiplier", 1.0) or 1.0)
         stress_level = str(goal_status.get("stress_level", "LOW") or "LOW")
@@ -174,6 +182,7 @@ class MissionPolicyEngine:
             dominant_regime=dominant_regime,
             regime_quality=regime_quality,
             bucket_quality=bucket_quality,
+            system_mode=system_mode,
         )
 
         return {
@@ -184,6 +193,7 @@ class MissionPolicyEngine:
             "drawdown_pct": round(drawdown_pct, 4),
             "tuning": tuning,
             "capital_buckets": buckets,
+            "system_mode": system_mode or {},
         }
 
     def simulate_scenario(

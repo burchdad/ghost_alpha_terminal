@@ -356,6 +356,19 @@ type MissionIntelligenceResponse = {
     confidence_collapse?: { collapse: boolean; recent_avg_confidence: number };
     correlation_spike?: { spike: boolean; recent_avg_correlation: number };
   };
+  system_mode?: {
+    mode: "AGGRESSIVE_GROWTH" | "BALANCED" | "DEFENSIVE" | "SURVIVAL";
+    reason: string;
+    experiment_instability?: { score: number };
+    controls?: {
+      allocation_multiplier: number;
+      trade_frequency_multiplier: number;
+      min_confidence_floor: number;
+      risk_tolerance: string;
+      allow_evolution: boolean;
+      allow_compounding: boolean;
+    };
+  };
   parity_watchdog: {
     status: "GREEN" | "YELLOW" | "RED";
     mode: string;
@@ -1321,6 +1334,13 @@ export default function AlphaPage() {
             <div className="text-slate-300">Min confidence {(missionIntel?.mission.tuning.min_confidence_floor ?? 0).toFixed(2)}</div>
             <div className="text-slate-300">Concurrency {(missionIntel?.mission.tuning.concurrency_target ?? 0)}</div>
             <div className="text-slate-300">Posture {missionIntel?.mission.risk_posture?.mode ?? "normal"}</div>
+            <div className="mt-2 border-t border-terminal-line pt-2 text-[10px] uppercase tracking-wider text-slate-500">System Identity</div>
+            <div className={`mt-1 font-semibold ${(missionIntel?.system_mode?.mode ?? "BALANCED") === "SURVIVAL" ? "text-red-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "DEFENSIVE" ? "text-amber-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "AGGRESSIVE_GROWTH" ? "text-cyan-300" : "text-green-300"}`}>
+              {(missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}
+            </div>
+            <div className="text-slate-400">Risk tolerance: {missionIntel?.system_mode?.controls?.risk_tolerance ?? "medium"}</div>
+            <div className="text-slate-400">Trade frequency x{(missionIntel?.system_mode?.controls?.trade_frequency_multiplier ?? 1).toFixed(2)} · Allocation x{(missionIntel?.system_mode?.controls?.allocation_multiplier ?? 1).toFixed(2)}</div>
+            <div className="text-slate-400">Experiment instability {(missionIntel?.system_mode?.experiment_instability?.score ?? 0).toFixed(2)}</div>
             <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">Live Experiment Mode</div>
             <div className="mt-1 text-cyan-300">{missionIntel?.live_experiment_mode?.variant ?? "evolution_on_compounding_on"}</div>
             <div className="text-slate-400">Evolution {missionIntel?.live_experiment_mode?.enable_evolution ? "ON" : "OFF"} · Compounding {missionIntel?.live_experiment_mode?.enable_compounding ? "ON" : "OFF"}</div>

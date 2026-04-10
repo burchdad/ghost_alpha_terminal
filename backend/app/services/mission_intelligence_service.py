@@ -17,6 +17,7 @@ from app.services.mission_policy_engine import mission_policy_engine
 from app.services.parity_watchdog_service import parity_watchdog_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.strategy_evolution_service import strategy_evolution_service
+from app.services.system_mode_service import system_mode_service
 from app.services.execution_journal import execution_journal
 
 
@@ -115,15 +116,6 @@ class MissionIntelligenceService:
             )
         )
 
-        mission = mission_policy_engine.mission_snapshot(
-            goal_status=goal,
-            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
-            sprint_active=sprint_active,
-            dominant_regime=regime,
-            regime_quality=quality.get("regime_quality", {}),
-            bucket_quality=quality.get("bucket_quality", {}),
-        )
-
         strategy_quality = quality.get("strategy_quality", {})
         strategy_win_rates = [float((stats or {}).get("win_rate", 0.5) or 0.5) for stats in strategy_quality.values()]
         avg_strategy_win_rate = sum(strategy_win_rates) / max(len(strategy_win_rates), 1)
@@ -155,6 +147,31 @@ class MissionIntelligenceService:
             drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0)
         )
         live_mode = live_experiment_promotion_service.status()
+        system_mode = system_mode_service.evaluate(
+            goal_pressure=goal_pressure,
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
+            quality=quality,
+            meta_risk=meta_risk,
+            live_mode=live_mode,
+        )
+        system_controls = system_mode.get("controls", {}) or {}
+        if not bool(system_controls.get("allow_evolution", True)):
+            evolution = {"mutations": [], "clones": [], "reinforcement_weights": {}, "suggested_experiments": 0}
+        if not bool(system_controls.get("allow_compounding", True)):
+            compounding = {
+                **compounding,
+                "reinvestment_multiplier": 1.0,
+                "risk_budget_multiplier": 1.0,
+            }
+        mission = mission_policy_engine.mission_snapshot(
+            goal_status=goal,
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
+            sprint_active=sprint_active,
+            dominant_regime=regime,
+            regime_quality=quality.get("regime_quality", {}),
+            bucket_quality=quality.get("bucket_quality", {}),
+            system_mode=system_mode,
+        )
 
         best_symbols = sorted(
             quality.get("symbol_quality", {}).items(),
@@ -172,6 +189,7 @@ class MissionIntelligenceService:
             "strategy_evolution": evolution,
             "time_weighted_confidence": time_weighted_confidence,
             "system_confidence": system_confidence,
+            "system_mode": system_mode,
             "meta_risk_governor": meta_risk,
             "live_experiment_mode": live_mode,
             "sprint_governance": {

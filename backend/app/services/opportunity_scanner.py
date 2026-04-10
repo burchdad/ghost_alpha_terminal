@@ -25,6 +25,7 @@ from app.services.signal_engine import signal_engine
 from app.services.execution_quality_engine import execution_quality_engine
 from app.services.live_experiment_promotion_service import live_experiment_promotion_service
 from app.services.meta_risk_governor import meta_risk_governor
+from app.services.system_mode_service import system_mode_service
 from app.services.strategy_evolution_service import strategy_evolution_service
 
 
@@ -707,14 +708,29 @@ class OpportunityScanner:
         forced_retest_strategies = {str(name).upper() for name in quality.get("forced_retest_strategies", [])}
         live_mode = live_experiment_promotion_service.status()
         meta_risk = meta_risk_governor.evaluate(drawdown_pct=drawdown_pct)
+        system_mode = system_mode_service.evaluate(
+            goal_pressure=goal_pressure_multiplier,
+            drawdown_pct=drawdown_pct,
+            quality=quality,
+            meta_risk=meta_risk,
+            live_mode=live_mode,
+        )
         frozen_strategies = {str(name).upper() for name in meta_risk.get("frozen_strategies", [])}
         disabled_strategies.update(frozen_strategies)
 
+        system_controls = system_mode.get("controls", {}) or {}
+        system_trade_frequency = max(0.35, min(float(system_controls.get("trade_frequency_multiplier", 1.0) or 1.0), 1.25))
+        system_confidence_floor = max(0.50, float(system_controls.get("min_confidence_floor", 0.56) or 0.56))
+
         evolution_enabled = bool(live_mode.get("enable_evolution", True)) and not bool(
             meta_risk.get("disable_evolution_temporarily", False)
+        ) and bool(system_controls.get("allow_evolution", True))
+        compounding_enabled = bool(live_mode.get("enable_compounding", True)) and bool(
+            system_controls.get("allow_compounding", True)
         )
-        compounding_enabled = bool(live_mode.get("enable_compounding", True))
-        global_risk_multiplier = float(meta_risk.get("global_exposure_multiplier", 1.0) or 1.0)
+        global_risk_multiplier = float(meta_risk.get("global_exposure_multiplier", 1.0) or 1.0) * float(
+            system_controls.get("allocation_multiplier", 1.0) or 1.0
+        )
 
         evolution = (
             strategy_evolution_service.plan(strategy_quality=strategy_quality)
@@ -917,6 +933,11 @@ class OpportunityScanner:
                 elif strategy_forced_retest and confidence < 0.58:
                     broker_viable = False
                     broker_block_reason = f"Strategy in forced re-test mode requires >= 0.58 confidence: {strategy_name}"
+                elif confidence < system_confidence_floor:
+                    broker_viable = False
+                    broker_block_reason = (
+                        f"System mode {system_mode.get('mode', 'BALANCED')} requires >= {system_confidence_floor:.2f} confidence"
+                    )
                 elif posture_mode == "capital_preservation_only" and risk_level == "HIGH":
                     broker_viable = False
                     broker_block_reason = "Capital-preservation posture blocks high-risk setups."
@@ -1080,6 +1101,7 @@ class OpportunityScanner:
             dominant_regime=dominant_regime,
             regime_quality=regime_quality,
             bucket_quality=bucket_quality,
+            system_mode=system_mode,
         )
 
         bucket_weights = mission.get("capital_buckets", {})
@@ -1098,16 +1120,17 @@ class OpportunityScanner:
             }
 
         ranked = sorted(opportunities, key=lambda item: item["opportunity_score"], reverse=True)
+        effective_limit = max(3, min(limit, int(round(limit * system_trade_frequency))))
 
         # Bucket-aware selection to prevent one theme from consuming all slots.
         bucket_quota = {
-            bucket: max(1, int(round(float(weight) * max(limit, 1))))
+            bucket: max(1, int(round(float(weight) * max(effective_limit, 1))))
             for bucket, weight in bucket_weights.items()
         }
         bucket_used = {key: 0 for key in bucket_quota}
 
         # Keep score ordering, but reserve slots for crypto diversity when available.
-        crypto_quota = min(max(2, limit // 4), limit)
+        crypto_quota = min(max(1, effective_limit // 4), effective_limit)
         selected: list[dict] = []
         selected_symbols: set[str] = set()
 
@@ -1120,7 +1143,7 @@ class OpportunityScanner:
             selected_symbols.add(item["symbol"])
 
         for item in ranked:
-            if len(selected) >= limit:
+            if len(selected) >= effective_limit:
                 break
             if item["symbol"] in selected_symbols:
                 continue
@@ -1132,7 +1155,7 @@ class OpportunityScanner:
             if bucket in bucket_used:
                 bucket_used[bucket] += 1
 
-        top = selected[:limit]
+        top = selected[:effective_limit]
         opportunity_persistence_store.record_batch(top)
 
         tradable = [item for item in top if item["tradable"]]
@@ -1251,6 +1274,7 @@ class OpportunityScanner:
             },
             "capital_reconciliation": reconciliation,
             "mission_policy": mission,
+            "system_mode": system_mode,
             "meta_risk_governor": meta_risk,
             "live_experiment_mode": live_mode,
             "strategy_evolution": evolution,
