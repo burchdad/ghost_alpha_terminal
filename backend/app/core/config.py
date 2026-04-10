@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -101,5 +102,57 @@ class Settings(BaseSettings):
             return ["*"]
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
+    @field_validator("auth_cookie_secure", mode="before")
+    @classmethod
+    def parse_auth_cookie_secure(cls, value):
+        """Accept strict booleans and common descriptive env strings."""
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+
+        raw = str(value).strip().lower()
+        first_token = raw.split()[0] if raw else ""
+
+        if first_token in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if first_token in {"0", "false", "f", "no", "n", "off"}:
+            return False
+
+        raise ValueError(
+            "auth_cookie_secure must be a boolean value (true/false, 1/0, yes/no)."
+        )
+
+    def validate_production_config(self) -> None:
+        """Validate that critical environment variables are set for production."""
+        errors = []
+        
+        if self.app_env != "dev":
+            # Production requires explicit DATABASE_URL and not just SQLite default
+            if self.database_url.startswith("sqlite://"):
+                errors.append("DATABASE_URL must be set to a production database (not SQLite)")
+            
+            if not self.auth_session_secret or len(self.auth_session_secret) < 32:
+                errors.append("AUTH_SESSION_SECRET must be set and at least 32 characters")
+            
+            if not self.alpaca_connect_client_id:
+                errors.append("ALPACA_CONNECT_CLIENT_ID must be set")
+            
+            if not self.alpaca_connect_client_secret:
+                errors.append("ALPACA_CONNECT_CLIENT_SECRET must be set")
+            
+            if not self.alpaca_connect_redirect_uri:
+                errors.append("ALPACA_CONNECT_REDIRECT_URI must be set")
+        
+        if errors:
+            raise ValueError(
+                f"Production configuration validation failed:\n" + 
+                "\n".join(f"  - {e}" for e in errors)
+            )
+
 
 settings = Settings()
+
+# Validate production config on import
+if settings.app_env != "dev":
+    settings.validate_production_config()

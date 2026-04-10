@@ -27,11 +27,17 @@ export default function HomePage() {
             </span>
           </div>
           <nav className="flex items-center gap-4 text-xs text-slate-300">
-            <Link href="/alpha" className="transition hover:text-terminal-accent">
+            <Link href="/dashboard" className="transition hover:text-terminal-accent">
               Market Dashboard
             </Link>
             <Link href="/terminal" className="transition hover:text-terminal-accent">
               Deep Terminal
+            </Link>
+            <Link href="/login" className="transition hover:text-terminal-accent">
+              Login
+            </Link>
+            <Link href="/signup" className="transition hover:text-terminal-accent">
+              Sign Up
             </Link>
             <Link href="/privacy-policy" className="transition hover:text-terminal-accent">
               Privacy
@@ -75,7 +81,7 @@ export default function HomePage() {
 
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/alpha"
+                href="/dashboard"
                 className="inline-flex items-center rounded-lg border border-cyan-300/60 bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
               >
                 Open Market Intelligence
