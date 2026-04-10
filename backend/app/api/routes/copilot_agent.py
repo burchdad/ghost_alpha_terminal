@@ -20,6 +20,7 @@ from app.services.execution_policy_service import execution_policy_service
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
+from app.services.mission_intelligence_service import mission_intelligence_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 
@@ -261,6 +262,17 @@ def _extract_market_window(text: str) -> tuple[str | None, str | None]:
     return m.group(1), m.group(2)
 
 
+def _build_simulation_summary(sim: dict) -> str:
+    required_daily = float(sim.get("required_daily_return", 0.0) or 0.0) * 100.0
+    pressure = float(sim.get("implied_goal_pressure", 1.0) or 1.0)
+    style = str(sim.get("recommended_mission_style", "balanced") or "balanced")
+    message = str(sim.get("message", "Scenario generated."))
+    return (
+        f"Simulation complete: required daily return {required_daily:.2f}% | "
+        f"implied pressure {pressure:.2f}x | recommended style {style}. {message}"
+    )
+
+
 def _rule_parse_action(message: str, state: dict) -> ParsedAction | None:
     text = message.lower()
 
@@ -281,6 +293,21 @@ def _rule_parse_action(message: str, state: dict) -> ParsedAction | None:
         return ParsedAction(action="set_execution_mode", params={"mode": "LIVE_TRADING"}, requires_confirmation=True)
     if "paper mode" in text or "paper trading" in text or "set mode paper" in text:
         return ParsedAction(action="set_execution_mode", params={"mode": "PAPER_TRADING"}, requires_confirmation=False)
+
+    # Mission scenario simulation requests.
+    if any(token in text for token in ["simulate", "simulation", "scenario"]) and any(
+        token in text for token in ["goal", "target", "capital", "timeframe", "days", "weeks", "months"]
+    ):
+        amount, days = _extract_target_and_days(text)
+        if amount is not None and days is not None:
+            capital = float(state.get("account_balance", 0.0) or 0.0)
+            target = max(1.0, capital + amount)
+            return ParsedAction(
+                action="simulate_mission",
+                params={"start_capital": capital, "target_capital": round(target, 2), "timeframe_days": max(1, days)},
+                requires_confirmation=False,
+            )
+
     if "simulation" in text or "insight only" in text:
         return ParsedAction(action="set_execution_mode", params={"mode": "SIMULATION"}, requires_confirmation=False)
 
@@ -343,6 +370,9 @@ def _apply_confirmation_contract(parsed: ParsedAction, state_before: dict) -> Pa
 
     if parsed.action == "set_goal":
         parsed.requires_confirmation = True
+
+    if parsed.action == "simulate_mission":
+        parsed.requires_confirmation = False
 
     if parsed.action == "set_execution_policy" and bool(parsed.params.get("live_only_during_market_hours", False)):
         parsed.requires_confirmation = True
@@ -409,6 +439,17 @@ def _apply_action(parsed: ParsedAction) -> list[str]:
     if parsed.action == "run_autonomous_once":
         autonomous_runner.trigger_run_once()
         actions.append("Triggered one autonomous cycle")
+        return actions
+
+    if parsed.action == "simulate_mission":
+        if parsed.params.get("target_capital") is None or parsed.params.get("timeframe_days") is None:
+            return actions
+        simulation = mission_intelligence_service.simulate_mission(
+            target_capital=float(parsed.params["target_capital"]),
+            timeframe_days=int(parsed.params["timeframe_days"]),
+            start_capital=float(parsed.params.get("start_capital")) if parsed.params.get("start_capital") is not None else None,
+        )
+        actions.append(_build_simulation_summary(simulation))
         return actions
 
     if parsed.action == "set_goal":
@@ -505,6 +546,7 @@ def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> Copil
         reply = assistant_hint or (
             "I can help with: enabling/disabling autonomous execution, toggling scan auto mode, "
             "switching execution mode (simulation/paper/live), running one autonomous cycle, "
+            "running mission simulations like 'simulate additional $5,000 in 30 days', "
             "setting goals like 'need an additional $5,000 in 30 days', contribution plans like "
             "'$300 weekly for 12 weeks', risk limits like 'set daily risk to 2% and max drawdown to 10%', "
             "and policy controls like 'only run live during market hours'."
@@ -546,6 +588,8 @@ def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> Copil
             prompt = "This restricts LIVE_TRADING orders to configured market hours. Confirm policy update."
         elif parsed.action == "set_risk_limits":
             prompt = "This loosens one or more risk limits. Confirm policy update."
+        elif parsed.action == "simulate_mission":
+            prompt = "Running simulation scenario." 
         else:
             prompt = "Please confirm this control change."
 

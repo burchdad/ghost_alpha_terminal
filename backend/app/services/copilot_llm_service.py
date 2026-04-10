@@ -65,6 +65,7 @@ class CopilotLLMService:
                             "set_scan_auto",
                             "set_execution_mode",
                             "run_autonomous_once",
+                            "simulate_mission",
                             "set_goal",
                             "set_risk_limits",
                             "set_execution_policy",
@@ -97,6 +98,11 @@ class CopilotLLMService:
                 "set_scan_auto": {"enabled": "boolean"},
                 "set_execution_mode": {"mode": "SIMULATION|PAPER_TRADING|LIVE_TRADING"},
                 "run_autonomous_once": {},
+                "simulate_mission": {
+                    "target_capital": "number",
+                    "timeframe_days": "int",
+                    "start_capital": "number optional",
+                },
                 "set_goal": {"start_capital": "number", "target_capital": "number", "timeframe_days": "int"},
                 "set_risk_limits": {"daily_loss_limit_pct": "0..1 optional", "max_drawdown_limit_pct": "0..1 optional"},
                 "set_execution_policy": {
