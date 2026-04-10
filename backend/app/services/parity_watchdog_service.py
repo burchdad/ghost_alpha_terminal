@@ -16,7 +16,9 @@ class ParityWatchdogService:
         checks: list[dict] = []
 
         if mode == "LIVE_TRADING" and settings.alpaca_paper:
-            issues.append("LIVE_TRADING mode active while ALPACA_PAPER=true.")
+            issues.append(
+                "LIVE_TRADING mode active while ALPACA_PAPER=true. Alpaca-routed symbols will stay paper until ALPACA_PAPER=false."
+            )
 
         if mode == "LIVE_TRADING" and (not settings.coinbase_api_key_name or not settings.coinbase_api_private_key):
             issues.append("LIVE_TRADING enabled but Coinbase credentials are missing.")

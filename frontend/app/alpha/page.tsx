@@ -556,6 +556,15 @@ type StrategyKillSwitchOverridesResponse = {
   manual_force_enabled: string[];
 };
 
+const VALID_STRATEGY_OVERRIDE_VALUES = new Set([
+  "OPTIONS_PLAY",
+  "SWING_TRADE",
+  "DAY_TRADE",
+  "SCALP",
+  "WATCH",
+  "IGNORE",
+]);
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -755,6 +764,13 @@ export default function AlphaPage() {
     const normalized = strategy.trim().toUpperCase();
     if (!normalized) {
       pushRuntimeToast("Enter a strategy to override.", "warning");
+      return;
+    }
+    if (!VALID_STRATEGY_OVERRIDE_VALUES.has(normalized)) {
+      pushRuntimeToast(
+        "Invalid strategy override. Use OPTIONS_PLAY, SWING_TRADE, DAY_TRADE, SCALP, WATCH, or IGNORE. High-risk is not a strategy override value.",
+        "warning",
+      );
       return;
     }
 
@@ -1111,10 +1127,24 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
+    // Keep scan automation and autonomous execution aligned to avoid dual-mode confusion.
+    await fetch(`${API_BASE}/orchestrator/mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auto_mode: enabled }),
+    });
+    const orchestratorStatusRes = await fetch(`${API_BASE}/orchestrator/status`);
+    const orchestratorStatusData = await parseJsonOrNull<OrchestratorStatus>(orchestratorStatusRes);
+    setStatus(orchestratorStatusData);
     const controlRes = await fetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
-    pushRuntimeToast(enabled ? "Autonomous execution enabled." : "Autonomous execution stopped.", enabled ? "success" : "warning");
+    pushRuntimeToast(
+      enabled
+        ? "Autonomous execution enabled and scan auto mode turned on."
+        : "Autonomous execution stopped and scan auto mode turned off.",
+      enabled ? "success" : "warning",
+    );
   }
 
   async function handleRunAutonomousOnce() {
@@ -1677,7 +1707,7 @@ export default function AlphaPage() {
                   type="text"
                   value={overrideStrategyInput}
                   onChange={(event) => setOverrideStrategyInput(event.target.value.toUpperCase())}
-                  placeholder="STRATEGY_NAME"
+                  placeholder="OPTIONS_PLAY"
                   className="w-40 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
                 />
                 <button
@@ -1688,6 +1718,12 @@ export default function AlphaPage() {
                 >
                   Force Enable
                 </button>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-500">
+                Strategy override only. Valid values: OPTIONS_PLAY, SWING_TRADE, DAY_TRADE, SCALP, WATCH, IGNORE.
+              </div>
+              <div className="mt-1 text-[11px] text-slate-500">
+                Current risk posture: {(missionIntel?.mission.risk_posture?.mode ?? "normal").toUpperCase()} · Sprint override: {missionIntel?.sprint_governance.manual_override ? "ON" : "OFF"} · Sprint active: {missionIntel?.sprint_governance.active ? "YES" : "NO"}
               </div>
 
               {(missionIntel?.execution_quality.disabled_strategies ?? []).length > 0 && (
@@ -1762,13 +1798,16 @@ export default function AlphaPage() {
         </div>
 
         {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && (
-          <div className="mt-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-            <div className="font-semibold">Paper-to-Live Parity Watchdog Alerts</div>
+          <div className={`mt-3 rounded border px-3 py-2 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+            <div className="font-semibold">Paper-to-Live Parity Watchdog Alerts ({missionIntel?.parity_watchdog.status})</div>
             <ul className="mt-1 space-y-1">
               {missionIntel?.parity_watchdog.issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
             </ul>
+            <div className="mt-2 text-[11px] text-current/90">
+              If you want true live Alpaca routing, set ALPACA_PAPER=false in backend env and redeploy. If you only want Coinbase live routing for crypto, this warning can still appear because equities route to Alpaca.
+            </div>
           </div>
         )}
       </section>
@@ -1885,11 +1924,12 @@ export default function AlphaPage() {
           <div className="text-xs text-slate-400">Candidates cleared for run</div>
         </div>
         <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-          <div className="text-[11px] uppercase tracking-wider text-slate-500">Auto Mode</div>
-          <div className={`mt-2 text-2xl font-semibold ${status?.auto_mode ? "text-green-400" : "text-slate-300"}`}>
-            {status?.auto_mode ? "ON" : "OFF"}
+          <div className="text-[11px] uppercase tracking-wider text-slate-500">Automation</div>
+          <div className={`mt-2 text-2xl font-semibold ${(status?.auto_mode || control?.autonomous_enabled) ? "text-green-400" : "text-slate-300"}`}>
+            {(status?.auto_mode || control?.autonomous_enabled) ? "ON" : "OFF"}
           </div>
-          <div className="text-xs text-slate-400">Interval: {status?.auto_interval_seconds ?? 300}s</div>
+          <div className="text-xs text-slate-400">Scan auto: {status?.auto_mode ? "ON" : "OFF"} · Execution auto: {control?.autonomous_enabled ? "ON" : "OFF"}</div>
+          <div className="text-xs text-slate-400">Interval: {status?.auto_interval_seconds ?? control?.autonomous_interval_seconds ?? 300}s</div>
         </div>
       </section>
 
