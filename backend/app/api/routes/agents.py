@@ -215,12 +215,44 @@ def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsRespons
             )
             continue
 
+        if capability.get("planned"):
+            brokers.append(
+                BrokerConnectionEntryResponse(
+                    provider=provider,
+                    label=capability.get("label") or provider.replace("_", " ").title(),
+                    connected=False,
+                    configured=False,
+                    planned=True,
+                    connectable=False,
+                    disconnect_supported=False,
+                    auth_type="planned",
+                    permissions="OAuth Application Pending",
+                    mode=None,
+                    status_label="Integration Planned",
+                    connect_path=None,
+                    disconnect_path=None,
+                    oauth_url=capability.get("oauth_url"),
+                    updated_at=None,
+                    last_error=None,
+                    notes=capability.get("notes") or f"OAuth integration is planned. Apply at {capability.get('oauth_url', 'the broker developer portal')}.",
+                    capabilities={
+                        "supports_equities": bool(capability.get("supports_equities")),
+                        "supports_crypto": bool(capability.get("supports_crypto")),
+                        "supports_options": bool(capability.get("supports_options")),
+                        "supports_fractional": bool(capability.get("supports_fractional")),
+                        "supports_leverage": bool(capability.get("supports_leverage")),
+                    },
+                )
+            )
+            continue
+
         brokers.append(
             BrokerConnectionEntryResponse(
                 provider=provider,
                 label=provider.replace("_", " ").title(),
                 connected=connected,
                 configured=False,
+                planned=False,
                 connectable=False,
                 disconnect_supported=False,
                 auth_type="unavailable",

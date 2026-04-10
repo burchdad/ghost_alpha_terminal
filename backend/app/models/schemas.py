@@ -494,9 +494,10 @@ class BrokerConnectionEntryResponse(BaseModel):
     label: str
     connected: bool
     configured: bool = False
+    planned: bool = False
     connectable: bool
     disconnect_supported: bool
-    auth_type: Literal["oauth", "api_key", "unavailable"]
+    auth_type: Literal["oauth", "api_key", "unavailable", "planned"]
     permissions: str
     mode: str | None = None
     status_label: str
@@ -505,6 +506,7 @@ class BrokerConnectionEntryResponse(BaseModel):
     updated_at: datetime | None = None
     last_error: str | None = None
     notes: str | None = None
+    oauth_url: str | None = None
     capabilities: dict[str, bool]
 
 

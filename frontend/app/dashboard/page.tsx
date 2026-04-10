@@ -5,17 +5,18 @@ import { useRouter } from "next/navigation";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
+// Display order: active/configured brokers first, planned integrations last.
+const BROKER_ORDER = ["alpaca", "coinbase", "tradier", "schwab", "tastytrade", "robinhood", "tradestation"];
+
 type BrokerStatusEntry = {
   connected: boolean;
   configured?: boolean;
+  planned?: boolean;
+  label?: string;
   accounts?: string[];
 };
 
-type BrokerStatusResponse = {
-  alpaca?: BrokerStatusEntry;
-  coinbase?: BrokerStatusEntry;
-  tradier?: BrokerStatusEntry;
-};
+type BrokerStatusResponse = Record<string, BrokerStatusEntry>;
 
 type AuthMeResponse = {
   user: {
@@ -68,14 +69,20 @@ export default function DashboardPage() {
     void fetchSessionAndStatus();
   }, []);
 
-  const cards = useMemo(
-    () => [
-      { key: "alpaca", label: "Alpaca", status: brokers.alpaca ?? { connected: false, accounts: [] } },
-      { key: "coinbase", label: "Coinbase", status: brokers.coinbase ?? { connected: false, accounts: [] } },
-      { key: "tradier", label: "Tradier", status: brokers.tradier ?? { connected: false, accounts: [] } },
-    ],
-    [brokers],
-  );
+  // Priority order for display: active/configured brokers first, planned last.
+  const cards = useMemo(() => {
+    const keys = BROKER_ORDER.filter((k) => k in brokers).concat(
+      Object.keys(brokers).filter((k) => !BROKER_ORDER.includes(k)),
+    );
+    return keys.map((key) => {
+      const entry = brokers[key] ?? { connected: false, accounts: [] };
+      return {
+        key,
+        label: entry.label || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        status: entry,
+      };
+    });
+  }, [brokers]);
 
   async function handleLogout() {
     await fetch(`${API_BASE}/auth/logout`, {
@@ -135,51 +142,72 @@ export default function DashboardPage() {
         {loading ? <p className="text-sm text-slate-400">Loading dashboard...</p> : null}
         {error ? <p className="mb-4 rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</p> : null}
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {cards.map((card) => {
             const connected = Boolean(card.status.connected);
             const configured = Boolean(card.status.configured);
+            const planned = Boolean(card.status.planned);
             const accounts = card.status.accounts ?? [];
             const busy = connecting === card.key;
             const canConnect = card.key === "alpaca";
 
+            const statusText = connected
+              ? "Connected"
+              : configured
+                ? "Platform Configured"
+                : planned
+                  ? "Integration Planned"
+                  : "Not Connected";
+
+            const borderColor = connected
+              ? "border-emerald-700"
+              : configured
+                ? "border-cyan-800"
+                : planned
+                  ? "border-slate-700"
+                  : "border-slate-800";
+
             return (
-              <article key={card.key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+              <article key={card.key} className={`rounded-xl border bg-slate-900/60 p-4 ${borderColor}`}>
                 <h2 className="text-lg font-medium">{card.label}</h2>
-                <p className="mt-2 text-sm text-slate-300">
-                  Status: {connected ? "Connected" : configured ? "Platform Configured" : "Not Connected"}
+                <p className={`mt-2 text-sm ${connected ? "text-emerald-300" : configured ? "text-cyan-300" : planned ? "text-slate-400" : "text-slate-400"}`}>
+                  {statusText}
                 </p>
                 {accounts.length > 0 ? (
                   <p className="mt-1 text-xs text-slate-400">Accounts: {accounts.join(", ")}</p>
                 ) : null}
 
-                <div className="mt-4 flex gap-2">
-                  <button
-                    type="button"
-                    disabled={!canConnect || busy}
-                    onClick={() => handleConnect(card.key)}
-                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {busy ? "Redirecting..." : connected ? "Reconnect" : "Connect"}
-                  </button>
-                  {connected && canConnect ? (
+                {!planned && (
+                  <div className="mt-4 flex gap-2">
                     <button
                       type="button"
-                      disabled={busy}
-                      onClick={() => void handleDisconnect(card.key)}
-                      className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40"
+                      disabled={!canConnect || busy}
+                      onClick={() => handleConnect(card.key)}
+                      className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Disconnect
+                      {busy ? "Redirecting..." : connected ? "Reconnect" : "Connect"}
                     </button>
-                  ) : null}
-                </div>
-                {!canConnect ? (
-                  <p className="mt-2 text-xs text-slate-500">
-                    {configured
+                    {connected && canConnect ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void handleDisconnect(card.key)}
+                        className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40"
+                      >
+                        Disconnect
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-slate-500">
+                  {planned
+                    ? "OAuth application pending — integration in pipeline."
+                    : configured
                       ? "Configured at the platform level via backend API keys."
-                      : "Placeholder connection flow."}
-                  </p>
-                ) : null}
+                      : !canConnect
+                        ? "OAuth integration not yet active."
+                        : null}
+                </p>
               </article>
             );
           })}

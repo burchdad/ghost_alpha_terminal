@@ -221,14 +221,16 @@ type BrokerConnectionEntry = {
   label: string;
   connected: boolean;
   configured?: boolean;
+  planned?: boolean;
   connectable: boolean;
   disconnect_supported: boolean;
-  auth_type: "oauth" | "api_key" | "unavailable";
+  auth_type: "oauth" | "api_key" | "unavailable" | "planned";
   permissions: string;
   mode: string | null;
   status_label: string;
   connect_path: string | null;
   disconnect_path: string | null;
+  oauth_url?: string | null;
   updated_at: string | null;
   last_error: string | null;
   notes: string | null;
@@ -1298,23 +1300,29 @@ export default function AlphaPage() {
               ? "border-green-500/50 bg-green-500/12 text-green-100"
               : broker.configured
                 ? "border-cyan-500/50 bg-cyan-500/12 text-cyan-100"
-                : broker.connectable
-                  ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
-                  : "border-red-500/50 bg-red-500/12 text-red-100";
+                : broker.planned
+                  ? "border-slate-500/50 bg-slate-500/10 text-slate-300"
+                  : broker.connectable
+                    ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
+                    : "border-red-500/50 bg-red-500/12 text-red-100";
             const statusDot = broker.connected
               ? "bg-green-400"
               : broker.configured
                 ? "bg-cyan-400"
-                : broker.connectable
-                  ? "bg-amber-400"
-                  : "bg-red-400";
+                : broker.planned
+                  ? "bg-slate-400"
+                  : broker.connectable
+                    ? "bg-amber-400"
+                    : "bg-red-400";
             const statusHint = broker.connected
               ? "Connected"
               : broker.configured
                 ? "Platform configured"
-                : broker.connectable
-                  ? "Action needed"
-                  : "Disconnected";
+                : broker.planned
+                  ? "Integration planned"
+                  : broker.connectable
+                    ? "Action needed"
+                    : "Disconnected";
 
             return (
               <button
@@ -1344,9 +1352,13 @@ export default function AlphaPage() {
               className={`w-full max-w-2xl rounded-xl border p-4 text-xs shadow-2xl ${
                 activeBroker.connected
                   ? "border-green-500/40 bg-[#092218] text-green-100"
-                  : activeBroker.connectable
-                    ? "border-amber-500/40 bg-[#241f0a] text-amber-100"
-                    : "border-red-500/40 bg-[#220c0c] text-red-100"
+                  : activeBroker.configured
+                    ? "border-cyan-500/40 bg-[#071b20] text-cyan-100"
+                    : activeBroker.planned
+                      ? "border-slate-500/40 bg-slate-900 text-slate-200"
+                      : activeBroker.connectable
+                        ? "border-amber-500/40 bg-[#241f0a] text-amber-100"
+                        : "border-red-500/40 bg-[#220c0c] text-red-100"
               }`}
               onClick={(event) => event.stopPropagation()}
               role="dialog"
@@ -1400,6 +1412,16 @@ export default function AlphaPage() {
                     className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
                   >
                     {activeBroker.auth_type === "oauth" ? `Connect ${activeBroker.label}` : `Authorize ${activeBroker.label}`}
+                  </a>
+                )}
+                {activeBroker.planned && activeBroker.oauth_url && (
+                  <a
+                    href={activeBroker.oauth_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded border border-slate-500/50 bg-slate-500/10 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-500/20"
+                  >
+                    Apply for {activeBroker.label} Developer Access ↗
                   </a>
                 )}
                 <button

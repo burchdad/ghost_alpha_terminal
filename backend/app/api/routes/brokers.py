@@ -7,6 +7,7 @@ from app.api.deps.auth import CurrentUser
 from app.core.config import settings
 from app.db.models import BrokerOAuthConnection, User
 from app.db.session import get_session
+from app.services.brokers.router import PLANNED_BROKERS
 
 router = APIRouter(prefix="/brokers", tags=["brokers"])
 
@@ -28,10 +29,11 @@ def broker_status(user: User = CurrentUser) -> dict:
 
     coinbase_keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
 
-    return {
+    result: dict[str, dict] = {
         "alpaca": {
             "connected": alpaca_connected,
             "accounts": alpaca_accounts,
+            "label": "Alpaca",
         },
         "coinbase": {
             # Coinbase is currently configured at the platform level via API keys,
@@ -39,9 +41,17 @@ def broker_status(user: User = CurrentUser) -> dict:
             "connected": False,
             "accounts": [],
             "configured": coinbase_keys_present,
-        },
-        "tradier": {
-            "connected": False,
-            "accounts": [],
+            "label": "Coinbase",
         },
     }
+
+    # Surface planned broker integrations so the dashboard shows the full pipeline.
+    for provider, meta in PLANNED_BROKERS.items():
+        result[provider] = {
+            "connected": False,
+            "accounts": [],
+            "planned": True,
+            "label": meta.get("label") or provider.replace("_", " ").title(),
+        }
+
+    return result
