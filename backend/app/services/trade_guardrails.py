@@ -23,8 +23,8 @@ class TradeGuardrails:
         if position_size > max_units:
             return False, "Rejected by guardrails: position size exceeds max unit threshold."
 
-        if position_notional > account_balance * 0.2:
-            return False, "Rejected by guardrails: position notional exceeds 20% balance threshold."
+        if position_notional > account_balance * 0.24:
+            return False, "Rejected by guardrails: position notional exceeds 24% balance threshold."
 
         return True, ""
 

@@ -72,6 +72,31 @@ class AutonomousRunner:
                     self._thread.start()
         return self.status()
 
+    def _target_symbol_count(self, portfolio: dict) -> int:
+        max_trades = max(1, int(portfolio.get("max_concurrent_trades", 8) or 8))
+        active_positions = portfolio.get("active_positions") or []
+        open_slots = max(1, max_trades - len(active_positions))
+        buying_power = float(portfolio.get("available_buying_power", 0.0) or 0.0)
+
+        if buying_power >= 175_000:
+            capital_capacity = 8
+        elif buying_power >= 125_000:
+            capital_capacity = 7
+        elif buying_power >= 75_000:
+            capital_capacity = 6
+        elif buying_power >= 50_000:
+            capital_capacity = 5
+        elif buying_power >= 20_000:
+            capital_capacity = 4
+        elif buying_power >= 10_000:
+            capital_capacity = 3
+        elif buying_power >= 5_000:
+            capital_capacity = 2
+        else:
+            capital_capacity = 1
+
+        return max(1, min(open_slots, capital_capacity))
+
     def run_once(self) -> dict:
         if execution_bridge.get_mode() == "SIMULATION":
             with self._lock:
@@ -80,21 +105,27 @@ class AutonomousRunner:
 
         try:
             portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
+            portfolio_manager.configure(
+                balance=float(portfolio.get("account_balance", 0.0) or 0.0),
+                max_concurrent_trades=int(portfolio.get("max_concurrent_trades", 8) or 8),
+            )
+            target_symbol_count = self._target_symbol_count(portfolio)
             latest = master_orchestrator.latest()
             now = datetime.now(tz=timezone.utc)
             if latest is not None and (now - latest.scanned_at).total_seconds() <= 180:
                 scan = latest
             else:
-                scan = master_orchestrator.scan(limit=8)
+                scan_limit = min(max(target_symbol_count * 3, 12), 24)
+                scan = master_orchestrator.scan(limit=scan_limit)
 
-            candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:2]
+            candidates = [c for c in scan.candidates if c.action_label in {"EXECUTE", "SIMULATE"}][:target_symbol_count]
             if not candidates:
                 # Fall back to top crypto watches so the swarm keeps exploring and adapting.
                 candidates = [
                     c
                     for c in scan.candidates
                     if c.asset_class == "crypto" and c.action_label == "MONITOR" and c.composite_score >= 0.35
-                ][:2]
+                ][:target_symbol_count]
             selected_symbols = [c.symbol for c in candidates]
 
             if not selected_symbols:

@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     coinbase_ws_url: str = "wss://advanced-trade-ws.coinbase.com"
 
     # ---------------------------------------------------------------------------
+    # High-risk sprint mode — opt-in low-priced equity universe for paper sprints
+    # ---------------------------------------------------------------------------
+    high_risk_sprint_mode_enabled: bool = False
+    high_risk_sprint_symbols: str = "SOUN,ACHR,JOBY,OPEN,LCID,PLUG,DNA,SOFI,RKLB,HUT,RIOT,IREN"
+    high_risk_sprint_max_price: float = 15.0
+    high_risk_sprint_min_dollar_volume: float = 4_000_000
+    high_risk_sprint_max_spread_proxy: float = 0.14
+
+    # ---------------------------------------------------------------------------
     # Misc
     # ---------------------------------------------------------------------------
     request_id_max_entries: int = 100

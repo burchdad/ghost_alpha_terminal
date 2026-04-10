@@ -25,9 +25,9 @@ class PortfolioRiskGovernor:
         drawdown_pct: float,
         sector_concentration: dict[str, float],
     ) -> GovernorDecision:
-        max_trade_pct = 0.18
-        max_exposure_pct = 0.95
-        max_sector_pct = 0.55
+        max_trade_pct = 0.24
+        max_exposure_pct = 0.97
+        max_sector_pct = 0.65
 
         trade_pct = (proposed_notional / max(account_balance, 1.0)) if account_balance > 0 else 1.0
 

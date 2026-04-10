@@ -366,6 +366,21 @@ UNIVERSE: list[UniverseTicker] = [
     UniverseTicker("WLDUSD", "crypto", "GLOBAL"),
 ]
 
+DEFAULT_HIGH_RISK_SPRINT_SYMBOLS: tuple[str, ...] = (
+    "SOUN",
+    "ACHR",
+    "JOBY",
+    "OPEN",
+    "LCID",
+    "PLUG",
+    "DNA",
+    "SOFI",
+    "RKLB",
+    "HUT",
+    "RIOT",
+    "IREN",
+)
+
 
 class OpportunityScanner:
     def _coinbase_priority_symbols(self) -> set[str]:
@@ -382,7 +397,24 @@ class OpportunityScanner:
                 symbols.add(cleaned)
         return symbols
 
-    def _prefilter(self, ticker: UniverseTicker) -> dict | None:
+    def _high_risk_sprint_universe(self) -> list[UniverseTicker]:
+        configured = [item.strip().upper() for item in settings.high_risk_sprint_symbols.split(",") if item.strip()]
+        symbols = configured or list(DEFAULT_HIGH_RISK_SPRINT_SYMBOLS)
+        return [UniverseTicker(symbol, "equity", "US") for symbol in symbols]
+
+    def _scan_universe(self) -> list[tuple[UniverseTicker, bool]]:
+        scan_universe: list[tuple[UniverseTicker, bool]] = [(ticker, False) for ticker in UNIVERSE]
+        if not settings.high_risk_sprint_mode_enabled:
+            return scan_universe
+
+        existing_symbols = {ticker.symbol for ticker in UNIVERSE}
+        for ticker in self._high_risk_sprint_universe():
+            if ticker.symbol in existing_symbols:
+                continue
+            scan_universe.append((ticker, True))
+        return scan_universe
+
+    def _prefilter(self, ticker: UniverseTicker, *, sprint_mode: bool = False) -> dict | None:
         end = datetime.now(tz=timezone.utc)
         start = end - timedelta(days=180)
         df = historical_data_service.load_historical_data(
@@ -404,6 +436,31 @@ class OpportunityScanner:
         avg_dollar_volume = sum(c * v for c, v in zip(close[-30:], volume[-30:])) / min(len(close[-30:]), len(volume[-30:]))
         spread_proxy = sum((h - l) / max(c, 1e-6) for h, l, c in zip(high[-30:], low[-30:], close[-30:])) / max(len(close[-30:]), 1)
         momentum_20d = (close[-1] / close[-20]) - 1.0
+
+        if sprint_mode:
+            last_price = close[-1]
+            if ticker.asset_class != "equity":
+                return None
+            if last_price < 0.75 or last_price > settings.high_risk_sprint_max_price:
+                return None
+            if avg_dollar_volume < settings.high_risk_sprint_min_dollar_volume:
+                return None
+            if spread_proxy > settings.high_risk_sprint_max_spread_proxy:
+                return None
+
+            prefilter_score = momentum_20d * 110 + realized_vol * 12 - spread_proxy * 18
+            return {
+                "symbol": ticker.symbol,
+                "asset_class": ticker.asset_class,
+                "region": ticker.region,
+                "avg_dollar_volume": avg_dollar_volume,
+                "spread_proxy": spread_proxy,
+                "realized_volatility_pct": max(0.001, min(realized_vol, 0.35)),
+                "momentum_20d": momentum_20d,
+                "prefilter_score": prefilter_score,
+                "last_price": last_price,
+                "scan_mode": "high_risk_sprint",
+            }
 
         if ticker.asset_class == "crypto":
             min_liquidity = 2_000_000
@@ -427,6 +484,7 @@ class OpportunityScanner:
             "momentum_20d": momentum_20d,
             "prefilter_score": prefilter_score,
             "last_price": close[-1],
+            "scan_mode": "core",
         }
 
     def _execution_viability(self, *, symbol: str, asset_class: str, action: str) -> tuple[str, bool, str | None]:
@@ -482,9 +540,10 @@ class OpportunityScanner:
         goal_pressure_multiplier: float,
     ) -> dict:
         prefiltered: list[dict] = []
-        for ticker in UNIVERSE:
+        scan_universe = self._scan_universe()
+        for ticker, sprint_mode in scan_universe:
             try:
-                result = self._prefilter(ticker)
+                result = self._prefilter(ticker, sprint_mode=sprint_mode)
             except Exception as exc:
                 logger.warning("prefilter_failed symbol=%s error=%s", ticker.symbol, exc)
                 continue
@@ -509,6 +568,13 @@ class OpportunityScanner:
             if item["symbol"] not in existing_symbols:
                 candidates.append(item)
                 existing_symbols.add(item["symbol"])
+
+        if settings.high_risk_sprint_mode_enabled:
+            sprint_tail = [item for item in prefiltered if item.get("scan_mode") == "high_risk_sprint"][:6]
+            for item in sprint_tail:
+                if item["symbol"] not in existing_symbols:
+                    candidates.append(item)
+                    existing_symbols.add(item["symbol"])
 
         opportunities: list[dict] = []
         for candidate in candidates:
@@ -650,6 +716,7 @@ class OpportunityScanner:
                     "avg_dollar_volume": round(candidate["avg_dollar_volume"], 2),
                     "spread_proxy": round(candidate["spread_proxy"], 6),
                     "prefilter_score": round(candidate["prefilter_score"], 6),
+                    "scan_mode": candidate.get("scan_mode", "core"),
                     "tradable": tradable,
                     "risk_adjusted_score": round(risk_adjusted_score, 6),
                     "opportunity_score": round(risk_adjusted_score, 6),
@@ -717,7 +784,7 @@ class OpportunityScanner:
             )
 
         return {
-            "scanned": len(UNIVERSE),
+            "scanned": len(scan_universe),
             "passed_prefilter": len(prefiltered),
             "opportunities": top,
             "capital_allocation_recommendations": capital_split,

@@ -23,7 +23,7 @@ class PortfolioManager:
     def __init__(self) -> None:
         self._lock = Lock()
         self._balance = 100000.0
-        self._max_concurrent_trades = 8
+        self._max_concurrent_trades = 12
         self._positions: list[Position] = []
 
     def _sector_for_symbol(self, symbol: str) -> str:
@@ -50,16 +50,16 @@ class PortfolioManager:
                 return False, "Max concurrent trades reached"
 
             total_exposure = sum(pos.notional for pos in self._positions)
-            if total_exposure + notional > self._balance * 2.0:
+            if total_exposure + notional > self._balance * 2.25:
                 return False, "Total exposure limit reached"
 
             sector = self._sector_for_symbol(symbol)
             sector_exposure = sum(pos.notional for pos in self._positions if pos.sector == sector)
-            if sector_exposure + notional > self._balance * 0.6:
+            if sector_exposure + notional > self._balance * 0.7:
                 return False, "Sector concentration too high"
 
             strategy_exposure = sum(pos.notional for pos in self._positions if pos.strategy == strategy)
-            if strategy_exposure + notional > self._balance * 0.35:
+            if strategy_exposure + notional > self._balance * 0.45:
                 return False, "Strategy concentration too high"
 
             return True, ""

@@ -80,7 +80,7 @@ class LivePortfolioService:
             "sector_concentration": {k: round(v, 2) for k, v in sector_counter.items()},
             "strategy_exposure": {k: round(v, 2) for k, v in strategy_counter.items()},
             "available_buying_power": round(buying_power, 2),
-            "max_concurrent_trades": 8,
+            "max_concurrent_trades": 12,
             "broker_accounts": broker_accounts,
         }
 
