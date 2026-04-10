@@ -114,6 +114,9 @@ export default function HomePage() {
             <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
               Terms
             </Link>
+            <Link href="/cybersecurity" className="transition hover:text-terminal-accent">
+              Security
+            </Link>
           </nav>
         </motion.div>
 
@@ -320,6 +323,9 @@ export default function HomePage() {
             </Link>
             <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
               Terms of Use
+            </Link>
+            <Link href="/cybersecurity" className="transition hover:text-terminal-accent">
+              Security & Cybersecurity
             </Link>
           </div>
         </motion.footer>
