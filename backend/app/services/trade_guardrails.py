@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from app.services.goal_engine import goal_engine
+from app.services.mission_policy_engine import mission_policy_engine
+
 
 class TradeGuardrails:
     def validate(
@@ -12,8 +15,17 @@ class TradeGuardrails:
         position_notional: float,
         account_balance: float,
     ) -> tuple[bool, str]:
-        if confidence < 0.60:
-            return False, "Rejected by guardrails: swarm confidence below 60%."
+        goal_status = goal_engine.status(current_capital=account_balance)
+        mission = mission_policy_engine.mission_snapshot(
+            goal_status=goal_status,
+            drawdown_pct=0.0,
+            sprint_active=False,
+            dominant_regime="RANGE_BOUND",
+            regime_quality={},
+        )
+        confidence_floor = float((mission.get("tuning") or {}).get("min_confidence_floor", 0.60) or 0.60)
+        if confidence < confidence_floor:
+            return False, f"Rejected by guardrails: swarm confidence below {confidence_floor:.2f}."
         if expected_value <= 0:
             return False, "Rejected by guardrails: expected value is non-positive."
         if risk_reward_ratio < 1.5:

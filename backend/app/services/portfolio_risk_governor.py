@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.services.goal_engine import goal_engine
+from app.services.mission_policy_engine import mission_policy_engine
+
 
 @dataclass
 class GovernorDecision:
@@ -25,7 +28,17 @@ class PortfolioRiskGovernor:
         drawdown_pct: float,
         sector_concentration: dict[str, float],
     ) -> GovernorDecision:
-        max_trade_pct = 0.24
+        goal_status = goal_engine.status(current_capital=account_balance)
+        mission = mission_policy_engine.mission_snapshot(
+            goal_status=goal_status,
+            drawdown_pct=drawdown_pct,
+            sprint_active=False,
+            dominant_regime="RANGE_BOUND",
+            regime_quality={},
+        )
+        tuning = mission.get("tuning") or {}
+
+        max_trade_pct = float(tuning.get("per_trade_cap_pct", 0.24) or 0.24)
         max_exposure_pct = 0.97
         max_sector_pct = 0.65
 

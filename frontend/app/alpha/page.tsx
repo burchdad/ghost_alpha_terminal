@@ -265,6 +265,59 @@ type RuntimeReadinessResponse = {
   lightweight_7d: LightweightMetricsResponse;
 };
 
+type MissionIntelligenceResponse = {
+  mission: {
+    mission_style: string;
+    goal_pressure_multiplier: number;
+    stress_level: string;
+    drawdown_pct: number;
+    tuning: {
+      concurrency_target: number;
+      per_trade_cap_pct: number;
+      min_confidence_floor: number;
+      crypto_bias: number;
+      allow_high_risk_sprint: boolean;
+      sprint_active: boolean;
+    };
+    capital_buckets: Record<string, number>;
+  };
+  sprint_governance: {
+    active: boolean;
+    manual_override: boolean;
+    auto_enabled: boolean;
+    trigger_pressure: number;
+    current_pressure: number;
+    admitted_symbols: string[];
+    extra_risk_budget_pct: number;
+    deactivation_condition: string;
+  };
+  execution_quality: {
+    sample_size: number;
+    top_symbols: Array<{ symbol: string; quality_score: number }>;
+    bottom_symbols: Array<{ symbol: string; quality_score: number }>;
+    asset_class_quality: Record<string, { quality_score: number }>;
+    regime_quality: Record<string, { quality_score: number }>;
+  };
+  parity_watchdog: {
+    status: "GREEN" | "YELLOW" | "RED";
+    mode: string;
+    issues: string[];
+  };
+};
+
+type MissionScenarioResponse = {
+  current_capital: number;
+  target_capital: number;
+  timeframe_days: number;
+  required_total_return: number;
+  required_daily_return: number;
+  implied_goal_pressure: number;
+  recommended_mission_style: string;
+  target_unrealistic: boolean;
+  refuse_activation: boolean;
+  message: string;
+};
+
 type ExecutionHistoryEntry = {
   execution_id: string;
   cycle_id: string | null;
@@ -322,6 +375,10 @@ export default function AlphaPage() {
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
+  const [missionIntel, setMissionIntel] = useState<MissionIntelligenceResponse | null>(null);
+  const [scenarioTarget, setScenarioTarget] = useState<number>(205000);
+  const [scenarioDays, setScenarioDays] = useState<number>(3);
+  const [missionScenario, setMissionScenario] = useState<MissionScenarioResponse | null>(null);
   const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
   const brokerModalCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const seenExecutionIdsRef = useRef<Set<string>>(new Set());
@@ -431,6 +488,20 @@ export default function AlphaPage() {
     const readinessRes = await fetch(`${API_BASE}/metrics/runtime-readiness`);
     const readiness = await parseJsonOrNull<RuntimeReadinessResponse>(readinessRes);
     setRuntimeReadiness(readiness);
+
+    const missionRes = await fetch(`${API_BASE}/metrics/mission-intelligence`);
+    const missionData = await parseJsonOrNull<MissionIntelligenceResponse>(missionRes);
+    setMissionIntel(missionData);
+  }
+
+  async function runMissionScenario(targetCapital = scenarioTarget, timeframeDays = scenarioDays) {
+    const params = new URLSearchParams({
+      target_capital: String(targetCapital),
+      timeframe_days: String(timeframeDays),
+    });
+    const simRes = await fetch(`${API_BASE}/control/mission/simulate?${params.toString()}`);
+    const simData = await parseJsonOrNull<MissionScenarioResponse>(simRes);
+    setMissionScenario(simData);
   }
 
   function pushRuntimeToast(message: string, tone: RuntimeToast["tone"]) {
@@ -470,12 +541,13 @@ export default function AlphaPage() {
   }
 
   async function refreshRuntimeState(announceExecutions = false) {
-    const [portfolioRes, controlRes, executionModeRes, goalRes, historyRes] = await Promise.all([
+    const [portfolioRes, controlRes, executionModeRes, goalRes, historyRes, missionRes] = await Promise.all([
       fetch(`${API_BASE}/portfolio`),
       fetch(`${API_BASE}/control`),
       fetch(`${API_BASE}/agents/execution-mode`),
       fetch(`${API_BASE}/agents/goal/status`),
       fetch(`${API_BASE}/agents/execution-history?limit=10`),
+      fetch(`${API_BASE}/metrics/mission-intelligence`),
     ]);
 
     const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
@@ -483,11 +555,13 @@ export default function AlphaPage() {
     const executionModeData = await parseJsonOrNull<ExecutionModeResponse>(executionModeRes);
     const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
     const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+    const missionData = await parseJsonOrNull<MissionIntelligenceResponse>(missionRes);
 
     setPortfolio(portfolioData);
     setControl(controlData);
     setExecutionMode(executionModeData?.mode ?? null);
     setGoal(goalData);
+    setMissionIntel(missionData);
 
     if (controlData) {
       if (autonomousCycleBaselineRef.current === null) {
@@ -610,6 +684,7 @@ export default function AlphaPage() {
       await refreshScanState(true);
       await refreshRuntimeState(false);
       await refreshSymbolIntel(focusSymbol, selectedAuditId);
+      await runMissionScenario();
     }
 
     boot().catch((err: unknown) => {
@@ -1050,6 +1125,100 @@ export default function AlphaPage() {
         </div>
         {runtimeReadiness?.coinbase_ws_error && (
           <div className="mt-2 text-[11px] text-red-300">Coinbase WS error: {runtimeReadiness.coinbase_ws_error}</div>
+        )}
+      </section>
+
+      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-terminal-accent">Mission Governance Panel</h2>
+            <p className="text-xs text-slate-400">Automated policy style, bucket weighting, sprint governance, learning quality, and parity health</p>
+          </div>
+          <div className={`rounded border px-3 py-1 text-xs font-semibold ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/50 bg-red-500/10 text-red-300" : missionIntel?.parity_watchdog.status === "YELLOW" ? "border-amber-500/50 bg-amber-500/10 text-amber-300" : "border-green-500/50 bg-green-500/10 text-green-300"}`}>
+            Parity {missionIntel?.parity_watchdog.status ?? "N/A"}
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Mission Policy</div>
+            <div className="mt-1 text-sm font-semibold text-terminal-accent">{missionIntel?.mission.mission_style ?? "loading"}</div>
+            <div className="mt-1 text-slate-300">Pressure {(missionIntel?.mission.goal_pressure_multiplier ?? 1).toFixed(2)}x</div>
+            <div className="text-slate-300">Min confidence {(missionIntel?.mission.tuning.min_confidence_floor ?? 0).toFixed(2)}</div>
+            <div className="text-slate-300">Concurrency {(missionIntel?.mission.tuning.concurrency_target ?? 0)}</div>
+          </div>
+
+          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Capital Buckets</div>
+            <div className="mt-1 space-y-1 text-slate-300">
+              {Object.entries(missionIntel?.mission.capital_buckets ?? {}).map(([bucket, weight]) => (
+                <div key={bucket}>{bucket.replaceAll("_", " ")}: {(weight * 100).toFixed(1)}%</div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Sprint Governance</div>
+            <div className={`mt-1 font-semibold ${missionIntel?.sprint_governance.active ? "text-amber-300" : "text-slate-200"}`}>
+              {missionIntel?.sprint_governance.active ? "Sprint Active" : "Sprint Inactive"}
+            </div>
+            <div className="text-slate-300">Trigger {(missionIntel?.sprint_governance.trigger_pressure ?? 0).toFixed(2)}x</div>
+            <div className="text-slate-300">Now {(missionIntel?.sprint_governance.current_pressure ?? 0).toFixed(2)}x</div>
+            <div className="mt-1 text-slate-400">Admitted: {(missionIntel?.sprint_governance.admitted_symbols ?? []).join(", ") || "None"}</div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Execution Quality Scorecard</div>
+            <div className="mt-1 text-slate-300">Samples: {missionIntel?.execution_quality.sample_size ?? 0}</div>
+            <div className="mt-2 text-green-300">Top: {(missionIntel?.execution_quality.top_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
+            <div className="mt-1 text-red-300">Watch: {(missionIntel?.execution_quality.bottom_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
+          </div>
+
+          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
+            <div className="text-[10px] uppercase tracking-wider text-slate-500">Mission Scenario Simulator</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                type="number"
+                value={scenarioTarget}
+                onChange={(event) => setScenarioTarget(Number(event.target.value || 0))}
+                className="w-36 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
+              />
+              <input
+                type="number"
+                value={scenarioDays}
+                onChange={(event) => setScenarioDays(Number(event.target.value || 1))}
+                className="w-24 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
+              />
+              <button
+                type="button"
+                onClick={() => void runMissionScenario()}
+                className="rounded border border-terminal-accent/50 bg-terminal-accent/10 px-3 py-1 text-xs text-terminal-accent hover:bg-terminal-accent/20"
+              >
+                Simulate
+              </button>
+            </div>
+            {missionScenario && (
+              <div className="mt-2 text-slate-300">
+                <div>Required daily: {(missionScenario.required_daily_return * 100).toFixed(2)}%</div>
+                <div>Implied pressure: {missionScenario.implied_goal_pressure.toFixed(2)}x</div>
+                <div>Recommended style: {missionScenario.recommended_mission_style}</div>
+                <div className={missionScenario.refuse_activation ? "text-red-300" : missionScenario.target_unrealistic ? "text-amber-300" : "text-green-300"}>{missionScenario.message}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && (
+          <div className="mt-3 rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+            <div className="font-semibold">Paper-to-Live Parity Watchdog Alerts</div>
+            <ul className="mt-1 space-y-1">
+              {missionIntel?.parity_watchdog.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 

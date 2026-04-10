@@ -22,6 +22,7 @@ from app.services.decision_audit_store import decision_audit_store
 from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
+from app.services.mission_intelligence_service import mission_intelligence_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 
@@ -249,4 +250,13 @@ def start_goal_mission(payload: GoalMissionRequest) -> GoalMissionResponse:
         trading_enabled=trading_enabled,
         goal=goal_status,
         autonomous=autonomous_status,
+    )
+
+
+@router.get("/mission/simulate")
+def simulate_mission(target_capital: float, timeframe_days: int, start_capital: float | None = None) -> dict:
+    return mission_intelligence_service.simulate_mission(
+        target_capital=target_capital,
+        timeframe_days=timeframe_days,
+        start_capital=start_capital,
     )

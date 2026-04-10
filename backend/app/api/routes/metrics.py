@@ -12,6 +12,7 @@ from app.services.execution_journal import execution_journal
 from app.services.lightweight_metrics import lightweight_metrics
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
+from app.services.mission_intelligence_service import mission_intelligence_service
 from app.services.news.coinbase_ws_service import coinbase_ws_service
 from app.services.news.news_intelligence import news_intelligence
 from app.services.swarm.execution_bridge import execution_bridge
@@ -157,3 +158,11 @@ def get_runtime_readiness() -> dict:
         "coinbase_ws_error": ws_status.get("last_error"),
         "lightweight_7d": lightweight,
     }
+
+
+@router.get(
+    "/mission-intelligence",
+    summary="Mission policy, capital buckets, sprint governance, execution quality, and parity watchdog",
+)
+def get_mission_intelligence() -> dict:
+    return mission_intelligence_service.snapshot()

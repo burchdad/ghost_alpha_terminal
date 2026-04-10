@@ -13,12 +13,15 @@ from app.services.swarm.execution_bridge import execution_bridge
 from app.services.explainability import build_explainability
 from app.services.historical_data_service import historical_data_service
 from app.services.kronos_service import kronos_service
+from app.services.mission_policy_engine import mission_policy_engine
 from app.services.news.news_intelligence import news_intelligence
 from app.services.options_service import options_service
+from app.services.opportunity_persistence_store import opportunity_persistence_store
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
 from app.services.scan_health import logger
 from app.services.signal_engine import signal_engine
+from app.services.execution_quality_engine import execution_quality_engine
 
 
 @dataclass
@@ -383,6 +386,16 @@ DEFAULT_HIGH_RISK_SPRINT_SYMBOLS: tuple[str, ...] = (
 
 
 class OpportunityScanner:
+    @staticmethod
+    def _bucket_for(item: dict) -> str:
+        if item.get("scan_mode") == "high_risk_sprint":
+            return "high_risk_sprint"
+        if item.get("asset_class") == "crypto":
+            return "crypto_momentum"
+        if item.get("regime") == "RANGE_BOUND":
+            return "mean_reversion"
+        return "core_trend"
+
     def _high_risk_sprint_active(self, *, goal_pressure_multiplier: float) -> bool:
         if settings.high_risk_sprint_mode_enabled:
             return True
@@ -546,6 +559,13 @@ class OpportunityScanner:
         current_exposure_pct: float,
         goal_pressure_multiplier: float,
     ) -> dict:
+        quality = execution_quality_engine.summary(limit=500)
+        symbol_quality = quality.get("symbol_quality", {})
+        asset_quality = quality.get("asset_class_quality", {})
+        regime_quality = quality.get("regime_quality", {})
+        strategy_quality = quality.get("strategy_quality", {})
+        confidence_band_quality = quality.get("confidence_band_quality", {})
+
         prefiltered: list[dict] = []
         sprint_active = self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier)
         scan_universe = self._scan_universe(goal_pressure_multiplier=goal_pressure_multiplier)
@@ -617,6 +637,20 @@ class OpportunityScanner:
                 )
                 risk_level = "HIGH" if regime.regime == "HIGH_VOLATILITY" else "MEDIUM" if regime.regime == "RANGE_BOUND" else "LOW"
 
+                confidence = float(swarm.consensus.confidence)
+                if confidence < 0.55:
+                    conf_band = "low"
+                elif confidence < 0.65:
+                    conf_band = "mid"
+                elif confidence < 0.75:
+                    conf_band = "high"
+                else:
+                    conf_band = "very_high"
+                confidence_band_score = float((confidence_band_quality.get(conf_band) or {}).get("quality_score", 0.5) or 0.5)
+                strategy_score = float((strategy_quality.get(str(swarm.recommended_trade).upper()) or {}).get("quality_score", 0.5) or 0.5)
+                regime_score = float((regime_quality.get(str(regime.regime).upper()) or {}).get("quality_score", 0.5) or 0.5)
+                recent_win_rate = max(0.35, min((regime_score + strategy_score + confidence_band_score) / 3.0, 0.75))
+
                 allocation = capital_allocator.compute(
                     AllocationInput(
                         account_balance=account_balance,
@@ -629,6 +663,7 @@ class OpportunityScanner:
                         current_exposure_pct=current_exposure_pct,
                         realized_volatility_pct=float(candidate["realized_volatility_pct"]),
                         goal_pressure_multiplier=goal_pressure_multiplier * float(context["modifiers"]["risk_modifier"]),
+                        recent_win_rate=recent_win_rate,
                     )
                 )
 
@@ -677,6 +712,20 @@ class OpportunityScanner:
                     + validated_strength * 0.08
                     + max(0.0, reaction_score) * 0.06
                 )
+
+                sym_quality_score = float((symbol_quality.get(symbol.upper()) or {}).get("quality_score", 0.5) or 0.5)
+                class_quality_score = float((asset_quality.get(candidate["asset_class"]) or {}).get("quality_score", 0.5) or 0.5)
+                execution_quality_adjustment = (sym_quality_score - 0.5) * 0.24 + (class_quality_score - 0.5) * 0.14
+                confidence_band_adjustment = (confidence_band_score - 0.5) * 0.12
+                persistence = opportunity_persistence_store.score(
+                    symbol=symbol,
+                    score=float(candidate.get("prefilter_score", 0.0)),
+                    confidence=float(swarm.consensus.confidence),
+                    regime=str(regime.regime),
+                    news_strength=float(news.get("event_strength", 0.0)),
+                    volume_spike=float(candidate.get("avg_dollar_volume", 0.0)),
+                )
+
                 risk_adjusted_score = (
                     (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
                     + max(0.0, risk["expected_value"]) * 8.0 * 0.2
@@ -685,6 +734,9 @@ class OpportunityScanner:
                     + (0.05 if broker_viable else -0.03)
                     + news_alpha_boost
                     + float(context["modifiers"]["opportunity_boost"])
+                    + execution_quality_adjustment
+                    + confidence_band_adjustment
+                    + float(persistence.get("total_bonus", 0.0))
                 )
             except Exception as exc:
                 logger.warning("candidate_scan_failed symbol=%s error=%s", symbol, exc)
@@ -725,6 +777,9 @@ class OpportunityScanner:
                     "spread_proxy": round(candidate["spread_proxy"], 6),
                     "prefilter_score": round(candidate["prefilter_score"], 6),
                     "scan_mode": candidate.get("scan_mode", "core"),
+                    "persistence": persistence,
+                    "execution_quality_score": round(sym_quality_score, 4),
+                    "learning_recent_win_rate": round(recent_win_rate, 4),
                     "tradable": tradable,
                     "risk_adjusted_score": round(risk_adjusted_score, 6),
                     "opportunity_score": round(risk_adjusted_score, 6),
@@ -753,7 +808,38 @@ class OpportunityScanner:
                 }
             )
 
+        dominant_regime = (
+            max(
+                (str(item.get("regime", "RANGE_BOUND")) for item in opportunities),
+                key=lambda reg: sum(1 for x in opportunities if str(x.get("regime", "RANGE_BOUND")) == reg),
+                default="RANGE_BOUND",
+            )
+            if opportunities
+            else "RANGE_BOUND"
+        )
+        mission = mission_policy_engine.mission_snapshot(
+            goal_status={"goal_pressure_multiplier": goal_pressure_multiplier, "stress_level": "HIGH" if goal_pressure_multiplier >= 1.4 else "MEDIUM"},
+            drawdown_pct=drawdown_pct,
+            sprint_active=sprint_active,
+            dominant_regime=dominant_regime,
+            regime_quality=regime_quality,
+        )
+
+        bucket_weights = mission.get("capital_buckets", {})
+        for item in opportunities:
+            bucket = self._bucket_for(item)
+            item["capital_bucket"] = bucket
+            bucket_boost = (float(bucket_weights.get(bucket, 0.25)) - 0.25) * 0.18
+            item["opportunity_score"] = round(float(item["opportunity_score"]) + bucket_boost, 6)
+
         ranked = sorted(opportunities, key=lambda item: item["opportunity_score"], reverse=True)
+
+        # Bucket-aware selection to prevent one theme from consuming all slots.
+        bucket_quota = {
+            bucket: max(1, int(round(float(weight) * max(limit, 1))))
+            for bucket, weight in bucket_weights.items()
+        }
+        bucket_used = {key: 0 for key in bucket_quota}
 
         # Keep score ordering, but reserve slots for crypto diversity when available.
         crypto_quota = min(max(2, limit // 4), limit)
@@ -773,10 +859,16 @@ class OpportunityScanner:
                 break
             if item["symbol"] in selected_symbols:
                 continue
+            bucket = item.get("capital_bucket", "core_trend")
+            if bucket in bucket_quota and bucket_used.get(bucket, 0) >= bucket_quota[bucket]:
+                continue
             selected.append(item)
             selected_symbols.add(item["symbol"])
+            if bucket in bucket_used:
+                bucket_used[bucket] += 1
 
         top = selected[:limit]
+        opportunity_persistence_store.record_batch(top)
 
         tradable = [item for item in top if item["tradable"]]
         total_notional = sum(float(item["recommended_notional"]) for item in tradable)
@@ -796,6 +888,14 @@ class OpportunityScanner:
             "passed_prefilter": len(prefiltered),
             "opportunities": top,
             "capital_allocation_recommendations": capital_split,
+            "mission_policy": mission,
+            "execution_quality": {
+                "sample_size": quality.get("sample_size", 0),
+                "asset_class_quality": asset_quality,
+                "regime_quality": regime_quality,
+                "strategy_quality": strategy_quality,
+                "confidence_band_quality": confidence_band_quality,
+            },
         }
 
 

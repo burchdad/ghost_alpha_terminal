@@ -7,6 +7,9 @@ from datetime import datetime, timedelta, timezone
 from app.services.historical_data_service import historical_data_service
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
+from app.services.control_engine import control_engine
+from app.services.goal_engine import goal_engine
+from app.services.mission_policy_engine import mission_policy_engine
 from app.services.portfolio_manager import portfolio_manager
 from app.services.regime_detector import regime_detector
 from app.services.swarm.execution_bridge import execution_bridge
@@ -105,10 +108,21 @@ class AutonomousRunner:
 
         try:
             portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
+            goal_status = goal_engine.status(current_capital=float(portfolio.get("account_balance", 0.0) or 0.0))
+            control_status = control_engine.status()
+            mission = mission_policy_engine.mission_snapshot(
+                goal_status=goal_status,
+                drawdown_pct=float(control_status.get("rolling_drawdown_pct", 0.0) or 0.0),
+                sprint_active=False,
+                dominant_regime="RANGE_BOUND",
+                regime_quality={},
+            )
+            mission_concurrency = int((mission.get("tuning") or {}).get("concurrency_target", 8) or 8)
             portfolio_manager.configure(
                 balance=float(portfolio.get("account_balance", 0.0) or 0.0),
-                max_concurrent_trades=int(portfolio.get("max_concurrent_trades", 8) or 8),
+                max_concurrent_trades=max(1, mission_concurrency),
             )
+            portfolio["max_concurrent_trades"] = max(1, mission_concurrency)
             target_symbol_count = self._target_symbol_count(portfolio)
             latest = master_orchestrator.latest()
             now = datetime.now(tz=timezone.utc)
