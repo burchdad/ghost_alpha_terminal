@@ -7,6 +7,29 @@ MissionStyle = Literal["capital_preservation", "balanced_growth", "sprint", "rec
 
 
 class MissionPolicyEngine:
+    @staticmethod
+    def risk_posture(drawdown_pct: float) -> dict:
+        dd = max(0.0, float(drawdown_pct or 0.0))
+        # Drawdown behavior switching:
+        # X -> force recovery mode, Y -> capital preservation only.
+        if dd >= 0.10:
+            return {
+                "mode": "capital_preservation_only",
+                "forced_style": "capital_preservation",
+                "reason": "drawdown >= 10%",
+            }
+        if dd >= 0.06:
+            return {
+                "mode": "recovery_forced",
+                "forced_style": "recovery",
+                "reason": "drawdown >= 6%",
+            }
+        return {
+            "mode": "normal",
+            "forced_style": None,
+            "reason": "drawdown below forced-switch thresholds",
+        }
+
     def resolve_style(
         self,
         *,
@@ -14,6 +37,10 @@ class MissionPolicyEngine:
         stress_level: str,
         drawdown_pct: float,
     ) -> MissionStyle:
+        posture = self.risk_posture(drawdown_pct)
+        forced = posture.get("forced_style")
+        if forced in {"capital_preservation", "recovery", "balanced_growth", "sprint"}:
+            return forced
         if drawdown_pct >= 0.08:
             return "recovery"
         if goal_pressure >= 1.80 or stress_level.upper() == "EXTREME":
@@ -53,6 +80,10 @@ class MissionPolicyEngine:
                 "allow_high_risk_sprint": False,
             },
         }[style].copy()
+        if style == "capital_preservation":
+            base["per_trade_cap_pct"] = min(float(base["per_trade_cap_pct"]), 0.10)
+            base["min_confidence_floor"] = max(float(base["min_confidence_floor"]), 0.64)
+            base["allow_high_risk_sprint"] = False
         base["sprint_active"] = bool(sprint_active)
         return base
 
@@ -62,6 +93,7 @@ class MissionPolicyEngine:
         style: MissionStyle,
         dominant_regime: str,
         regime_quality: dict,
+        bucket_quality: dict | None = None,
     ) -> dict[str, float]:
         buckets: dict[MissionStyle | str, dict[str, float]] = {
             "capital_preservation": {
@@ -109,6 +141,15 @@ class MissionPolicyEngine:
             weights["mean_reversion"] += 0.03
             weights["core_trend"] += 0.02
 
+        # Capital reallocation engine: shift weight from losing buckets to winning buckets.
+        if bucket_quality:
+            for bucket, stats in bucket_quality.items():
+                if bucket not in weights:
+                    continue
+                q = float((stats or {}).get("quality_score", 0.5) or 0.5)
+                adjustment = max(-0.05, min((q - 0.5) * 0.20, 0.05))
+                weights[bucket] = max(0.05, weights[bucket] + adjustment)
+
         total = sum(max(v, 0.01) for v in weights.values())
         normalized = {k: round(max(v, 0.01) / total, 4) for k, v in weights.items()}
         return normalized
@@ -121,15 +162,23 @@ class MissionPolicyEngine:
         sprint_active: bool,
         dominant_regime: str,
         regime_quality: dict,
+        bucket_quality: dict | None = None,
     ) -> dict:
         goal_pressure = float(goal_status.get("goal_pressure_multiplier", 1.0) or 1.0)
         stress_level = str(goal_status.get("stress_level", "LOW") or "LOW")
         style = self.resolve_style(goal_pressure=goal_pressure, stress_level=stress_level, drawdown_pct=drawdown_pct)
+        posture = self.risk_posture(drawdown_pct)
         tuning = self.tuning(style=style, sprint_active=sprint_active)
-        buckets = self.capital_buckets(style=style, dominant_regime=dominant_regime, regime_quality=regime_quality)
+        buckets = self.capital_buckets(
+            style=style,
+            dominant_regime=dominant_regime,
+            regime_quality=regime_quality,
+            bucket_quality=bucket_quality,
+        )
 
         return {
             "mission_style": style,
+            "risk_posture": posture,
             "goal_pressure_multiplier": round(goal_pressure, 4),
             "stress_level": stress_level,
             "drawdown_pct": round(drawdown_pct, 4),

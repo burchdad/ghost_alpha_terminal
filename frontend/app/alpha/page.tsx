@@ -265,9 +265,25 @@ type RuntimeReadinessResponse = {
   lightweight_7d: LightweightMetricsResponse;
 };
 
+type TruthDashboardResponse = {
+  window_days: number;
+  as_of: string;
+  trades: number;
+  settled_trades: number;
+  win_rate: number;
+  net_pnl: number;
+  best_strategy: { strategy: string; trades: number; win_rate: number; net_pnl: number } | null;
+  worst_strategy: { strategy: string; trades: number; win_rate: number; net_pnl: number } | null;
+};
+
 type MissionIntelligenceResponse = {
   mission: {
     mission_style: string;
+    risk_posture?: {
+      mode: string;
+      forced_style: string | null;
+      reason: string;
+    };
     goal_pressure_multiplier: number;
     stress_level: string;
     drawdown_pct: number;
@@ -280,6 +296,27 @@ type MissionIntelligenceResponse = {
       sprint_active: boolean;
     };
     capital_buckets: Record<string, number>;
+  };
+  system_confidence?: {
+    score: number;
+    label: "LOW" | "MEDIUM" | "HIGH";
+    factors: {
+      data_sufficiency: number;
+      strategy_diversity: number;
+      win_rate_stability: number;
+      drawdown_pressure: number;
+    };
+  };
+  time_weighted_confidence?: {
+    short_term_7d: { score: number; win_rate: number; sample_size: number };
+    mid_term_30d: { score: number; win_rate: number; sample_size: number };
+    long_term_90d: { score: number; win_rate: number; sample_size: number };
+    blended_score: number;
+  };
+  strategy_evolution?: {
+    mutations: Array<{ strategy: string; reason: string }>;
+    clones: Array<{ strategy: string; clone_name: string; reason: string }>;
+    suggested_experiments: number;
   };
   sprint_governance: {
     active: boolean;
@@ -297,6 +334,11 @@ type MissionIntelligenceResponse = {
     bottom_symbols: Array<{ symbol: string; quality_score: number }>;
     asset_class_quality: Record<string, { quality_score: number }>;
     regime_quality: Record<string, { quality_score: number }>;
+    strategy_quality?: Record<string, { quality_score: number; win_rate: number; settled: number }>;
+    bucket_quality?: Record<string, { quality_score: number; strategies: number }>;
+    disabled_strategies?: string[];
+    probation_strategies?: string[];
+    strategy_kill_switches?: Array<{ strategy: string; window_trades: number; win_rate: number; threshold: number; disabled: boolean }>;
   };
   parity_watchdog: {
     status: "GREEN" | "YELLOW" | "RED";
@@ -341,6 +383,10 @@ type RuntimeToast = {
   message: string;
 };
 
+type StrategyKillSwitchOverridesResponse = {
+  manual_force_enabled: string[];
+};
+
 async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   if (!res.ok) {
     return null;
@@ -375,15 +421,22 @@ export default function AlphaPage() {
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
+  const [truthDashboard, setTruthDashboard] = useState<TruthDashboardResponse | null>(null);
   const [missionIntel, setMissionIntel] = useState<MissionIntelligenceResponse | null>(null);
+  const [manualForceEnabledStrategies, setManualForceEnabledStrategies] = useState<string[]>([]);
+  const [overrideStrategyInput, setOverrideStrategyInput] = useState<string>("");
+  const [overrideBusyStrategy, setOverrideBusyStrategy] = useState<string | null>(null);
+  const [pendingClearOverrideStrategy, setPendingClearOverrideStrategy] = useState<string | null>(null);
   const [scenarioTarget, setScenarioTarget] = useState<number>(205000);
   const [scenarioDays, setScenarioDays] = useState<number>(3);
   const [missionScenario, setMissionScenario] = useState<MissionScenarioResponse | null>(null);
   const [runtimeToasts, setRuntimeToasts] = useState<RuntimeToast[]>([]);
   const brokerModalCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const clearOverrideCancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const seenExecutionIdsRef = useRef<Set<string>>(new Set());
   const executionBaselineReadyRef = useRef(false);
   const autonomousCycleBaselineRef = useRef<number | null>(null);
+  const killSwitchDisabledBaselineRef = useRef<Set<string> | null>(null);
 
   const strategyCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -472,6 +525,25 @@ export default function AlphaPage() {
     };
   }, [activeBrokerProvider]);
 
+  useEffect(() => {
+    if (!pendingClearOverrideStrategy) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPendingClearOverrideStrategy(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    clearOverrideCancelButtonRef.current?.focus();
+
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [pendingClearOverrideStrategy]);
+
   async function refreshBrokerConnections() {
     const brokerRes = await fetch(`${API_BASE}/agents/brokers/connections`);
     const brokerData = await parseJsonOrNull<BrokerConnectionsResponse>(brokerRes);
@@ -485,13 +557,65 @@ export default function AlphaPage() {
   }
 
   async function refreshRuntimeReadiness() {
-    const readinessRes = await fetch(`${API_BASE}/metrics/runtime-readiness`);
+    const [readinessRes, missionRes, truthRes, overrideRes] = await Promise.all([
+      fetch(`${API_BASE}/metrics/runtime-readiness`),
+      fetch(`${API_BASE}/metrics/mission-intelligence`),
+      fetch(`${API_BASE}/metrics/truth-dashboard?days=7`),
+      fetch(`${API_BASE}/control/strategy-kill-switch`),
+    ]);
     const readiness = await parseJsonOrNull<RuntimeReadinessResponse>(readinessRes);
-    setRuntimeReadiness(readiness);
-
-    const missionRes = await fetch(`${API_BASE}/metrics/mission-intelligence`);
     const missionData = await parseJsonOrNull<MissionIntelligenceResponse>(missionRes);
+    const truthData = await parseJsonOrNull<TruthDashboardResponse>(truthRes);
+    const overrideData = await parseJsonOrNull<StrategyKillSwitchOverridesResponse>(overrideRes);
+    setRuntimeReadiness(readiness);
     setMissionIntel(missionData);
+    setTruthDashboard(truthData);
+    setManualForceEnabledStrategies(overrideData?.manual_force_enabled ?? []);
+  }
+
+  async function setStrategyKillSwitchOverride(strategy: string, forceEnabled: boolean) {
+    const normalized = strategy.trim().toUpperCase();
+    if (!normalized) {
+      pushRuntimeToast("Enter a strategy to override.", "warning");
+      return;
+    }
+
+    setOverrideBusyStrategy(normalized);
+    try {
+      const params = new URLSearchParams({ strategy: normalized });
+      if (forceEnabled) {
+        params.set("force_enabled", "true");
+      }
+      const endpoint = `${API_BASE}/control/strategy-kill-switch/override?${params.toString()}`;
+      const res = await fetch(endpoint, {
+        method: forceEnabled ? "POST" : "DELETE",
+      });
+      const data = await parseJsonOrNull<StrategyKillSwitchOverridesResponse>(res);
+      if (!res.ok || !data) {
+        pushRuntimeToast(`Failed to ${forceEnabled ? "set" : "clear"} override for ${normalized}.`, "error");
+        return;
+      }
+      setManualForceEnabledStrategies(data.manual_force_enabled ?? []);
+      setOverrideStrategyInput("");
+      pushRuntimeToast(
+        forceEnabled
+          ? `Manual override enabled for ${normalized}.`
+          : `Manual override cleared for ${normalized}.`,
+        forceEnabled ? "success" : "warning"
+      );
+      await refreshRuntimeReadiness();
+    } finally {
+      setOverrideBusyStrategy(null);
+    }
+  }
+
+  async function confirmClearStrategyOverride() {
+    if (!pendingClearOverrideStrategy) {
+      return;
+    }
+    const strategy = pendingClearOverrideStrategy;
+    setPendingClearOverrideStrategy(null);
+    await setStrategyKillSwitchOverride(strategy, false);
   }
 
   async function runMissionScenario(targetCapital = scenarioTarget, timeframeDays = scenarioDays) {
@@ -511,6 +635,28 @@ export default function AlphaPage() {
       setRuntimeToasts((current) => current.filter((toast) => toast.id !== id));
     }, 6000);
   }
+
+  useEffect(() => {
+    const disabled = new Set(missionIntel?.execution_quality.disabled_strategies ?? []);
+    const baseline = killSwitchDisabledBaselineRef.current;
+    if (baseline === null) {
+      killSwitchDisabledBaselineRef.current = disabled;
+      return;
+    }
+
+    for (const strategy of disabled) {
+      if (!baseline.has(strategy)) {
+        pushRuntimeToast(`Strategy kill switch activated: ${strategy}`, "warning");
+      }
+    }
+    for (const strategy of baseline) {
+      if (!disabled.has(strategy)) {
+        pushRuntimeToast(`Strategy kill switch cleared: ${strategy}`, "success");
+      }
+    }
+
+    killSwitchDisabledBaselineRef.current = disabled;
+  }, [missionIntel]);
 
   async function refreshScanState(triggerScan = false) {
     const [statusRes, latestRes] = await Promise.all([
@@ -1126,6 +1272,18 @@ export default function AlphaPage() {
         {runtimeReadiness?.coinbase_ws_error && (
           <div className="mt-2 text-[11px] text-red-300">Coinbase WS error: {runtimeReadiness.coinbase_ws_error}</div>
         )}
+
+        <div className="mt-3 rounded border border-terminal-accent/30 bg-terminal-accent/5 px-3 py-3 text-xs text-slate-200">
+          <div className="text-[10px] uppercase tracking-wider text-terminal-accent">Truth Dashboard: Last 7 Days</div>
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="rounded border border-current/20 px-2 py-2">Trades: {truthDashboard?.trades ?? 0}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Win Rate: {(((truthDashboard?.win_rate ?? 0) * 100)).toFixed(1)}%</div>
+            <div className="rounded border border-current/20 px-2 py-2">Net PnL: {(truthDashboard?.net_pnl ?? 0) >= 0 ? "+" : ""}{(truthDashboard?.net_pnl ?? 0).toFixed(2)}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Best: {truthDashboard?.best_strategy?.strategy ?? "N/A"}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Worst: {truthDashboard?.worst_strategy?.strategy ?? "N/A"}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Settled: {truthDashboard?.settled_trades ?? 0}</div>
+          </div>
+        </div>
       </section>
 
       <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
@@ -1146,6 +1304,13 @@ export default function AlphaPage() {
             <div className="mt-1 text-slate-300">Pressure {(missionIntel?.mission.goal_pressure_multiplier ?? 1).toFixed(2)}x</div>
             <div className="text-slate-300">Min confidence {(missionIntel?.mission.tuning.min_confidence_floor ?? 0).toFixed(2)}</div>
             <div className="text-slate-300">Concurrency {(missionIntel?.mission.tuning.concurrency_target ?? 0)}</div>
+            <div className="text-slate-300">Posture {missionIntel?.mission.risk_posture?.mode ?? "normal"}</div>
+            <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">System Confidence</div>
+            <div className={`mt-1 font-semibold ${(missionIntel?.system_confidence?.label ?? "LOW") === "HIGH" ? "text-green-300" : (missionIntel?.system_confidence?.label ?? "LOW") === "MEDIUM" ? "text-amber-300" : "text-red-300"}`}>
+              {(missionIntel?.system_confidence?.label ?? "LOW")} {(missionIntel?.system_confidence?.score ?? 0).toFixed(2)}
+            </div>
+            <div className="text-slate-400">Data {(100 * (missionIntel?.system_confidence?.factors.data_sufficiency ?? 0)).toFixed(0)}% · Diversity {(100 * (missionIntel?.system_confidence?.factors.strategy_diversity ?? 0)).toFixed(0)}%</div>
+            <div className="mt-1 text-slate-400">7d {(missionIntel?.time_weighted_confidence?.short_term_7d.score ?? 0).toFixed(2)} · 30d {(missionIntel?.time_weighted_confidence?.mid_term_30d.score ?? 0).toFixed(2)} · 90d {(missionIntel?.time_weighted_confidence?.long_term_90d.score ?? 0).toFixed(2)}</div>
           </div>
 
           <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
@@ -1174,6 +1339,65 @@ export default function AlphaPage() {
             <div className="mt-1 text-slate-300">Samples: {missionIntel?.execution_quality.sample_size ?? 0}</div>
             <div className="mt-2 text-green-300">Top: {(missionIntel?.execution_quality.top_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
             <div className="mt-1 text-red-300">Watch: {(missionIntel?.execution_quality.bottom_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
+            <div className="mt-1 text-amber-300">Disabled strategies: {(missionIntel?.execution_quality.disabled_strategies ?? []).join(", ") || "None"}</div>
+            <div className="mt-1 text-orange-300">Probation strategies: {(missionIntel?.execution_quality.probation_strategies ?? []).join(", ") || "None"}</div>
+            <div className="mt-1 text-cyan-300">Evolution experiments: {missionIntel?.strategy_evolution?.suggested_experiments ?? 0}</div>
+
+            <div className="mt-3 rounded border border-terminal-line/70 bg-black/30 p-2">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">Kill-Switch Override Controls</div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={overrideStrategyInput}
+                  onChange={(event) => setOverrideStrategyInput(event.target.value.toUpperCase())}
+                  placeholder="STRATEGY_NAME"
+                  className="w-40 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
+                />
+                <button
+                  type="button"
+                  disabled={Boolean(overrideBusyStrategy)}
+                  onClick={() => void setStrategyKillSwitchOverride(overrideStrategyInput, true)}
+                  className="rounded border border-green-500/40 bg-green-500/10 px-2 py-1 text-[11px] text-green-300 hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Force Enable
+                </button>
+              </div>
+
+              {(missionIntel?.execution_quality.disabled_strategies ?? []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(missionIntel?.execution_quality.disabled_strategies ?? []).slice(0, 6).map((strategy) => (
+                    <button
+                      key={strategy}
+                      type="button"
+                      disabled={Boolean(overrideBusyStrategy)}
+                      onClick={() => void setStrategyKillSwitchOverride(strategy, true)}
+                      className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Enable {strategy}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-2 text-[11px] text-slate-400">
+                Manual force-enabled: {manualForceEnabledStrategies.join(", ") || "None"}
+              </div>
+              {manualForceEnabledStrategies.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {manualForceEnabledStrategies.map((strategy) => (
+                    <button
+                      key={`clear-${strategy}`}
+                      type="button"
+                      disabled={Boolean(overrideBusyStrategy)}
+                      onClick={() => setPendingClearOverrideStrategy(strategy)}
+                      className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Clear {strategy}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
@@ -1221,6 +1445,46 @@ export default function AlphaPage() {
           </div>
         )}
       </section>
+
+      {pendingClearOverrideStrategy && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4" onClick={() => setPendingClearOverrideStrategy(null)}>
+          <div
+            className="w-full max-w-md rounded border border-terminal-line bg-[#081019] p-4 text-slate-200 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-override-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="clear-override-modal-title" className="text-sm font-semibold text-terminal-accent">
+              Confirm Override Clear
+            </h3>
+            <p className="mt-2 text-xs text-slate-300">
+              Clear manual force-enable for <span className="font-semibold text-red-300">{pendingClearOverrideStrategy}</span>?
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              This allows the kill switch to disable it again if performance remains below threshold.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                ref={clearOverrideCancelButtonRef}
+                type="button"
+                onClick={() => setPendingClearOverrideStrategy(null)}
+                className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={Boolean(overrideBusyStrategy)}
+                onClick={() => void confirmClearStrategyOverride()}
+                className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Confirm Clear
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">
         <div className="mb-2 flex items-center justify-between">

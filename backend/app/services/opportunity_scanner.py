@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.services.agent_manager import agent_manager
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.consensus_engine import consensus_engine
+from app.services.compounding_engine import compounding_engine
 from app.services.context_intelligence import context_intelligence
 from app.services.brokers.router import broker_router
 from app.services.swarm.execution_bridge import execution_bridge
@@ -22,6 +23,7 @@ from app.services.risk_engine import risk_engine
 from app.services.scan_health import logger
 from app.services.signal_engine import signal_engine
 from app.services.execution_quality_engine import execution_quality_engine
+from app.services.strategy_evolution_service import strategy_evolution_service
 
 
 @dataclass
@@ -565,6 +567,13 @@ class OpportunityScanner:
         regime_quality = quality.get("regime_quality", {})
         strategy_quality = quality.get("strategy_quality", {})
         confidence_band_quality = quality.get("confidence_band_quality", {})
+        bucket_quality = quality.get("bucket_quality", {})
+        disabled_strategies = {str(name).upper() for name in quality.get("disabled_strategies", [])}
+        probation_strategies = {str(name).upper() for name in quality.get("probation_strategies", [])}
+        evolution = strategy_evolution_service.plan(strategy_quality=strategy_quality)
+        reinforcement_weights = evolution.get("reinforcement_weights", {})
+        risk_posture = mission_policy_engine.risk_posture(drawdown_pct)
+        posture_mode = str(risk_posture.get("mode", "normal"))
 
         prefiltered: list[dict] = []
         sprint_active = self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier)
@@ -647,9 +656,27 @@ class OpportunityScanner:
                 else:
                     conf_band = "very_high"
                 confidence_band_score = float((confidence_band_quality.get(conf_band) or {}).get("quality_score", 0.5) or 0.5)
-                strategy_score = float((strategy_quality.get(str(swarm.recommended_trade).upper()) or {}).get("quality_score", 0.5) or 0.5)
+                strategy_name = str(swarm.recommended_trade).upper()
+                strategy_score = float((strategy_quality.get(strategy_name) or {}).get("quality_score", 0.5) or 0.5)
+                reinforcement = float(reinforcement_weights.get(strategy_name, 1.0) or 1.0)
+                strategy_score = max(0.0, min(strategy_score * reinforcement, 1.0))
+                strategy_mutation = next(
+                    (m for m in evolution.get("mutations", []) if str(m.get("strategy", "")).upper() == strategy_name),
+                    None,
+                )
+                strategy_clone = next(
+                    (c for c in evolution.get("clones", []) if str(c.get("strategy", "")).upper() == strategy_name),
+                    None,
+                )
+                strategy_disabled = strategy_name in disabled_strategies or "SWARM_MARKET" in disabled_strategies
+                strategy_probation = strategy_name in probation_strategies or "SWARM_MARKET" in probation_strategies
                 regime_score = float((regime_quality.get(str(regime.regime).upper()) or {}).get("quality_score", 0.5) or 0.5)
                 recent_win_rate = max(0.35, min((regime_score + strategy_score + confidence_band_score) / 3.0, 0.75))
+                compounding = compounding_engine.plan(
+                    goal_pressure=goal_pressure_multiplier,
+                    drawdown_pct=drawdown_pct,
+                    recent_win_rate=recent_win_rate,
+                )
 
                 allocation = capital_allocator.compute(
                     AllocationInput(
@@ -666,6 +693,30 @@ class OpportunityScanner:
                         recent_win_rate=recent_win_rate,
                     )
                 )
+                allocation = dict(allocation)
+                reinvestment_multiplier = float(compounding.get("reinvestment_multiplier", 1.0) or 1.0)
+                risk_budget_multiplier = float(compounding.get("risk_budget_multiplier", 1.0) or 1.0)
+                allocation["target_pct"] = round(min(0.60, max(0.01, float(allocation["target_pct"]) * reinvestment_multiplier)), 6)
+                allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * reinvestment_multiplier, 2)
+                allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * reinvestment_multiplier, 6)
+                allocation["max_risk_amount"] = round(float(allocation["max_risk_amount"]) * risk_budget_multiplier, 2)
+
+                if posture_mode == "recovery_forced":
+                    allocation["target_pct"] = round(max(0.01, float(allocation["target_pct"]) * 0.80), 6)
+                    allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * 0.80, 2)
+                    allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * 0.80, 6)
+                    allocation["max_risk_amount"] = round(float(allocation["max_risk_amount"]) * 0.85, 2)
+                elif posture_mode == "capital_preservation_only":
+                    allocation["target_pct"] = round(max(0.005, float(allocation["target_pct"]) * 0.60), 6)
+                    allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * 0.60, 2)
+                    allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * 0.60, 6)
+                    allocation["max_risk_amount"] = round(float(allocation["max_risk_amount"]) * 0.70, 2)
+
+                if strategy_probation:
+                    allocation["target_pct"] = round(max(0.01, float(allocation["target_pct"]) * 0.65), 6)
+                    allocation["recommended_notional"] = round(float(allocation["recommended_notional"]) * 0.65, 2)
+                    allocation["recommended_qty"] = round(float(allocation["recommended_qty"]) * 0.65, 6)
+                    allocation["max_risk_amount"] = round(float(allocation["max_risk_amount"]) * 0.75, 2)
 
                 risk = risk_engine.evaluate_trade(
                     entry_price=options_data.underlying_price,
@@ -684,7 +735,16 @@ class OpportunityScanner:
                     asset_class=candidate["asset_class"],
                     action=action,
                 )
-                tradable = action != "HOLD" and allocation["accepted"] and risk["approved"] and broker_viable
+                if strategy_disabled:
+                    broker_viable = False
+                    broker_block_reason = f"Strategy auto-disabled by kill switch: {strategy_name}"
+                elif strategy_probation and confidence < 0.60:
+                    broker_viable = False
+                    broker_block_reason = f"Strategy in probation mode requires >= 0.60 confidence: {strategy_name}"
+                elif posture_mode == "capital_preservation_only" and risk_level == "HIGH":
+                    broker_viable = False
+                    broker_block_reason = "Capital-preservation posture blocks high-risk setups."
+                tradable = action != "HOLD" and allocation["accepted"] and risk["approved"] and broker_viable and not strategy_disabled
                 validation = context.get("signal_validation", {})
                 reaction = context.get("market_reaction", {})
                 validated_strength = float(validation.get("validated_signal_strength", 0.0))
@@ -737,6 +797,7 @@ class OpportunityScanner:
                     + execution_quality_adjustment
                     + confidence_band_adjustment
                     + float(persistence.get("total_bonus", 0.0))
+                    - (0.06 if strategy_probation else 0.0)
                 )
             except Exception as exc:
                 logger.warning("candidate_scan_failed symbol=%s error=%s", symbol, exc)
@@ -771,6 +832,7 @@ class OpportunityScanner:
                     "target_pct": allocation["target_pct"],
                     "recommended_notional": allocation["recommended_notional"],
                     "recommended_qty": allocation["recommended_qty"],
+                    "compounding": compounding,
                     "goal_pressure_multiplier": goal_pressure_multiplier,
                     "realized_volatility_pct": candidate["realized_volatility_pct"],
                     "avg_dollar_volume": round(candidate["avg_dollar_volume"], 2),
@@ -780,6 +842,14 @@ class OpportunityScanner:
                     "persistence": persistence,
                     "execution_quality_score": round(sym_quality_score, 4),
                     "learning_recent_win_rate": round(recent_win_rate, 4),
+                    "strategy_disabled": strategy_disabled,
+                    "strategy_probation": strategy_probation,
+                    "strategy_state": "disabled" if strategy_disabled else "probation" if strategy_probation else "enabled",
+                    "reinforcement_weight": round(reinforcement, 4),
+                    "strategy_evolution_hint": {
+                        "mutation": strategy_mutation,
+                        "clone": strategy_clone,
+                    },
                     "tradable": tradable,
                     "risk_adjusted_score": round(risk_adjusted_score, 6),
                     "opportunity_score": round(risk_adjusted_score, 6),
@@ -823,14 +893,23 @@ class OpportunityScanner:
             sprint_active=sprint_active,
             dominant_regime=dominant_regime,
             regime_quality=regime_quality,
+            bucket_quality=bucket_quality,
         )
 
         bucket_weights = mission.get("capital_buckets", {})
         for item in opportunities:
             bucket = self._bucket_for(item)
             item["capital_bucket"] = bucket
+            item["capital_bucket_weight"] = float(bucket_weights.get(bucket, 0.25))
             bucket_boost = (float(bucket_weights.get(bucket, 0.25)) - 0.25) * 0.18
             item["opportunity_score"] = round(float(item["opportunity_score"]) + bucket_boost, 6)
+            item["why_trade_exists"] = {
+                "persistence_bonus": round(float((item.get("persistence") or {}).get("total_bonus", 0.0) or 0.0), 6),
+                "strategy_win_rate": round(float(item.get("learning_recent_win_rate", 0.0) or 0.0), 4),
+                "bucket_weight": round(float(item.get("capital_bucket_weight", 0.25) or 0.25), 4),
+                "execution_quality": round(float(item.get("execution_quality_score", 0.0) or 0.0), 4),
+                "strategy_state": str(item.get("strategy_state", "enabled")),
+            }
 
         ranked = sorted(opportunities, key=lambda item: item["opportunity_score"], reverse=True)
 
@@ -871,6 +950,84 @@ class OpportunityScanner:
         opportunity_persistence_store.record_batch(top)
 
         tradable = [item for item in top if item["tradable"]]
+        concentration_adjustments: list[dict] = []
+        pre_total_notional = sum(float(item["recommended_notional"]) for item in tradable)
+        strategy_notional: dict[str, float] = {}
+        for item in tradable:
+            key = str(item.get("recommended_trade", "UNKNOWN")).upper()
+            strategy_notional[key] = strategy_notional.get(key, 0.0) + float(item["recommended_notional"])
+
+        max_strategy_share = 0.55
+        for strategy, notional in strategy_notional.items():
+            cap = pre_total_notional * max_strategy_share
+            if pre_total_notional <= 0.0 or notional <= cap:
+                continue
+            scale = cap / max(notional, 1e-9)
+            for item in tradable:
+                if str(item.get("recommended_trade", "UNKNOWN")).upper() != strategy:
+                    continue
+                item["recommended_notional"] = round(float(item["recommended_notional"]) * scale, 2)
+                item["recommended_qty"] = round(float(item["recommended_qty"]) * scale, 6)
+                item["target_pct"] = round(max(0.005, float(item["target_pct"]) * scale), 6)
+                guard = item.get("concentration_guard") or {}
+                guard.update(
+                    {
+                        "applied": True,
+                        "strategy": strategy,
+                        "scale": round(scale, 4),
+                        "max_strategy_share": max_strategy_share,
+                    }
+                )
+                item["concentration_guard"] = guard
+            concentration_adjustments.append(
+                {
+                    "strategy": strategy,
+                    "before_notional": round(notional, 2),
+                    "after_cap_notional": round(cap, 2),
+                    "max_share": max_strategy_share,
+                }
+            )
+
+        # Cross-strategy correlation awareness guard.
+        correlation_adjustments: list[dict] = []
+        cluster_totals: dict[str, float] = {}
+        pre_corr_total_notional = sum(float(item["recommended_notional"]) for item in tradable)
+        for item in tradable:
+            cluster = f"{item.get('asset_class','unknown')}:{item.get('consensus_bias','NEUTRAL')}:{item.get('capital_bucket','core_trend')}"
+            item["correlation_cluster"] = cluster
+            cluster_totals[cluster] = cluster_totals.get(cluster, 0.0) + float(item["recommended_notional"])
+
+        max_cluster_share = 0.70
+        for cluster, notional in cluster_totals.items():
+            cap = pre_corr_total_notional * max_cluster_share
+            if pre_corr_total_notional <= 0.0 or notional <= cap:
+                continue
+            scale = cap / max(notional, 1e-9)
+            for item in tradable:
+                if item.get("correlation_cluster") != cluster:
+                    continue
+                item["recommended_notional"] = round(float(item["recommended_notional"]) * scale, 2)
+                item["recommended_qty"] = round(float(item["recommended_qty"]) * scale, 6)
+                item["target_pct"] = round(max(0.005, float(item["target_pct"]) * scale), 6)
+                guard = item.get("correlation_guard") or {}
+                guard.update(
+                    {
+                        "applied": True,
+                        "cluster": cluster,
+                        "scale": round(scale, 4),
+                        "max_cluster_share": max_cluster_share,
+                    }
+                )
+                item["correlation_guard"] = guard
+            correlation_adjustments.append(
+                {
+                    "cluster": cluster,
+                    "before_notional": round(notional, 2),
+                    "after_cap_notional": round(cap, 2),
+                    "max_share": max_cluster_share,
+                }
+            )
+
         total_notional = sum(float(item["recommended_notional"]) for item in tradable)
         capital_split: list[dict] = []
         for item in tradable:
@@ -878,6 +1035,7 @@ class OpportunityScanner:
             capital_split.append(
                 {
                     "symbol": item["symbol"],
+                    "strategy": str(item.get("recommended_trade", "UNKNOWN")),
                     "recommended_notional": round(notional, 2),
                     "allocation_weight": round(notional / total_notional, 6) if total_notional > 0 else 0.0,
                 }
@@ -888,13 +1046,25 @@ class OpportunityScanner:
             "passed_prefilter": len(prefiltered),
             "opportunities": top,
             "capital_allocation_recommendations": capital_split,
+            "capital_concentration_guard": {
+                "max_strategy_share": max_strategy_share,
+                "adjustments": concentration_adjustments,
+            },
+            "cross_strategy_correlation_guard": {
+                "max_cluster_share": max_cluster_share,
+                "adjustments": correlation_adjustments,
+            },
             "mission_policy": mission,
+            "strategy_evolution": evolution,
             "execution_quality": {
                 "sample_size": quality.get("sample_size", 0),
                 "asset_class_quality": asset_quality,
                 "regime_quality": regime_quality,
                 "strategy_quality": strategy_quality,
                 "confidence_band_quality": confidence_band_quality,
+                "bucket_quality": bucket_quality,
+                "disabled_strategies": sorted(disabled_strategies),
+                "probation_strategies": sorted(probation_strategies),
             },
         }
 

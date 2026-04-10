@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from collections import defaultdict
 
 from fastapi import APIRouter, Query
 
@@ -166,3 +167,57 @@ def get_runtime_readiness() -> dict:
 )
 def get_mission_intelligence() -> dict:
     return mission_intelligence_service.snapshot()
+
+
+@router.get(
+    "/truth-dashboard",
+    summary="Trading truth dashboard metrics (trades, win rate, PnL, and strategy leaders)",
+)
+def get_truth_dashboard(days: int = Query(default=7, ge=1, le=30)) -> dict:
+    now = datetime.now(tz=timezone.utc)
+    window_start = now - timedelta(days=days)
+
+    entries = execution_journal.recent(limit=2000)
+    window_entries = [
+        row
+        for row in entries
+        if isinstance(row.timestamp, datetime) and _as_utc(row.timestamp) is not None and _as_utc(row.timestamp) >= window_start
+    ]
+
+    trades = sum(1 for row in window_entries if bool(row.submitted))
+    settled = [row for row in window_entries if str(row.outcome_label or "").upper() in {"WIN", "LOSS"} and row.pnl is not None]
+    wins = sum(1 for row in settled if str(row.outcome_label or "").upper() == "WIN")
+    net_pnl = sum(float(row.pnl or 0.0) for row in settled)
+    win_rate = wins / max(len(settled), 1)
+
+    by_strategy: dict[str, list] = defaultdict(list)
+    for row in settled:
+        by_strategy[str(row.strategy or "UNKNOWN").upper()].append(row)
+
+    strategy_stats: list[dict] = []
+    for strategy, rows in by_strategy.items():
+        strategy_pnl = sum(float(item.pnl or 0.0) for item in rows)
+        strategy_wins = sum(1 for item in rows if str(item.outcome_label or "").upper() == "WIN")
+        strategy_stats.append(
+            {
+                "strategy": strategy,
+                "trades": len(rows),
+                "win_rate": round(strategy_wins / max(len(rows), 1), 4),
+                "net_pnl": round(strategy_pnl, 2),
+            }
+        )
+
+    best_strategy = max(strategy_stats, key=lambda item: item["net_pnl"], default=None)
+    worst_strategy = min(strategy_stats, key=lambda item: item["net_pnl"], default=None)
+
+    return {
+        "window_days": days,
+        "as_of": now.isoformat(),
+        "trades": trades,
+        "settled_trades": len(settled),
+        "win_rate": round(win_rate, 4),
+        "net_pnl": round(net_pnl, 2),
+        "best_strategy": best_strategy,
+        "worst_strategy": worst_strategy,
+        "strategy_breakdown": sorted(strategy_stats, key=lambda item: item["net_pnl"], reverse=True),
+    }

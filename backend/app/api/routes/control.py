@@ -24,6 +24,7 @@ from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.mission_intelligence_service import mission_intelligence_service
 from app.services.portfolio_manager import portfolio_manager
+from app.services.strategy_kill_switch_service import strategy_kill_switch_service
 from app.services.swarm.execution_bridge import execution_bridge
 
 router = APIRouter(prefix="/control", tags=["control"])
@@ -260,3 +261,28 @@ def simulate_mission(target_capital: float, timeframe_days: int, start_capital: 
         timeframe_days=timeframe_days,
         start_capital=start_capital,
     )
+
+
+@router.get("/strategy-kill-switch")
+def get_strategy_kill_switch_overrides() -> dict:
+    return {
+        "manual_force_enabled": strategy_kill_switch_service.list_force_enabled(),
+    }
+
+
+@router.post("/strategy-kill-switch/override")
+def set_strategy_kill_switch_override(strategy: str, force_enabled: bool = True) -> dict:
+    result = strategy_kill_switch_service.set_force_enabled(strategy=strategy, enabled=force_enabled)
+    return {
+        **result,
+        "manual_force_enabled": strategy_kill_switch_service.list_force_enabled(),
+    }
+
+
+@router.delete("/strategy-kill-switch/override")
+def clear_strategy_kill_switch_override(strategy: str) -> dict:
+    result = strategy_kill_switch_service.clear_force_enabled(strategy=strategy)
+    return {
+        **result,
+        "manual_force_enabled": strategy_kill_switch_service.list_force_enabled(),
+    }

@@ -24,6 +24,13 @@ export type OrchestratorCandidate = {
   risk_level: string;
   tradable: boolean;
   reasoning: string;
+  why_trade_exists?: {
+    persistence_bonus?: number;
+    strategy_win_rate?: number;
+    bucket_weight?: number;
+    execution_quality?: number;
+    strategy_state?: string;
+  };
 };
 
 export type OrchestratorScan = {
@@ -128,6 +135,7 @@ export default function OrchestratorPanel({
 }: Props) {
   const [filter, setFilter] = useState<FilterValue>("ALL");
   const [expanded, setExpanded] = useState(true);
+  const [whyOpenBySymbol, setWhyOpenBySymbol] = useState<Record<string, boolean>>({});
 
   const candidates = scan?.candidates ?? [];
   const filtered =
@@ -300,90 +308,130 @@ export default function OrchestratorPanel({
                     const isActionable =
                       c.action_label === "EXECUTE" || c.action_label === "SIMULATE";
                     return (
-                      <tr
-                        key={c.symbol}
-                        className="border-b border-terminal-line/15 hover:bg-white/[0.025] transition"
-                        title={c.reasoning}
-                      >
-                        <td className="py-2 pr-2 text-slate-700">{c.rank}</td>
-                        <td className="py-2 pr-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${strCfg.dot}`} />
-                            <span className="font-bold text-slate-100">{c.symbol}</span>
-                          </div>
-                          <div className="text-[9px] text-slate-600 mt-0.5 hidden xl:block">
-                            {c.asset_class} · {c.region}
-                          </div>
-                        </td>
+                      <>
+                        <tr
+                          key={c.symbol}
+                          className="border-b border-terminal-line/15 hover:bg-white/[0.025] transition"
+                          title={c.reasoning}
+                        >
+                          <td className="py-2 pr-2 text-slate-700">{c.rank}</td>
+                          <td className="py-2 pr-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${strCfg.dot}`} />
+                              <span className="font-bold text-slate-100">{c.symbol}</span>
+                            </div>
+                            <div className="text-[9px] text-slate-600 mt-0.5 hidden xl:block">
+                              {c.asset_class} · {c.region}
+                            </div>
+                          </td>
 
-                        {/* Score bar */}
-                        <td className="py-2 pr-3">
-                          <div className="flex items-center gap-1.5">
-                            <div className="h-1.5 w-12 rounded-full bg-black/50">
+                          {/* Score bar */}
+                          <td className="py-2 pr-3">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-1.5 w-12 rounded-full bg-black/50">
+                                <div
+                                  className="h-1.5 rounded-full bg-terminal-accent"
+                                  style={{ width: `${Math.round(c.composite_score * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-terminal-accent font-semibold">
+                                {Math.round(c.composite_score * 100)}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Strategy badge */}
+                          <td className="py-2 pr-3">
+                            <span
+                              className={`rounded border px-1.5 py-0.5 text-[9px] font-bold tracking-wide ${strCfg.bg} ${strCfg.color}`}
+                            >
+                              {strCfg.label}
+                            </span>
+                          </td>
+
+                          <td
+                            className={`py-2 pr-3 hidden lg:table-cell text-[10px] ${REGIME_COLORS[c.regime] ?? "text-slate-500"}`}
+                          >
+                            {c.regime.replace("_", " ")}
+                          </td>
+                          <td
+                            className={`py-2 pr-3 hidden xl:table-cell font-semibold ${BIAS_COLORS[c.consensus_bias] ?? "text-slate-400"}`}
+                          >
+                            {c.consensus_bias}
+                          </td>
+
+                          {/* News bar */}
+                          <td className="py-2 pr-3 hidden lg:table-cell">
+                            <div className="h-1 w-10 rounded-full bg-black/40">
                               <div
-                                className="h-1.5 rounded-full bg-terminal-accent"
-                                style={{ width: `${Math.round(c.composite_score * 100)}%` }}
+                                className="h-1 rounded-full bg-blue-400/70"
+                                style={{
+                                  width: `${Math.min(100, Math.round(c.news_strength * 200))}%`,
+                                }}
                               />
                             </div>
-                            <span className="text-terminal-accent font-semibold">
-                              {Math.round(c.composite_score * 100)}
-                            </span>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Strategy badge */}
-                        <td className="py-2 pr-3">
-                          <span
-                            className={`rounded border px-1.5 py-0.5 text-[9px] font-bold tracking-wide ${strCfg.bg} ${strCfg.color}`}
-                          >
-                            {strCfg.label}
-                          </span>
-                        </td>
+                          <td className="py-2 pr-3 hidden xl:table-cell text-slate-500">
+                            {(c.volatility * 100).toFixed(1)}%
+                          </td>
 
-                        <td
-                          className={`py-2 pr-3 hidden lg:table-cell text-[10px] ${REGIME_COLORS[c.regime] ?? "text-slate-500"}`}
-                        >
-                          {c.regime.replace("_", " ")}
-                        </td>
-                        <td
-                          className={`py-2 pr-3 hidden xl:table-cell font-semibold ${BIAS_COLORS[c.consensus_bias] ?? "text-slate-400"}`}
-                        >
-                          {c.consensus_bias}
-                        </td>
+                          {/* Action */}
+                          <td className={`py-2 pr-3 font-semibold text-[10px] ${actCfg.color}`}>
+                            {actCfg.label}
+                          </td>
 
-                        {/* News bar */}
-                        <td className="py-2 pr-3 hidden lg:table-cell">
-                          <div className="h-1 w-10 rounded-full bg-black/40">
-                            <div
-                              className="h-1 rounded-full bg-blue-400/70"
-                              style={{
-                                width: `${Math.min(100, Math.round(c.news_strength * 200))}%`,
-                              }}
-                            />
-                          </div>
-                        </td>
-
-                        <td className="py-2 pr-3 hidden xl:table-cell text-slate-500">
-                          {(c.volatility * 100).toFixed(1)}%
-                        </td>
-
-                        {/* Action */}
-                        <td className={`py-2 pr-3 font-semibold text-[10px] ${actCfg.color}`}>
-                          {actCfg.label}
-                        </td>
-
-                        {/* Run button */}
-                        <td className="py-2 text-right">
-                          {isActionable && (
-                            <button
-                              onClick={() => onRunSymbol(c.symbol)}
-                              className="rounded border border-terminal-accent/40 bg-terminal-accent/10 px-2.5 py-0.5 text-[10px] font-bold text-terminal-accent hover:bg-terminal-accent/25 transition"
-                            >
-                              ▶ RUN
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                          {/* Run button */}
+                          <td className="py-2 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() =>
+                                  setWhyOpenBySymbol((current) => ({
+                                    ...current,
+                                    [c.symbol]: !current[c.symbol],
+                                  }))
+                                }
+                                className="rounded border border-blue-500/40 bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-300 hover:bg-blue-500/20 transition"
+                              >
+                                WHY
+                              </button>
+                              {isActionable && (
+                                <button
+                                  onClick={() => onRunSymbol(c.symbol)}
+                                  className="rounded border border-terminal-accent/40 bg-terminal-accent/10 px-2.5 py-0.5 text-[10px] font-bold text-terminal-accent hover:bg-terminal-accent/25 transition"
+                                >
+                                  ▶ RUN
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {whyOpenBySymbol[c.symbol] && (
+                          <tr key={`${c.symbol}-why`} className="border-b border-terminal-line/10 bg-black/20">
+                            <td colSpan={10} className="px-2 py-2 text-[11px] text-slate-300">
+                              <div className="font-semibold text-terminal-accent">Why This Trade Exists</div>
+                              <div className="mt-1 grid grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-3">
+                                <div>
+                                  Persistence bonus: <span className="text-green-300">{(c.why_trade_exists?.persistence_bonus ?? 0).toFixed(4)}</span>
+                                </div>
+                                <div>
+                                  Strategy win rate: <span className="text-green-300">{((c.why_trade_exists?.strategy_win_rate ?? 0) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  Bucket weight: <span className="text-blue-300">{((c.why_trade_exists?.bucket_weight ?? 0) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  Execution quality: <span className="text-cyan-300">{((c.why_trade_exists?.execution_quality ?? 0) * 100).toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  Strategy state: <span className={`${(c.why_trade_exists?.strategy_state ?? "enabled") === "disabled" ? "text-red-300" : (c.why_trade_exists?.strategy_state ?? "enabled") === "probation" ? "text-amber-300" : "text-green-300"}`}>{c.why_trade_exists?.strategy_state ?? "enabled"}</span>
+                                </div>
+                              </div>
+                              <div className="mt-1 text-slate-500">{c.reasoning}</div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>

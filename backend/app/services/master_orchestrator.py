@@ -55,6 +55,7 @@ class OrchestratorCandidate:
     risk_level: str
     tradable: bool
     reasoning: str
+    why_trade_exists: dict | None = None
 
 
 @dataclass
@@ -326,6 +327,7 @@ class MasterOrchestrator:
                     risk_level=opp.get("risk_level", "MEDIUM"),
                     tradable=bool(opp.get("tradable", False)),
                     reasoning=", ".join(reasoning_parts),
+                    why_trade_exists=opp.get("why_trade_exists"),
                 )
             )
 

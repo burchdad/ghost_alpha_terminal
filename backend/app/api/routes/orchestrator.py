@@ -46,6 +46,7 @@ def _to_item(c: OrchestratorCandidate) -> OrchestratorCandidateItem:
         risk_level=c.risk_level,
         tradable=c.tradable,
         reasoning=c.reasoning,
+        why_trade_exists=c.why_trade_exists,
     )
 
 

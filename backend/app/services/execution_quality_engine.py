@@ -4,6 +4,7 @@ from collections import defaultdict
 from math import tanh
 
 from app.services.execution_journal import execution_journal
+from app.services.strategy_kill_switch_service import strategy_kill_switch_service
 
 
 class ExecutionQualityEngine:
@@ -38,6 +39,17 @@ class ExecutionQualityEngine:
             - slippage_flag_rate * 0.20
         )
         return max(0.0, min(raw, 1.0))
+
+    @staticmethod
+    def _bucket_for_strategy(strategy: str) -> str:
+        s = (strategy or "").upper()
+        if "SPRINT" in s:
+            return "high_risk_sprint"
+        if any(token in s for token in ("SCALP", "CRYPTO")):
+            return "crypto_momentum"
+        if any(token in s for token in ("MEAN", "DAY", "RANGE")):
+            return "mean_reversion"
+        return "core_trend"
 
     def summary(self, *, limit: int = 500) -> dict:
         entries = execution_journal.recent(limit=limit)
@@ -107,6 +119,66 @@ class ExecutionQualityEngine:
         strategy_quality = {key: aggregate(rows) for key, rows in by_strategy.items()}
         confidence_band_quality = {key: aggregate(rows) for key, rows in by_band.items()}
 
+        strategy_kill_switches: list[dict] = []
+        disabled_strategies: list[str] = []
+        probation_strategies: list[str] = []
+        strategy_states: list[dict] = []
+        for name, rows in by_strategy.items():
+            settled = [row for row in rows if row.outcome_label in {"WIN", "LOSS"} and row.pnl is not None]
+            recent_settled = settled[-50:]
+            if len(recent_settled) < 50:
+                continue
+            wins = sum(1 for row in recent_settled if str(row.outcome_label).upper() == "WIN")
+            win_rate = wins / 50.0
+            state = "enabled"
+            if win_rate < 0.45:
+                disabled_strategies.append(name)
+                state = "disabled"
+                strategy_kill_switches.append(
+                    {
+                        "strategy": name,
+                        "window_trades": 50,
+                        "win_rate": round(win_rate, 4),
+                        "threshold": 0.45,
+                        "disabled": True,
+                    }
+                )
+            elif win_rate < 0.52:
+                probation_strategies.append(name)
+                state = "probation"
+
+            strategy_states.append(
+                {
+                    "strategy": name,
+                    "window_trades": 50,
+                    "win_rate": round(win_rate, 4),
+                    "state": state,
+                    "probation_threshold": 0.52,
+                    "disable_threshold": 0.45,
+                }
+            )
+
+        manual_force_enabled = strategy_kill_switch_service.list_force_enabled()
+        manual_force_enabled_set = set(manual_force_enabled)
+        effective_disabled_strategies = sorted(
+            name for name in disabled_strategies if name not in manual_force_enabled_set
+        )
+        effective_probation_strategies = sorted(
+            name for name in probation_strategies if name not in manual_force_enabled_set
+        )
+
+        bucket_quality_raw: dict[str, list[float]] = defaultdict(list)
+        for strategy, stats in strategy_quality.items():
+            bucket = self._bucket_for_strategy(strategy)
+            bucket_quality_raw[bucket].append(float(stats.get("quality_score", 0.5) or 0.5))
+        bucket_quality = {
+            bucket: {
+                "quality_score": round(sum(scores) / max(len(scores), 1), 4),
+                "strategies": len(scores),
+            }
+            for bucket, scores in bucket_quality_raw.items()
+        }
+
         return {
             "sample_size": len(entries),
             "symbol_quality": symbol_quality,
@@ -114,6 +186,14 @@ class ExecutionQualityEngine:
             "regime_quality": regime_quality,
             "strategy_quality": strategy_quality,
             "confidence_band_quality": confidence_band_quality,
+            "disabled_strategies": effective_disabled_strategies,
+            "raw_disabled_strategies": sorted(disabled_strategies),
+            "probation_strategies": effective_probation_strategies,
+            "raw_probation_strategies": sorted(probation_strategies),
+            "manual_force_enabled": manual_force_enabled,
+            "strategy_kill_switches": strategy_kill_switches,
+            "strategy_states": strategy_states,
+            "bucket_quality": bucket_quality,
         }
 
 

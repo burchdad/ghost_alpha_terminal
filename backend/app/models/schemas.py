@@ -772,6 +772,7 @@ class OrchestratorCandidateItem(BaseModel):
     risk_level: str
     tradable: bool
     reasoning: str
+    why_trade_exists: dict | None = None
 
 
 class OrchestratorScanResponse(BaseModel):

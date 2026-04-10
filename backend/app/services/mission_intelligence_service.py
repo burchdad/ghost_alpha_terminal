@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime, timedelta, timezone
+from statistics import pstdev
 
 from app.core.config import settings
+from app.services.compounding_engine import compounding_engine
 from app.services.control_engine import control_engine
 from app.services.execution_quality_engine import execution_quality_engine
 from app.services.goal_engine import goal_engine
@@ -11,14 +14,87 @@ from app.services.master_orchestrator import master_orchestrator
 from app.services.mission_policy_engine import mission_policy_engine
 from app.services.parity_watchdog_service import parity_watchdog_service
 from app.services.portfolio_manager import portfolio_manager
+from app.services.strategy_evolution_service import strategy_evolution_service
+from app.services.execution_journal import execution_journal
 
 
 class MissionIntelligenceService:
+    @staticmethod
+    def _window_confidence(*, days: int, now: datetime) -> dict:
+        start = now - timedelta(days=days)
+        rows = [
+            row
+            for row in execution_journal.recent(limit=2000)
+            if isinstance(row.timestamp, datetime)
+            and row.timestamp >= start
+            and str(row.outcome_label or "").upper() in {"WIN", "LOSS"}
+            and row.pnl is not None
+        ]
+
+        if not rows:
+            return {
+                "days": days,
+                "score": 0.35,
+                "win_rate": 0.5,
+                "net_pnl": 0.0,
+                "sample_size": 0,
+            }
+
+        wins = sum(1 for row in rows if str(row.outcome_label).upper() == "WIN")
+        win_rate = wins / max(len(rows), 1)
+        net_pnl = sum(float(row.pnl or 0.0) for row in rows)
+        sufficiency = max(0.0, min(len(rows) / 60.0, 1.0))
+        pnl_term = max(0.0, min(0.5 + (net_pnl / max(len(rows), 1)) / 200.0, 1.0))
+        score = max(0.0, min(win_rate * 0.6 + sufficiency * 0.25 + pnl_term * 0.15, 1.0))
+        return {
+            "days": days,
+            "score": round(score, 4),
+            "win_rate": round(win_rate, 4),
+            "net_pnl": round(net_pnl, 2),
+            "sample_size": len(rows),
+        }
+
+    @staticmethod
+    def _system_confidence(*, quality: dict, drawdown_pct: float) -> dict:
+        sample_size = int(quality.get("sample_size", 0) or 0)
+        strategy_quality = quality.get("strategy_quality", {}) or {}
+        win_rates = [
+            float((stats or {}).get("win_rate", 0.5) or 0.5)
+            for stats in strategy_quality.values()
+            if int((stats or {}).get("settled", 0) or 0) > 0
+        ]
+
+        data_sufficiency = max(0.0, min(sample_size / 120.0, 1.0))
+        strategy_diversity = max(0.0, min(len(strategy_quality) / 6.0, 1.0))
+        win_rate_stability = 1.0
+        if len(win_rates) >= 2:
+            win_rate_stability = max(0.0, 1.0 - min(pstdev(win_rates) / 0.20, 1.0))
+        drawdown_pressure = max(0.0, 1.0 - min(max(drawdown_pct, 0.0) / 0.12, 1.0))
+
+        score = (
+            data_sufficiency * 0.30
+            + strategy_diversity * 0.20
+            + win_rate_stability * 0.25
+            + drawdown_pressure * 0.25
+        )
+        label = "HIGH" if score >= 0.72 else "MEDIUM" if score >= 0.52 else "LOW"
+        return {
+            "score": round(score, 4),
+            "label": label,
+            "factors": {
+                "data_sufficiency": round(data_sufficiency, 4),
+                "strategy_diversity": round(strategy_diversity, 4),
+                "win_rate_stability": round(win_rate_stability, 4),
+                "drawdown_pressure": round(drawdown_pressure, 4),
+            },
+        }
+
     def snapshot(self) -> dict:
         portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
         control = control_engine.status()
         goal = goal_engine.status(current_capital=float(portfolio.get("account_balance", 0.0) or 0.0))
         quality = execution_quality_engine.summary(limit=500)
+        now = datetime.now(tz=timezone.utc)
 
         latest = master_orchestrator.latest()
         regime = "RANGE_BOUND"
@@ -43,6 +119,35 @@ class MissionIntelligenceService:
             sprint_active=sprint_active,
             dominant_regime=regime,
             regime_quality=quality.get("regime_quality", {}),
+            bucket_quality=quality.get("bucket_quality", {}),
+        )
+
+        strategy_quality = quality.get("strategy_quality", {})
+        strategy_win_rates = [float((stats or {}).get("win_rate", 0.5) or 0.5) for stats in strategy_quality.values()]
+        avg_strategy_win_rate = sum(strategy_win_rates) / max(len(strategy_win_rates), 1)
+        compounding = compounding_engine.plan(
+            goal_pressure=goal_pressure,
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
+            recent_win_rate=avg_strategy_win_rate,
+        )
+        evolution = strategy_evolution_service.plan(strategy_quality=strategy_quality)
+        confidence_7d = self._window_confidence(days=7, now=now)
+        confidence_30d = self._window_confidence(days=30, now=now)
+        confidence_90d = self._window_confidence(days=90, now=now)
+        time_weighted_confidence = {
+            "short_term_7d": confidence_7d,
+            "mid_term_30d": confidence_30d,
+            "long_term_90d": confidence_90d,
+            "blended_score": round(
+                float(confidence_7d.get("score", 0.0)) * 0.35
+                + float(confidence_30d.get("score", 0.0)) * 0.40
+                + float(confidence_90d.get("score", 0.0)) * 0.25,
+                4,
+            ),
+        }
+        system_confidence = self._system_confidence(
+            quality=quality,
+            drawdown_pct=float(control.get("rolling_drawdown_pct", 0.0) or 0.0),
         )
 
         best_symbols = sorted(
@@ -57,6 +162,10 @@ class MissionIntelligenceService:
 
         return {
             "mission": mission,
+            "compounding": compounding,
+            "strategy_evolution": evolution,
+            "time_weighted_confidence": time_weighted_confidence,
+            "system_confidence": system_confidence,
             "sprint_governance": {
                 "active": sprint_active,
                 "manual_override": bool(settings.high_risk_sprint_mode_enabled),
@@ -75,6 +184,11 @@ class MissionIntelligenceService:
                 "regime_quality": quality.get("regime_quality", {}),
                 "strategy_quality": quality.get("strategy_quality", {}),
                 "confidence_band_quality": quality.get("confidence_band_quality", {}),
+                "bucket_quality": quality.get("bucket_quality", {}),
+                "disabled_strategies": quality.get("disabled_strategies", []),
+                "probation_strategies": quality.get("probation_strategies", []),
+                "strategy_kill_switches": quality.get("strategy_kill_switches", []),
+                "strategy_states": quality.get("strategy_states", []),
             },
             "parity_watchdog": parity_watchdog_service.status(),
         }
