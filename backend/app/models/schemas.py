@@ -493,6 +493,7 @@ class BrokerConnectionEntryResponse(BaseModel):
     provider: str
     label: str
     connected: bool
+    configured: bool = False
     connectable: bool
     disconnect_supported: bool
     auth_type: Literal["oauth", "api_key", "unavailable"]

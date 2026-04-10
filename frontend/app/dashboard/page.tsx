@@ -7,6 +7,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 type BrokerStatusEntry = {
   connected: boolean;
+  configured?: boolean;
   accounts?: string[];
 };
 
@@ -137,6 +138,7 @@ export default function DashboardPage() {
         <section className="grid gap-4 md:grid-cols-3">
           {cards.map((card) => {
             const connected = Boolean(card.status.connected);
+            const configured = Boolean(card.status.configured);
             const accounts = card.status.accounts ?? [];
             const busy = connecting === card.key;
             const canConnect = card.key === "alpaca";
@@ -145,7 +147,7 @@ export default function DashboardPage() {
               <article key={card.key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                 <h2 className="text-lg font-medium">{card.label}</h2>
                 <p className="mt-2 text-sm text-slate-300">
-                  Status: {connected ? "Connected" : "Not Connected"}
+                  Status: {connected ? "Connected" : configured ? "Platform Configured" : "Not Connected"}
                 </p>
                 {accounts.length > 0 ? (
                   <p className="mt-1 text-xs text-slate-400">Accounts: {accounts.join(", ")}</p>
@@ -172,7 +174,11 @@ export default function DashboardPage() {
                   ) : null}
                 </div>
                 {!canConnect ? (
-                  <p className="mt-2 text-xs text-slate-500">Placeholder connection flow.</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {configured
+                      ? "Configured at the platform level via backend API keys."
+                      : "Placeholder connection flow."}
+                  </p>
                 ) : null}
               </article>
             );

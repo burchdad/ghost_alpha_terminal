@@ -220,6 +220,7 @@ type BrokerConnectionEntry = {
   provider: string;
   label: string;
   connected: boolean;
+  configured?: boolean;
   connectable: boolean;
   disconnect_supported: boolean;
   auth_type: "oauth" | "api_key" | "unavailable";
@@ -1295,19 +1296,25 @@ export default function AlphaPage() {
           {brokerConnections.map((broker) => {
             const statusTone = broker.connected
               ? "border-green-500/50 bg-green-500/12 text-green-100"
-              : broker.connectable
-                ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
-                : "border-red-500/50 bg-red-500/12 text-red-100";
+              : broker.configured
+                ? "border-cyan-500/50 bg-cyan-500/12 text-cyan-100"
+                : broker.connectable
+                  ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
+                  : "border-red-500/50 bg-red-500/12 text-red-100";
             const statusDot = broker.connected
               ? "bg-green-400"
-              : broker.connectable
-                ? "bg-amber-400"
-                : "bg-red-400";
+              : broker.configured
+                ? "bg-cyan-400"
+                : broker.connectable
+                  ? "bg-amber-400"
+                  : "bg-red-400";
             const statusHint = broker.connected
               ? "Connected"
-              : broker.connectable
-                ? "Action needed"
-                : "Disconnected";
+              : broker.configured
+                ? "Platform configured"
+                : broker.connectable
+                  ? "Action needed"
+                  : "Disconnected";
 
             return (
               <button

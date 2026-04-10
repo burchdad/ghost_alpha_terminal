@@ -144,6 +144,7 @@ def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsRespons
                     provider=provider,
                     label="Alpaca",
                     connected=connected,
+                    configured=False,
                     connectable=oauth_ready,
                     disconnect_supported=True,
                     auth_type="oauth",
@@ -174,25 +175,30 @@ def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsRespons
                 BrokerConnectionEntryResponse(
                     provider=provider,
                     label="Coinbase",
-                    connected=coinbase_keys_present,
-                    connectable=True,
+                    connected=False,
+                    configured=coinbase_keys_present,
+                    connectable=False,
                     disconnect_supported=False,
                     auth_type="api_key",
-                    permissions="Crypto Trading (API Key Configured)" if coinbase_keys_present else "API Key Not Configured",
+                    permissions=(
+                        "Platform API Key Configured"
+                        if coinbase_keys_present
+                        else "API Key Not Configured"
+                    ),
                     mode="Live Trading" if coinbase_live_enabled else "Configured but Disabled",
                     status_label=(
-                        "Live Ready"
+                        "Platform Configured"
                         if coinbase_keys_present and coinbase_live_enabled
                         else "Configured (Disabled by Env)"
                         if coinbase_keys_present
-                        else "Ready for API Key"
+                        else "Not Configured"
                     ),
                     connect_path=None,
                     disconnect_path=None,
                     updated_at=connection.updated_at if connection else None,
                     last_error=connection.last_error if connection else None,
                     notes=(
-                        "Coinbase order signing/execution is active. Orders can route in LIVE_TRADING mode."
+                        "Coinbase is configured at the platform level via backend API keys. It is available for routed crypto execution, but it is not a user-authorized personal broker connection."
                         if coinbase_keys_present and coinbase_live_enabled
                         else "Coinbase keys are configured, but COINBASE_LIVE_TRADING_ENABLED is false."
                         if coinbase_keys_present
@@ -214,6 +220,7 @@ def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsRespons
                 provider=provider,
                 label=provider.replace("_", " ").title(),
                 connected=connected,
+                configured=False,
                 connectable=False,
                 disconnect_supported=False,
                 auth_type="unavailable",

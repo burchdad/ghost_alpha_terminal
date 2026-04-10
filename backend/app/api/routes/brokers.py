@@ -34,8 +34,11 @@ def broker_status(user: User = CurrentUser) -> dict:
             "accounts": alpaca_accounts,
         },
         "coinbase": {
-            "connected": coinbase_keys_present,
-            "accounts": ["live"] if coinbase_keys_present else [],
+            # Coinbase is currently configured at the platform level via API keys,
+            # not connected per user through an authorization flow.
+            "connected": False,
+            "accounts": [],
+            "configured": coinbase_keys_present,
         },
         "tradier": {
             "connected": False,
