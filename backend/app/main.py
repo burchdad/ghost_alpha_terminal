@@ -11,6 +11,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.brokers import router as brokers_router
 from app.api.routes.orchestrator import router as orchestrator_router
 from app.api.routes.backtest import router as backtest_router
+from app.api.routes.copilot_agent import router as copilot_agent_router
 from app.api.routes.control import router as control_router
 from app.api.routes.execute import router as execute_router
 from app.api.routes.forecast import router as forecast_router
@@ -59,6 +60,7 @@ app.include_router(backtest_router)
 app.include_router(execute_router)
 app.include_router(portfolio_router)
 app.include_router(control_router)
+app.include_router(copilot_agent_router)
 app.include_router(alpaca_router)
 app.include_router(agents_router)
 app.include_router(orchestrator_router)

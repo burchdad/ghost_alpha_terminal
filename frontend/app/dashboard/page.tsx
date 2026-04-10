@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import DashboardCopilot from "../../components/DashboardCopilot";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 // Display order: active/configured brokers first, planned integrations last.
@@ -213,6 +215,7 @@ export default function DashboardPage() {
           })}
         </section>
       </div>
+      <DashboardCopilot />
     </main>
   );
 }
