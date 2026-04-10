@@ -1,20 +1,20 @@
 from __future__ import annotations
 
+import secrets
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.api.deps.auth import CurrentUser
-from app.db.models import User
-from app.services.auth_service import auth_service
-import secrets
-import base64
-from datetime import datetime, timedelta, timezone
-from sqlalchemy import select
-from app.db.models import User2FASetup
+from app.core.config import settings
+from app.db.models import User, User2FASetup
 from app.db.session import get_session
+from app.services.auth_service import auth_service
+from app.services.twofa_service import twofa_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -41,12 +41,19 @@ class AuthResponse(BaseModel):
 class Initiate2FARequest(BaseModel):
     email: str
     twoFAMethod: str = Field(..., pattern="^(totp|sms|email)$")
+    phoneNumber: str | None = None
 
 
 class Verify2FASetupRequest(BaseModel):
     email: str
-    twoFAMethod: str
+    twoFAMethod: str = Field(..., pattern="^(totp|sms|email)$")
     verificationCode: str
+
+
+class Resend2FARequest(BaseModel):
+    email: str
+    twoFAMethod: str = Field(..., pattern="^(sms|email)$")
+    phoneNumber: str | None = None
 
 
 class SignupCompleteRequest(BaseModel):
@@ -63,75 +70,57 @@ def _serialize_user(user: User) -> UserResponse:
     return UserResponse(id=str(user.id), email=str(user.email))
 
 
-def _generate_totp_secret() -> str:
-    """Generate a TOTP secret (base32 encoded random bytes)"""
-    return base64.b32encode(secrets.token_bytes(20)).decode('utf-8')
-
-
 def _generate_verification_code() -> str:
-    """Generate a 6-digit verification code"""
     return str(secrets.randbelow(1000000)).zfill(6)
-
-
-def _generate_totp_qr_code(email: str, secret: str) -> str:
-    """Generate QR code URL for TOTP (placeholder - real implementation would use qrcode lib)"""
-    issuer = "Ghost Alpha Terminal"
-    label = f"{issuer} ({email})"
-    params = {
-        "secret": secret,
-        "issuer": issuer,
-        "algorithm": "SHA1",
-        "digits": 6,
-        "period": 30,
-    }
-    from urllib.parse import urlencode as encode
-    qs = encode(params)
-    return f"otpauth://totp/{label}?{qs}"
 
 @router.post("/signup", response_model=AuthResponse, summary="Create a user account and start a session")
 def signup(payload: SignupRequest, request: Request, response: Response) -> AuthResponse:
-    if "@" not in payload.email or len(payload.email.strip()) < 5:
-        raise HTTPException(status_code=400, detail="A valid email is required")
-    user = auth_service.create_user(email=payload.email, password=payload.password)
-    auth_service.issue_login_cookie(response=response, user_id=str(user.id), request=request)
-    return AuthResponse(user=_serialize_user(user))
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy signup is disabled. Use /auth/initiate-2fa, /auth/verify-2fa-setup, and /auth/signup-complete.",
+    )
 
 
 @router.post("/initiate-2fa", summary="Initiate 2FA setup during signup")
-def initiate_2fa(payload: Initiate2FARequest, request: Request, response: Response) -> dict:
-    """Initialize 2FA setup and create temporary record"""
+def initiate_2fa(payload: Initiate2FARequest) -> dict:
     email = auth_service._normalize_email(payload.email)
     if "@" not in email or len(email) < 5:
         raise HTTPException(status_code=400, detail="Valid email required")
 
+    method = payload.twoFAMethod
+    now = datetime.now(tz=timezone.utc)
+    expires_at = now + timedelta(minutes=settings.otp_code_ttl_minutes)
+
     with get_session() as session:
-        # Check if email already registered
         existing = session.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if existing is not None:
             raise HTTPException(status_code=409, detail="Email already registered")
 
-        # Delete any existing pending 2FA attempts
         session.query(User2FASetup).filter(User2FASetup.email == email).delete()
+        secret: str
+        code: str | None = None
+        qr_code_url: str | None = None
 
-        now = datetime.now(tz=timezone.utc)
-        expires_at = now + timedelta(minutes=15)  # 15 minute expiration
-
-        if payload.twoFAMethod == "totp":
-            secret = _generate_totp_secret()
-            qr_code_url = _generate_totp_qr_code(email, secret)
-        elif payload.twoFAMethod == "sms":
-            secret = payload.phone_number if hasattr(payload, 'phone_number') else "SMS"
-            qr_code_url = None
-        else:  # email
+        if method == "totp":
+            secret = twofa_service.generate_totp_secret()
+            qr_code_url = twofa_service.build_otpauth_uri(email=email, secret=secret)
+        elif method == "sms":
+            phone = (payload.phoneNumber or "").strip()
+            if not phone:
+                raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
+            secret = phone
+            code = _generate_verification_code()
+            twofa_service.send_sms_code(phone_number=phone, code=code)
+        else:
             secret = email
-            qr_code_url = None
+            code = _generate_verification_code()
+            twofa_service.send_email_code(to_email=email, code=code)
 
-        # Create temporary 2FA record
         record = User2FASetup(
             email=email,
-            twoFAMethod=payload.twoFAMethod,
-            twoFASecret=secret,
-            verificationCode=_generate_verification_code(),
+            twofa_method=method,
+            twofa_secret=secret,
+            verification_code=code,
             verified=False,
             created_at=now,
             expires_at=expires_at,
@@ -139,37 +128,80 @@ def initiate_2fa(payload: Initiate2FARequest, request: Request, response: Respon
         session.add(record)
         session.flush()
 
-        return {
-            "success": True,
-            "method": payload.twoFAMethod,
-            "secret": secret if payload.twoFAMethod == "totp" else None,
-            "qr_code": qr_code_url,
-        }
+    return {
+        "success": True,
+        "method": method,
+        "secret": secret if method == "totp" else None,
+        "qr_code": qr_code_url,
+        "expires_in_seconds": settings.otp_code_ttl_minutes * 60,
+    }
 
 
-@router.post("/verify-2fa-setup", summary="Verify 2FA code during signup")
-def verify_2fa_setup(payload: Verify2FASetupRequest) -> dict:
-    """Verify 2FA setup code"""
+@router.post("/resend-2fa-code", summary="Resend SMS or email verification code")
+def resend_2fa_code(payload: Resend2FARequest) -> dict:
     email = auth_service._normalize_email(payload.email)
+    method = payload.twoFAMethod
+    now = datetime.now(tz=timezone.utc)
 
     with get_session() as session:
         record = session.execute(
             select(User2FASetup)
             .where(User2FASetup.email == email)
-            .where(User2FASetup.twoFAMethod == payload.twoFAMethod)
+            .where(User2FASetup.twofa_method == method)
+        ).scalar_one_or_none()
+
+        if record is None:
+            raise HTTPException(status_code=404, detail="2FA setup not found")
+        if bool(record.verified):
+            raise HTTPException(status_code=400, detail="2FA is already verified")
+
+        code = _generate_verification_code()
+        if method == "sms":
+            phone = (payload.phoneNumber or record.twofa_secret or "").strip()
+            if not phone:
+                raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
+            record.twofa_secret = phone
+            twofa_service.send_sms_code(phone_number=phone, code=code)
+        else:
+            twofa_service.send_email_code(to_email=email, code=code)
+
+        record.verification_code = code
+        record.expires_at = now + timedelta(minutes=settings.otp_code_ttl_minutes)
+
+    return {"success": True, "message": "Verification code sent"}
+
+
+@router.post("/verify-2fa-setup", summary="Verify 2FA code during signup")
+def verify_2fa_setup(payload: Verify2FASetupRequest) -> dict:
+    email = auth_service._normalize_email(payload.email)
+    method = payload.twoFAMethod
+    raw_code = str(payload.verificationCode or "").strip()
+
+    with get_session() as session:
+        record = session.execute(
+            select(User2FASetup)
+            .where(User2FASetup.email == email)
+            .where(User2FASetup.twofa_method == method)
         ).scalar_one_or_none()
 
         if record is None:
             raise HTTPException(status_code=404, detail="2FA setup not found")
 
         now = datetime.now(tz=timezone.utc)
-        if record.expires_at < now:
+        expires_at = record.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= now:
             raise HTTPException(status_code=410, detail="2FA setup expired")
 
-        # In production, verify actual TOTP/SMS/email code
-        # For now, check against the code we generated
-        if payload.verificationCode != record.verificationCode:
-            raise HTTPException(status_code=400, detail="Invalid verification code")
+        if method == "totp":
+            if not twofa_service.verify_totp(secret=record.twofa_secret, code=raw_code):
+                raise HTTPException(status_code=400, detail="Invalid authenticator code")
+        else:
+            if not record.verification_code:
+                raise HTTPException(status_code=400, detail="Verification code is not initialized")
+            if raw_code != str(record.verification_code):
+                raise HTTPException(status_code=400, detail="Invalid verification code")
 
         record.verified = True
 
@@ -178,18 +210,20 @@ def verify_2fa_setup(payload: Verify2FASetupRequest) -> dict:
 
 @router.post("/signup-complete", response_model=AuthResponse, summary="Complete account creation")
 def signup_complete(payload: SignupCompleteRequest, request: Request, response: Response) -> AuthResponse:
-    """Complete account creation after 2FA verification"""
     email = auth_service._normalize_email(payload.email)
 
     if not payload.agreePrivacy or not payload.agreeTerms or not payload.agreeRisk:
         raise HTTPException(status_code=400, detail="All agreements must be accepted")
 
     with get_session() as session:
-        # Verify 2FA was completed
+        existing = session.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        if existing is not None:
+            raise HTTPException(status_code=409, detail="Email already registered")
+
         twofa_record = session.execute(
             select(User2FASetup)
             .where(User2FASetup.email == email)
-            .where(User2FASetup.twoFAMethod == payload.twoFAMethod)
+            .where(User2FASetup.twofa_method == payload.twoFAMethod)
         ).scalar_one_or_none()
 
         if twofa_record is None or not twofa_record.verified:
@@ -205,7 +239,7 @@ def signup_complete(payload: SignupCompleteRequest, request: Request, response: 
             phone_number=payload.phoneNumber,
             twofa_method=payload.twoFAMethod,
             twofa_verified=True,
-            twofa_secret=twofa_record.twoFASecret,
+            twofa_secret=twofa_record.twofa_secret,
             privacy_policy_accepted=payload.agreePrivacy,
             terms_of_use_accepted=payload.agreeTerms,
             risk_disclosure_accepted=payload.agreeRisk,
@@ -216,8 +250,6 @@ def signup_complete(payload: SignupCompleteRequest, request: Request, response: 
         )
         session.add(user)
         session.flush()
-
-        # Clean up temporary 2FA record
         session.query(User2FASetup).filter(User2FASetup.email == email).delete()
 
     # Issue session

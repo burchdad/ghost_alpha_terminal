@@ -28,6 +28,31 @@ export default function SignupPage() {
   const [totpQRCode, setTotpQRCode] = useState("");
   const [twoFAVerificationCode, setTwoFAVerificationCode] = useState("");
 
+  async function handleResendCode() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${API_BASE}/auth/resend-2fa-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          twoFAMethod,
+          phoneNumber,
+        }),
+      });
+
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        setError(parseApiError(payload, "Failed to resend code"));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Step 3: Agreements
   const [agreePrivacy, setAgreePrivacy] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -70,12 +95,18 @@ export default function SignupPage() {
       return;
     }
 
+    if (twoFAMethod === "sms" && !phoneNumber.trim()) {
+      setError("Phone number is required when SMS 2FA is selected");
+      setLoading(false);
+      return;
+    }
+
     try {
       // Initialize 2FA setup
       const res = await fetch(`${API_BASE}/auth/initiate-2fa`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, twoFAMethod }),
+        body: JSON.stringify({ email, twoFAMethod, phoneNumber }),
       });
 
       if (!res.ok) {
@@ -171,7 +202,7 @@ export default function SignupPage() {
       }
 
       setStep("complete");
-      setTimeout(() => router.push("/dashboard"), 2000);
+      setTimeout(() => router.push("/brokerages"), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
     } finally {
@@ -231,6 +262,34 @@ export default function SignupPage() {
                   className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
                   placeholder="+1 (555) 123-4567"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs uppercase tracking-wider text-slate-400 mb-3">
+                  2FA Method
+                </label>
+                <div className="space-y-2">
+                  {(["totp", "sms", "email"] as const).map((method) => (
+                    <label key={method} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="twofa_method"
+                        value={method}
+                        checked={twoFAMethod === method}
+                        onChange={(e) => setTwoFAMethod(e.target.value as TwoFAMethod)}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-slate-300 capitalize">
+                        {method === "totp" && "Authenticator App (Recommended)"}
+                        {method === "sms" && "Text Message (SMS)"}
+                        {method === "email" && "Email Code"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {twoFAMethod === "sms" && !phoneNumber.trim() ? (
+                  <p className="mt-2 text-xs text-amber-300">Phone number is required for SMS verification.</p>
+                ) : null}
               </div>
 
               <div>
@@ -294,28 +353,14 @@ export default function SignupPage() {
               )}
 
               <div>
-                <label className="block text-xs uppercase tracking-wider text-slate-400 mb-3">
-                  2FA Method
+                <label className="block text-xs uppercase tracking-wider text-slate-400 mb-2">
+                  Selected 2FA Method
                 </label>
-                <div className="space-y-2">
-                  {(["totp", "sms", "email"] as const).map((method) => (
-                    <label key={method} className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="twofa_method"
-                        value={method}
-                        checked={twoFAMethod === method}
-                        onChange={(e) => setTwoFAMethod(e.target.value as TwoFAMethod)}
-                        className="w-4 h-4"
-                      />
-                      <span className="text-sm text-slate-300 capitalize">
-                        {method === "totp" && "Authenticator App (Recommended)"}
-                        {method === "sms" && "Text Message (SMS)"}
-                        {method === "email" && "Email Code"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                <p className="text-sm text-slate-300 rounded-lg border border-slate-700 bg-slate-900/50 px-3 py-2">
+                  {twoFAMethod === "totp" && "Authenticator App"}
+                  {twoFAMethod === "sms" && "Text Message (SMS)"}
+                  {twoFAMethod === "email" && "Email Code"}
+                </p>
               </div>
 
               {twoFAMethod === "totp" && totpQRCode && (
@@ -348,9 +393,20 @@ export default function SignupPage() {
                   required
                 />
                 <p className="text-xs text-slate-500 mt-2">
-                  Enter the 6-digit code from your authenticator app or SMS
+                  Enter the 6-digit code from your {twoFAMethod === "totp" ? "authenticator app" : twoFAMethod}
                 </p>
               </div>
+
+              {twoFAMethod !== "totp" ? (
+                <button
+                  type="button"
+                  onClick={() => void handleResendCode()}
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-600 disabled:opacity-50"
+                >
+                  {loading ? "Sending..." : "Resend Code"}
+                </button>
+              ) : null}
 
               <button
                 type="submit"
@@ -480,7 +536,7 @@ export default function SignupPage() {
             <div className="text-4xl">✓</div>
             <h1 className="text-2xl font-bold text-slate-100">Account Created!</h1>
             <p className="text-sm text-slate-300">
-              Your account is ready. Redirecting to dashboard...
+              Your account is ready. Redirecting to brokerage setup...
             </p>
             <p className="text-xs text-slate-500">Redirecting in 2 seconds...</p>
           </div>

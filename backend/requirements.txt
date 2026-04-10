@@ -13,3 +13,5 @@ SQLAlchemy==2.0.40
 psycopg[binary]==3.2.6
 websocket-client==1.8.0
 coinbase-advanced-py==1.8.2
+pyotp==2.9.0
+twilio==9.5.2

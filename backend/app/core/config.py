@@ -67,6 +67,26 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:3000"
 
     # ---------------------------------------------------------------------------
+    # 2FA / OTP settings
+    # ---------------------------------------------------------------------------
+    otp_code_ttl_minutes: int = 10
+    twofa_totp_issuer: str = "Ghost Alpha Terminal"
+
+    # Twilio SMS
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_from_number: str = ""
+
+    # SMTP email
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_starttls: bool = True
+    smtp_use_ssl: bool = False
+
+    # ---------------------------------------------------------------------------
     # Coinbase Advanced Trade API credentials
     # ---------------------------------------------------------------------------
     coinbase_api_key_name: str = ""
