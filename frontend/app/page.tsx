@@ -27,12 +27,6 @@ export default function HomePage() {
             </span>
           </div>
           <nav className="flex items-center gap-4 text-xs text-slate-300">
-            <Link href="/dashboard" className="transition hover:text-terminal-accent">
-              Market Dashboard
-            </Link>
-            <Link href="/terminal" className="transition hover:text-terminal-accent">
-              Deep Terminal
-            </Link>
             <Link href="/login" className="transition hover:text-terminal-accent">
               Login
             </Link>
@@ -81,16 +75,16 @@ export default function HomePage() {
 
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/dashboard"
+                href="/signup"
                 className="inline-flex items-center rounded-lg border border-cyan-300/60 bg-cyan-300 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110"
               >
-                Open Market Intelligence
+                Create Account
               </Link>
               <Link
-                href="/terminal"
+                href="/login"
                 className="inline-flex items-center rounded-lg border border-terminal-line px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-terminal-accent/70 hover:text-terminal-accent"
               >
-                Open Deep Terminal
+                Login to Continue
               </Link>
             </div>
           </div>
