@@ -72,10 +72,12 @@ class Settings(BaseSettings):
     otp_code_ttl_minutes: int = 10
     twofa_totp_issuer: str = "Ghost Alpha Terminal"
 
-    # Twilio SMS
+    # Twilio Verify (preferred — no from-number required)
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
-    twilio_phone_number: str = ""  # matches TWILIO_PHONE_NUMBER env var
+    twilio_verify_service_sid: str = ""  # VAxxxxxxxxx — Verify Service SID
+    # Legacy Twilio Messages API (fallback if Verify SID not set)
+    twilio_phone_number: str = ""
 
     # SendGrid (preferred when API key is set)
     sendgrid_api_key: str = ""

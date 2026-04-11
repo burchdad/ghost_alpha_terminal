@@ -109,8 +109,8 @@ def initiate_2fa(payload: Initiate2FARequest) -> dict:
             if not phone:
                 raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
             secret = phone
-            code = _generate_verification_code()
-            twofa_service.send_sms_code(phone_number=phone, code=code)
+            # Twilio Verify manages the code — we don't generate or store one
+            twofa_service.send_sms_verify(phone_number=phone)
         else:
             secret = email
             code = _generate_verification_code()
@@ -155,17 +155,19 @@ def resend_2fa_code(payload: Resend2FARequest) -> dict:
         if bool(record.verified):
             raise HTTPException(status_code=400, detail="2FA is already verified")
 
-        code = _generate_verification_code()
         if method == "sms":
             phone = (payload.phoneNumber or record.twofa_secret or "").strip()
             if not phone:
                 raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
             record.twofa_secret = phone
-            twofa_service.send_sms_code(phone_number=phone, code=code)
+            twofa_service.send_sms_verify(phone_number=phone)
+            # Twilio Verify manages the code; clear any stale stored code
+            record.verification_code = None
         else:
+            code = _generate_verification_code()
             twofa_service.send_email_code(to_email=email, code=code)
+            record.verification_code = code
 
-        record.verification_code = code
         record.expires_at = now + timedelta(minutes=settings.otp_code_ttl_minutes)
 
     return {"success": True, "message": "Verification code sent"}
@@ -197,6 +199,11 @@ def verify_2fa_setup(payload: Verify2FASetupRequest) -> dict:
         if method == "totp":
             if not twofa_service.verify_totp(secret=record.twofa_secret, code=raw_code):
                 raise HTTPException(status_code=400, detail="Invalid authenticator code")
+        elif method == "sms":
+            # Twilio Verify owns the code — delegate check to their API
+            phone = str(record.twofa_secret or "")
+            if not twofa_service.verify_sms_code(phone_number=phone, code=raw_code):
+                raise HTTPException(status_code=400, detail="Invalid or expired SMS code")
         else:
             if not record.verification_code:
                 raise HTTPException(status_code=400, detail="Verification code is not initialized")
@@ -282,19 +289,16 @@ def me(user: User = CurrentUser) -> AuthResponse:
 def provider_status() -> dict:
     """Returns True/False for each provider based on whether required env vars are non-empty.
     Useful for diagnosing misconfigured credentials without exposing values."""
-    twilio_ok = bool(
-        settings.twilio_account_sid
-        and settings.twilio_auth_token
-        and settings.twilio_phone_number
-    )
+    twilio_creds_ok = bool(settings.twilio_account_sid and settings.twilio_auth_token)
+    verify_ok = twilio_creds_ok and bool(settings.twilio_verify_service_sid)
     sendgrid_ok = bool(settings.sendgrid_api_key and settings.sendgrid_from)
     smtp_ok = bool(settings.smtp_host and settings.smtp_from_email)
 
     return {
         "totp": True,  # always available (pyotp is bundled)
-        "sms_twilio": twilio_ok,
+        "sms_twilio_verify": verify_ok,
         "twilio_account_sid_prefix": (settings.twilio_account_sid or "")[:6] + "…" if settings.twilio_account_sid else "(not set)",
-        "twilio_phone_number": settings.twilio_phone_number or "(not set)",
+        "twilio_verify_service_sid_prefix": (settings.twilio_verify_service_sid or "")[:6] + "…" if settings.twilio_verify_service_sid else "(not set)",
         "email_sendgrid": sendgrid_ok,
         "email_smtp": smtp_ok,
         "sendgrid_from": settings.sendgrid_from or "(not set)",

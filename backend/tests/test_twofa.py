@@ -95,33 +95,72 @@ class TestTwoFAServiceSMS(unittest.TestCase):
 
     @patch("app.services.twofa_service.settings")
     @patch("app.services.twofa_service.TwilioClient")
-    def test_send_sms_code_calls_twilio(self, mock_client_cls, mock_settings):
+    def test_send_sms_verify_calls_twilio_verify_api(self, mock_client_cls, mock_settings):
         mock_settings.twilio_account_sid = "ACtest123"
         mock_settings.twilio_auth_token = "authtoken"
-        mock_settings.twilio_phone_number = "+15550001111"
-        mock_settings.otp_code_ttl_minutes = 10
+        mock_settings.twilio_verify_service_sid = "VAtest456"
 
         mock_instance = MagicMock()
         mock_client_cls.return_value = mock_instance
 
-        self.svc.send_sms_code(phone_number="+12223334444", code="123456")
+        self.svc.send_sms_verify(phone_number="+12223334444")
 
         mock_client_cls.assert_called_once_with("ACtest123", "authtoken")
-        mock_instance.messages.create.assert_called_once()
-        call_kwargs = mock_instance.messages.create.call_args.kwargs
-        self.assertIn("123456", call_kwargs["body"])
-        self.assertEqual(call_kwargs["to"], "+12223334444")
-        self.assertEqual(call_kwargs["from_"], "+15550001111")
+        mock_instance.verify.v2.services.assert_called_once_with("VAtest456")
+        mock_instance.verify.v2.services().verifications.create.assert_called_once_with(
+            to="+12223334444", channel="sms"
+        )
 
     @patch("app.services.twofa_service.settings")
-    def test_send_sms_raises_503_when_not_configured(self, mock_settings):
-        mock_settings.twilio_account_sid = ""
-        mock_settings.twilio_auth_token = ""
-        mock_settings.twilio_phone_number = ""
+    @patch("app.services.twofa_service.TwilioClient")
+    def test_verify_sms_code_returns_true_when_approved(self, mock_client_cls, mock_settings):
+        mock_settings.twilio_account_sid = "ACtest123"
+        mock_settings.twilio_auth_token = "authtoken"
+        mock_settings.twilio_verify_service_sid = "VAtest456"
+
+        mock_instance = MagicMock()
+        mock_client_cls.return_value = mock_instance
+        mock_instance.verify.v2.services().verification_checks.create.return_value = \
+            MagicMock(status="approved")
+
+        result = self.svc.verify_sms_code(phone_number="+12223334444", code="123456")
+        self.assertTrue(result)
+
+    @patch("app.services.twofa_service.settings")
+    @patch("app.services.twofa_service.TwilioClient")
+    def test_verify_sms_code_returns_false_when_not_approved(self, mock_client_cls, mock_settings):
+        mock_settings.twilio_account_sid = "ACtest123"
+        mock_settings.twilio_auth_token = "authtoken"
+        mock_settings.twilio_verify_service_sid = "VAtest456"
+
+        mock_instance = MagicMock()
+        mock_client_cls.return_value = mock_instance
+        mock_instance.verify.v2.services().verification_checks.create.return_value = \
+            MagicMock(status="pending")
+
+        result = self.svc.verify_sms_code(phone_number="+12223334444", code="000000")
+        self.assertFalse(result)
+
+    @patch("app.services.twofa_service.settings")
+    def test_send_sms_raises_503_when_verify_sid_not_configured(self, mock_settings):
+        mock_settings.twilio_account_sid = "ACtest"
+        mock_settings.twilio_auth_token = "token"
+        mock_settings.twilio_verify_service_sid = ""
         from fastapi import HTTPException
         with self.assertRaises(HTTPException) as ctx:
-            self.svc.send_sms_code(phone_number="+1111", code="000000")
+            self.svc.send_sms_verify(phone_number="+1111")
         self.assertEqual(ctx.exception.status_code, 503)
+
+    @patch("app.services.twofa_service.settings")
+    def test_send_sms_raises_503_when_credentials_not_configured(self, mock_settings):
+        mock_settings.twilio_account_sid = ""
+        mock_settings.twilio_auth_token = ""
+        mock_settings.twilio_verify_service_sid = "VAtest"
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as ctx:
+            self.svc.send_sms_verify(phone_number="+1111")
+        # 503 = creds not configured, 500 = dependency error; both are server-side rejections
+        self.assertIn(ctx.exception.status_code, (500, 503))
 
 
 class TestTwoFAServiceEmail(unittest.TestCase):
@@ -207,7 +246,7 @@ class TestInitiate2FA(unittest.TestCase):
             "phoneNumber": "+12223334444",
         })
         self.assertEqual(resp.status_code, 200, resp.text)
-        mock_svc.send_sms_code.assert_called_once()
+        mock_svc.send_sms_verify.assert_called_once()
 
     @patch("app.api.routes.auth.twofa_service")
     def test_email_flow_sends_code(self, mock_svc):
@@ -279,28 +318,23 @@ class TestVerify2FASetup(unittest.TestCase):
     @patch("app.api.routes.auth.twofa_service")
     def test_sms_valid_code_returns_success(self, mock_svc):
         email = _fresh_email()
-        mock_svc.send_sms_code = MagicMock()
-        client.post("/auth/initiate-2fa", json={
+        mock_svc.send_sms_verify = MagicMock()
+        mock_svc.verify_sms_code = MagicMock(return_value=True)
+        # Initiate — Twilio Verify sends the code (mocked)
+        init_resp = client.post("/auth/initiate-2fa", json={
             "email": email,
             "twoFAMethod": "sms",
             "phoneNumber": "+12223334444",
         })
-        # Fetch the stored code from the DB
-        from app.db.session import get_session
-        from app.db.models import User2FASetup
-        from sqlalchemy import select
-        with get_session() as sess:
-            rec = sess.execute(
-                select(User2FASetup).where(User2FASetup.email == email)
-            ).scalar_one()
-            stored_code = rec.verification_code
-
+        self.assertEqual(init_resp.status_code, 200, init_resp.text)
+        # Verify — Twilio Verify approves the code (mocked)
         resp = client.post("/auth/verify-2fa-setup", json={
             "email": email,
             "twoFAMethod": "sms",
-            "verificationCode": stored_code,
+            "verificationCode": "123456",
         })
         self.assertEqual(resp.status_code, 200, resp.text)
+        mock_svc.verify_sms_code.assert_called_once()
 
     def test_unknown_email_returns_404(self):
         resp = client.post("/auth/verify-2fa-setup", json={

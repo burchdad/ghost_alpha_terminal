@@ -51,22 +51,39 @@ class TwoFAService:
         totp = pyotp.TOTP(secret)
         return bool(totp.verify(candidate, valid_window=1))
 
-    def send_sms_code(self, *, phone_number: str, code: str) -> None:
-        if not settings.twilio_account_sid or not settings.twilio_auth_token or not settings.twilio_phone_number:
-            raise HTTPException(status_code=503, detail="SMS provider is not configured")
+    def _twilio_client(self) -> "TwilioClient":
         if TwilioClient is None:
             raise HTTPException(status_code=500, detail="Twilio dependency is not installed")
+        if not settings.twilio_account_sid or not settings.twilio_auth_token:
+            raise HTTPException(status_code=503, detail="Twilio credentials are not configured")
+        return TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
 
-        body = f"Your Ghost Alpha Terminal verification code is {code}. It expires in {settings.otp_code_ttl_minutes} minutes."
+    def send_sms_verify(self, *, phone_number: str) -> None:
+        """Send OTP via Twilio Verify (no from-number needed, Twilio manages the code)."""
+        if not settings.twilio_verify_service_sid:
+            raise HTTPException(status_code=503, detail="TWILIO_VERIFY_SERVICE_SID is not configured")
         try:
-            client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
-            client.messages.create(
-                body=body,
-                from_=settings.twilio_phone_number,
-                to=phone_number,
-            )
+            client = self._twilio_client()
+            client.verify.v2.services(settings.twilio_verify_service_sid) \
+                .verifications.create(to=phone_number, channel="sms")
+        except HTTPException:
+            raise
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Failed to send SMS code: {exc}") from exc
+            raise HTTPException(status_code=502, detail=f"Failed to send SMS verification: {exc}") from exc
+
+    def verify_sms_code(self, *, phone_number: str, code: str) -> bool:
+        """Check OTP via Twilio Verify VerificationCheck. Returns True if approved."""
+        if not settings.twilio_verify_service_sid:
+            raise HTTPException(status_code=503, detail="TWILIO_VERIFY_SERVICE_SID is not configured")
+        try:
+            client = self._twilio_client()
+            result = client.verify.v2.services(settings.twilio_verify_service_sid) \
+                .verification_checks.create(to=phone_number, code=code)
+            return result.status == "approved"
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"Failed to verify SMS code: {exc}") from exc
 
     def send_email_code(self, *, to_email: str, code: str) -> None:
         subject = "Your Ghost Alpha Terminal verification code"
