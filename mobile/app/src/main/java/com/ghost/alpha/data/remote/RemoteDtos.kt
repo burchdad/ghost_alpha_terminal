@@ -497,3 +497,74 @@ data class DecisionAuditDetailResponseDto(
     @Json(name = "context_snapshot") val contextSnapshot: Map<String, Any?> = emptyMap(),
     @Json(name = "explainability_snapshot") val explainabilitySnapshot: Map<String, Any?> = emptyMap()
 )
+
+// Autonomy / Control DTOs
+
+@JsonClass(generateAdapter = true)
+data class RejectedTradeLogDto(
+    val timestamp: String,
+    val symbol: String,
+    val reason: String
+)
+
+@JsonClass(generateAdapter = true)
+data class ControlStatusResponseDto(
+    @Json(name = "trading_enabled") val tradingEnabled: Boolean,
+    @Json(name = "system_status") val systemStatus: String,
+    val mode: String,
+    @Json(name = "daily_pnl") val dailyPnl: Double,
+    @Json(name = "daily_loss") val dailyLoss: Double,
+    @Json(name = "daily_loss_limit") val dailyLossLimit: Double,
+    @Json(name = "daily_loss_limit_pct") val dailyLossLimitPct: Double,
+    @Json(name = "rolling_drawdown") val rollingDrawdown: Double,
+    @Json(name = "rolling_drawdown_pct") val rollingDrawdownPct: Double,
+    @Json(name = "max_drawdown_limit_pct") val maxDrawdownLimitPct: Double,
+    @Json(name = "rejected_trades") val rejectedTrades: List<RejectedTradeLogDto> = emptyList(),
+    @Json(name = "autonomous_enabled") val autonomousEnabled: Boolean = false,
+    @Json(name = "autonomous_interval_seconds") val autonomousIntervalSeconds: Int = 300,
+    @Json(name = "autonomous_symbols") val autonomousSymbols: List<String> = emptyList(),
+    @Json(name = "autonomous_cycles_run") val autonomousCyclesRun: Int = 0,
+    @Json(name = "autonomous_last_run_at") val autonomousLastRunAt: String? = null,
+    @Json(name = "autonomous_last_error") val autonomousLastError: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AutonomousModeStatusResponseDto(
+    val enabled: Boolean,
+    @Json(name = "interval_seconds") val intervalSeconds: Int,
+    val symbols: List<String>,
+    @Json(name = "last_run_at") val lastRunAt: String? = null,
+    @Json(name = "last_error") val lastError: String? = null,
+    @Json(name = "cycles_run") val cyclesRun: Int = 0
+)
+
+@JsonClass(generateAdapter = true)
+data class AutonomousModeUpdateRequestDto(
+    val enabled: Boolean? = null,
+    @Json(name = "interval_seconds") val intervalSeconds: Int? = null,
+    val symbols: List<String>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class KillSwitchUpdateRequestDto(
+    @Json(name = "trading_enabled") val tradingEnabled: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+data class KillSwitchUpdateResponseDto(
+    @Json(name = "trading_enabled") val tradingEnabled: Boolean,
+    @Json(name = "system_status") val systemStatus: String
+)
+
+@JsonClass(generateAdapter = true)
+data class RiskLimitUpdateRequestDto(
+    @Json(name = "daily_loss_limit_pct") val dailyLossLimitPct: Double,
+    @Json(name = "max_drawdown_limit_pct") val maxDrawdownLimitPct: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class RiskLimitUpdateResponseDto(
+    @Json(name = "daily_loss_limit_pct") val dailyLossLimitPct: Double,
+    @Json(name = "max_drawdown_limit_pct") val maxDrawdownLimitPct: Double,
+    @Json(name = "daily_loss_limit") val dailyLossLimit: Double
+)

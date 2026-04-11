@@ -22,6 +22,7 @@ import com.ghost.alpha.presentation.screens.CopilotCommandScreen
 import com.ghost.alpha.presentation.screens.DashboardScreen
 import com.ghost.alpha.presentation.screens.LoginScreen
 import com.ghost.alpha.presentation.screens.AuditTrailScreen
+import com.ghost.alpha.presentation.screens.AutonomyControlCenterScreen
 import com.ghost.alpha.presentation.screens.PerformanceIntelligenceScreen
 import com.ghost.alpha.presentation.screens.SwarmTerminalScreen
 import com.ghost.alpha.presentation.screens.TradingScreen
@@ -32,6 +33,7 @@ import com.ghost.alpha.presentation.viewmodel.BacktestViewModel
 import com.ghost.alpha.presentation.viewmodel.BrokerViewModel
 import com.ghost.alpha.presentation.viewmodel.DashboardViewModel
 import com.ghost.alpha.presentation.viewmodel.AuditTrailViewModel
+import com.ghost.alpha.presentation.viewmodel.AutonomyViewModel
 import com.ghost.alpha.presentation.viewmodel.PerformanceViewModel
 import com.ghost.alpha.presentation.viewmodel.SwarmViewModel
 import com.ghost.alpha.presentation.viewmodel.TradingViewModel
@@ -136,6 +138,10 @@ fun GhostAlphaRoot(initialDeepLink: String?) {
             composable(Screen.AuditTrail.route) {
                 val viewModel: AuditTrailViewModel = hiltViewModel()
                 AuditTrailScreen(viewModel = viewModel)
+            }
+            composable(Screen.Autonomy.route) {
+                val viewModel: AutonomyViewModel = hiltViewModel()
+                AutonomyControlCenterScreen(viewModel = viewModel)
             }
         }
     }

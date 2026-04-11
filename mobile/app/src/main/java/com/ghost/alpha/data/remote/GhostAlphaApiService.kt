@@ -92,4 +92,23 @@ interface GhostAlphaApiService {
 
     @GET("agents/audit/decisions/{auditId}")
     suspend fun getDecisionAuditDetail(@Path("auditId") auditId: String): DecisionAuditDetailResponseDto
+
+    // Autonomy / Control Center
+    @GET("control")
+    suspend fun getControlStatus(): ControlStatusResponseDto
+
+    @GET("control/autonomous")
+    suspend fun getAutonomousStatus(): AutonomousModeStatusResponseDto
+
+    @POST("control/autonomous")
+    suspend fun updateAutonomousMode(@Body payload: AutonomousModeUpdateRequestDto): AutonomousModeStatusResponseDto
+
+    @POST("control/autonomous/run-once")
+    suspend fun runAutonomousOnce(): AutonomousModeStatusResponseDto
+
+    @POST("control/kill-switch")
+    suspend fun updateKillSwitch(@Body payload: KillSwitchUpdateRequestDto): KillSwitchUpdateResponseDto
+
+    @POST("control/limits")
+    suspend fun updateRiskLimits(@Body payload: RiskLimitUpdateRequestDto): RiskLimitUpdateResponseDto
 }

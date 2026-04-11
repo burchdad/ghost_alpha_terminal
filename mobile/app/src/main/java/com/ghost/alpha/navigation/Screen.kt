@@ -12,6 +12,7 @@ sealed class Screen(val route: String, val label: String) {
     data object Copilot : Screen("copilot", "Copilot")
     data object Performance : Screen("performance", "Performance")
     data object AuditTrail : Screen("audit_trail", "Audit")
+    data object Autonomy : Screen("autonomy", "Autonomy")
 }
 
 val primaryScreens = listOf(
@@ -23,5 +24,6 @@ val primaryScreens = listOf(
     Screen.TradeGuardrails,
     Screen.Copilot,
     Screen.Performance,
-    Screen.AuditTrail
+    Screen.AuditTrail,
+    Screen.Autonomy
 )
