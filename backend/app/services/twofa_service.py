@@ -94,12 +94,21 @@ class TwoFAService:
             try:
                 self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
                 return
-            except HTTPException:
+            except HTTPException as sendgrid_exc:
                 # If SendGrid fails but SMTP is available, fall back automatically.
                 if settings.smtp_host and settings.smtp_from_email:
-                    self._send_via_smtp(to_email=to_email, subject=subject, body=body)
-                    return
-                raise
+                    try:
+                        self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+                        return
+                    except HTTPException as smtp_exc:
+                        raise HTTPException(
+                            status_code=502,
+                            detail=(
+                                f"SendGrid failed: {sendgrid_exc.detail}; "
+                                f"SMTP fallback failed: {smtp_exc.detail}"
+                            ),
+                        ) from smtp_exc
+                raise sendgrid_exc
         elif settings.smtp_host and settings.smtp_from_email:
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
         else:
