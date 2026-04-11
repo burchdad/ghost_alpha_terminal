@@ -210,6 +210,37 @@ class TestTwoFAServiceEmail(unittest.TestCase):
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
 
     @patch("app.services.twofa_service.settings")
+    @patch("app.services.twofa_service.sendgrid")
+    @patch("app.services.twofa_service.Mail")
+    @patch("app.services.twofa_service.smtplib.SMTP")
+    def test_send_email_sendgrid_401_falls_back_to_smtp(self, mock_smtp_cls, mock_mail_cls, mock_sg_module, mock_settings):
+        mock_settings.sendgrid_api_key = "SG.invalid"
+        mock_settings.sendgrid_from = "noreply@ghost.com"
+        mock_settings.smtp_host = "smtp.example.com"
+        mock_settings.smtp_port = 587
+        mock_settings.smtp_username = "user"
+        mock_settings.smtp_password = "pass"
+        mock_settings.smtp_from_email = "noreply@example.com"
+        mock_settings.smtp_use_ssl = False
+        mock_settings.smtp_use_starttls = False
+        mock_settings.otp_code_ttl_minutes = 10
+
+        mock_sg_instance = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_sg_instance.send.return_value = mock_response
+        mock_sg_module.SendGridAPIClient.return_value = mock_sg_instance
+
+        mock_server = MagicMock()
+        mock_smtp_cls.return_value.__enter__ = lambda s: mock_server
+        mock_smtp_cls.return_value.__exit__ = MagicMock(return_value=False)
+
+        self.svc.send_email_code(to_email="user@example.com", code="111222")
+
+        mock_sg_instance.send.assert_called_once()
+        mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
+
+    @patch("app.services.twofa_service.settings")
     def test_send_email_raises_503_when_not_configured(self, mock_settings):
         mock_settings.sendgrid_api_key = ""
         mock_settings.smtp_host = ""

@@ -91,7 +91,15 @@ class TwoFAService:
 
         # Prefer SendGrid when API key is configured
         if settings.sendgrid_api_key:
-            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            try:
+                self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+                return
+            except HTTPException:
+                # If SendGrid fails but SMTP is available, fall back automatically.
+                if settings.smtp_host and settings.smtp_from_email:
+                    self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+                    return
+                raise
         elif settings.smtp_host and settings.smtp_from_email:
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
         else:
@@ -110,7 +118,7 @@ class TwoFAService:
                 subject=subject,
                 plain_text_content=body,
             )
-            sg = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key)
+            sg = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key.strip())
             response = sg.send(message)
             if response.status_code >= 400:
                 raise RuntimeError(f"SendGrid returned HTTP {response.status_code}")
