@@ -1,0 +1,2 @@
+-keep class com.ghost.alpha.** { *; }
+-dontwarn org.conscrypt.**

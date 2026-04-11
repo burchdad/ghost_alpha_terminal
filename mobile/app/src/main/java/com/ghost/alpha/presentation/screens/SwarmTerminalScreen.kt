@@ -1,0 +1,75 @@
+package com.ghost.alpha.presentation.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ConfidenceMeter
+import com.ghost.alpha.presentation.components.MetricRow
+import com.ghost.alpha.presentation.components.SignalBadge
+import com.ghost.alpha.presentation.components.TerminalCard
+import com.ghost.alpha.presentation.viewmodel.SwarmViewModel
+
+@Composable
+fun SwarmTerminalScreen(viewModel: SwarmViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text("Swarm Terminal", style = MaterialTheme.typography.headlineMedium)
+        OutlinedTextField(
+            value = state.symbol,
+            onValueChange = viewModel::updateSymbol,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Symbol") },
+            singleLine = true
+        )
+        Button(onClick = viewModel::refresh, modifier = Modifier.fillMaxWidth()) {
+            Text(if (state.isLoading) "Refreshing..." else "Refresh Consensus")
+        }
+        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+        TerminalCard(title = "Consensus") {
+            state.swarmSignal?.let { swarm ->
+                SignalBadge(swarm.signal)
+                MetricRow("Regime", swarm.regime)
+                MetricRow("Top Strategy", swarm.topStrategy)
+                MetricRow("Risk Level", swarm.riskLevel)
+                ConfidenceMeter(swarm.confidence)
+            } ?: Text("No swarm signal loaded")
+        }
+
+        TerminalCard(title = "Agent Breakdown") {
+            val votes = state.swarmSignal?.agents.orEmpty()
+            if (votes.isEmpty()) {
+                Text("Awaiting agent output")
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    votes.forEach { vote ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            MetricRow(vote.name, "${(vote.confidence * 100).toInt()}% ${vote.bias}")
+                            Text(vote.reasoning, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
