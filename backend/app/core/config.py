@@ -153,6 +153,35 @@ class Settings(BaseSettings):
             "auth_cookie_secure must be a boolean value (true/false, 1/0, yes/no)."
         )
 
+    @field_validator("smtp_port", mode="before")
+    @classmethod
+    def parse_smtp_port(cls, value):
+        """Accept integer SMTP ports and provider doc strings like '25,587,465'."""
+        if isinstance(value, int):
+            return value
+        if value is None:
+            return 587
+
+        raw = str(value).strip()
+        if not raw:
+            return 587
+
+        candidates: list[int] = []
+        for token in raw.split(","):
+            token = token.strip()
+            if token.isdigit():
+                candidates.append(int(token))
+
+        if not candidates:
+            raise ValueError("smtp_port must be an integer SMTP port such as 587")
+
+        # Prefer STARTTLS port when multiple ports are provided.
+        if 587 in candidates:
+            return 587
+        if 465 in candidates:
+            return 465
+        return candidates[0]
+
     def validate_production_config(self) -> None:
         """Validate that critical environment variables are set for production."""
         errors = []
