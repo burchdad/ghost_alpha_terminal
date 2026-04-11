@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -73,6 +74,20 @@ def _serialize_user(user: User) -> UserResponse:
 def _generate_verification_code() -> str:
     return str(secrets.randbelow(1000000)).zfill(6)
 
+
+def _normalize_phone_number(raw: str | None) -> str:
+    candidate = str(raw or "").strip()
+    if not candidate:
+        return ""
+    # Keep a single leading plus and strip common separators from user input.
+    if candidate.startswith("+"):
+        candidate = "+" + re.sub(r"[^0-9]", "", candidate[1:])
+    else:
+        candidate = re.sub(r"[^0-9]", "", candidate)
+    if re.fullmatch(r"\+[1-9]\d{7,14}", candidate):
+        return candidate
+    return ""
+
 @router.post("/signup", response_model=AuthResponse, summary="Create a user account and start a session")
 def signup(payload: SignupRequest, request: Request, response: Response) -> AuthResponse:
     raise HTTPException(
@@ -105,9 +120,9 @@ def initiate_2fa(payload: Initiate2FARequest) -> dict:
             secret = twofa_service.generate_totp_secret()
             qr_code_url = twofa_service.build_otpauth_uri(email=email, secret=secret)
         elif method == "sms":
-            phone = (payload.phoneNumber or "").strip()
+            phone = _normalize_phone_number(payload.phoneNumber)
             if not phone:
-                raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
+                raise HTTPException(status_code=400, detail="Valid E.164 phone number is required for SMS 2FA")
             secret = phone
             # Twilio Verify manages the code — we don't generate or store one
             twofa_service.send_sms_verify(phone_number=phone)
@@ -156,9 +171,9 @@ def resend_2fa_code(payload: Resend2FARequest) -> dict:
             raise HTTPException(status_code=400, detail="2FA is already verified")
 
         if method == "sms":
-            phone = (payload.phoneNumber or record.twofa_secret or "").strip()
+            phone = _normalize_phone_number(payload.phoneNumber or record.twofa_secret)
             if not phone:
-                raise HTTPException(status_code=400, detail="Phone number is required for SMS 2FA")
+                raise HTTPException(status_code=400, detail="Valid E.164 phone number is required for SMS 2FA")
             record.twofa_secret = phone
             twofa_service.send_sms_verify(phone_number=phone)
             # Twilio Verify manages the code; clear any stale stored code

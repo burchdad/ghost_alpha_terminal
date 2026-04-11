@@ -243,10 +243,10 @@ class TestInitiate2FA(unittest.TestCase):
         resp = client.post("/auth/initiate-2fa", json={
             "email": email,
             "twoFAMethod": "sms",
-            "phoneNumber": "+12223334444",
+            "phoneNumber": "+1 (222) 333-4444",
         })
         self.assertEqual(resp.status_code, 200, resp.text)
-        mock_svc.send_sms_verify.assert_called_once()
+        mock_svc.send_sms_verify.assert_called_once_with(phone_number="+12223334444")
 
     @patch("app.api.routes.auth.twofa_service")
     def test_email_flow_sends_code(self, mock_svc):
