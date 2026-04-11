@@ -41,4 +41,17 @@ interface GhostAlphaApiService {
 
     @POST("backtest")
     suspend fun runBacktest(@Body payload: BacktestRequestDto): BacktestResponseDto
+
+    // Trade Guardrails
+    @POST("trade/guardrails/assess")
+    suspend fun assessTradeRisks(@Body payload: TradeGuardrailRequestDto): TradeGuardrailResponseDto
+
+    @POST("trade/guardrails/approve")
+    suspend fun approveTradeWithGuardrails(@Body payload: GuardrailApprovalDto): TradeExecutionAuditDto
+
+    @GET("trade/audits/{tradeId}")
+    suspend fun getTradeAudit(@Path("tradeId") tradeId: String): TradeExecutionAuditDto
+
+    @GET("trade/audits/recent/{limit}")
+    suspend fun getRecentTradeAudits(@Path("limit") limit: Int = 10): List<TradeExecutionAuditDto>
 }

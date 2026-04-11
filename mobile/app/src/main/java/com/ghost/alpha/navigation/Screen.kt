@@ -8,6 +8,7 @@ sealed class Screen(val route: String, val label: String) {
     data object Trading : Screen("trading", "Trade")
     data object Brokers : Screen("brokers", "Brokers")
     data object Backtest : Screen("backtest", "Backtest")
+    data object TradeGuardrails : Screen("guardrails", "Guardrails")
 }
 
 val primaryScreens = listOf(
@@ -15,5 +16,6 @@ val primaryScreens = listOf(
     Screen.Swarm,
     Screen.Trading,
     Screen.Brokers,
-    Screen.Backtest
+    Screen.Backtest,
+    Screen.TradeGuardrails
 )

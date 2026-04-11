@@ -203,3 +203,107 @@ data class BacktestResponseDto(
     @Json(name = "equity_curve") val equityCurve: List<EquityPointDto>,
     @Json(name = "trade_history") val tradeHistory: List<SimulatedTradeDto>
 )
+
+// Trade Guardrails DTOs
+
+@JsonClass(generateAdapter = true)
+data class RiskScoreDto(
+    @Json(name = "overall_score") val overallScore: Double,
+    @Json(name = "confidence_level") val confidenceLevel: Int,
+    @Json(name = "risk_factors") val riskFactors: List<RiskFactorDto> = emptyList(),
+    val recommendation: String
+)
+
+@JsonClass(generateAdapter = true)
+data class RiskFactorDto(
+    val name: String,
+    val severity: String,
+    val impact: Double,
+    val description: String
+)
+
+@JsonClass(generateAdapter = true)
+data class GuardrailStatusDto(
+    val passed: Boolean,
+    val blockers: List<String> = emptyList(),
+    val warnings: List<String> = emptyList(),
+    @Json(name = "requires_approval") val requiresApproval: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class PortfolioImpactDto(
+    @Json(name = "current_exposure") val currentExposure: Double,
+    @Json(name = "proposed_exposure") val proposedExposure: Double,
+    @Json(name = "exposure_limit") val exposureLimit: Double,
+    @Json(name = "drawdown_risk") val drawdownRisk: Double,
+    @Json(name = "volatility_impact") val volatilityImpact: String,
+    @Json(name = "correlation_concern") val correlationConcern: Boolean,
+    @Json(name = "liquidity_risk") val liquidityRisk: String
+)
+
+@JsonClass(generateAdapter = true)
+data class TradeGuardrailRequestDto(
+    val symbol: String,
+    val quantity: Double,
+    val side: String,
+    val price: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class TradeGuardrailResponseDto(
+    @Json(name = "trade_id") val tradeId: String,
+    val symbol: String,
+    val quantity: Double,
+    val side: String,
+    val price: Double,
+    @Json(name = "risk_score") val riskScore: RiskScoreDto,
+    @Json(name = "guardrail_status") val guardrailStatus: GuardrailStatusDto,
+    val warnings: List<GuardrailWarningDto> = emptyList(),
+    @Json(name = "estimated_impact") val estimatedImpact: PortfolioImpactDto,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@JsonClass(generateAdapter = true)
+data class GuardrailWarningDto(
+    val id: String,
+    val title: String,
+    val message: String,
+    val severity: String,
+    val isDismissible: Boolean = false,
+    val actionRequired: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class GuardrailApprovalDto(
+    @Json(name = "trade_id") val tradeId: String,
+    val approved: Boolean,
+    val reason: String,
+    @Json(name = "user_override") val userOverride: Boolean = false
+)
+
+@JsonClass(generateAdapter = true)
+data class TradeExecutionAuditDto(
+    @Json(name = "trade_id") val tradeId: String,
+    val symbol: String,
+    val side: String,
+    val quantity: Double,
+    val price: Double,
+    @Json(name = "executed_price") val executedPrice: Double? = null,
+    @Json(name = "risk_score_at_execution") val riskScoreAtExecution: RiskScoreDto,
+    @Json(name = "guardrail_approval") val guardrailApproval: GuardrailApprovalDto,
+    val signals: List<String>,
+    @Json(name = "agent_contributions") val agentContributions: List<AgentContributionDto> = emptyList(),
+    @Json(name = "execution_status") val executionStatus: String,
+    val pnl: Double? = null,
+    @Json(name = "created_at") val createdAt: Long = System.currentTimeMillis(),
+    @Json(name = "executed_at") val executedAt: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AgentContributionDto(
+    @Json(name = "agent_id") val agentId: String,
+    @Json(name = "agent_name") val agentName: String,
+    val confidence: Double,
+    val signal: String,
+    val reasoning: String
+)

@@ -22,6 +22,7 @@ import com.ghost.alpha.presentation.screens.DashboardScreen
 import com.ghost.alpha.presentation.screens.LoginScreen
 import com.ghost.alpha.presentation.screens.SwarmTerminalScreen
 import com.ghost.alpha.presentation.screens.TradingScreen
+import com.ghost.alpha.presentation.screens.TradeGuardrailsScreen
 import com.ghost.alpha.presentation.screens.TwoFactorScreen
 import com.ghost.alpha.presentation.viewmodel.AuthViewModel
 import com.ghost.alpha.presentation.viewmodel.BacktestViewModel
@@ -117,6 +118,9 @@ fun GhostAlphaRoot(initialDeepLink: String?) {
                 val viewModel: BacktestViewModel = hiltViewModel()
                 BacktestingScreen(viewModel = viewModel)
             }
+                composable(Screen.TradeGuardrails.route) {
+                    TradeGuardrailsScreen()
+                }
         }
     }
 }
