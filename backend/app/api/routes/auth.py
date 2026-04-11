@@ -300,14 +300,19 @@ def me(user: User = CurrentUser) -> AuthResponse:
     return AuthResponse(user=_serialize_user(user))
 
 
+def _is_configured_env(value: str | None) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized not in {"", "none", "null"}
+
+
 @router.get("/provider-status", summary="Check which 2FA providers are configured (no secrets exposed)")
 def provider_status() -> dict:
     """Returns True/False for each provider based on whether required env vars are non-empty.
     Useful for diagnosing misconfigured credentials without exposing values."""
-    twilio_creds_ok = bool(settings.twilio_account_sid and settings.twilio_auth_token)
-    verify_ok = twilio_creds_ok and bool(settings.twilio_verify_service_sid)
-    sendgrid_ok = bool(settings.sendgrid_api_key and settings.sendgrid_from)
-    smtp_ok = bool(settings.smtp_host and settings.smtp_from_email)
+    twilio_creds_ok = _is_configured_env(settings.twilio_account_sid) and _is_configured_env(settings.twilio_auth_token)
+    verify_ok = twilio_creds_ok and _is_configured_env(settings.twilio_verify_service_sid)
+    sendgrid_ok = _is_configured_env(settings.sendgrid_api_key) and _is_configured_env(settings.sendgrid_from)
+    smtp_ok = _is_configured_env(settings.smtp_host) and _is_configured_env(settings.smtp_from_email)
 
     return {
         "totp": True,  # always available (pyotp is bundled)

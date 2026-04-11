@@ -28,6 +28,10 @@ except Exception:  # pragma: no cover
 
 
 class TwoFAService:
+    def _is_configured(self, value: str | None) -> bool:
+        normalized = str(value or "").strip().lower()
+        return normalized not in {"", "none", "null"}
+
     def _utcnow(self) -> datetime:
         return datetime.now(tz=timezone.utc)
 
@@ -54,13 +58,13 @@ class TwoFAService:
     def _twilio_client(self) -> "TwilioClient":
         if TwilioClient is None:
             raise HTTPException(status_code=500, detail="Twilio dependency is not installed")
-        if not settings.twilio_account_sid or not settings.twilio_auth_token:
+        if not self._is_configured(settings.twilio_account_sid) or not self._is_configured(settings.twilio_auth_token):
             raise HTTPException(status_code=503, detail="Twilio credentials are not configured")
         return TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
 
     def send_sms_verify(self, *, phone_number: str) -> None:
         """Send OTP via Twilio Verify (no from-number needed, Twilio manages the code)."""
-        if not settings.twilio_verify_service_sid:
+        if not self._is_configured(settings.twilio_verify_service_sid):
             raise HTTPException(status_code=503, detail="TWILIO_VERIFY_SERVICE_SID is not configured")
         try:
             client = self._twilio_client()
@@ -73,7 +77,7 @@ class TwoFAService:
 
     def verify_sms_code(self, *, phone_number: str, code: str) -> bool:
         """Check OTP via Twilio Verify VerificationCheck. Returns True if approved."""
-        if not settings.twilio_verify_service_sid:
+        if not self._is_configured(settings.twilio_verify_service_sid):
             raise HTTPException(status_code=503, detail="TWILIO_VERIFY_SERVICE_SID is not configured")
         try:
             client = self._twilio_client()
@@ -90,13 +94,13 @@ class TwoFAService:
         body = f"Your verification code is {code}. This code expires in {settings.otp_code_ttl_minutes} minutes."
 
         # Prefer SendGrid when API key is configured
-        if settings.sendgrid_api_key:
+        if self._is_configured(settings.sendgrid_api_key):
             try:
                 self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
                 return
             except HTTPException as sendgrid_exc:
                 # If SendGrid fails but SMTP is available, fall back automatically.
-                if settings.smtp_host and settings.smtp_from_email:
+                if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
                     try:
                         self._send_via_smtp(to_email=to_email, subject=subject, body=body)
                         return
@@ -109,7 +113,7 @@ class TwoFAService:
                             ),
                         ) from smtp_exc
                 raise sendgrid_exc
-        elif settings.smtp_host and settings.smtp_from_email:
+        elif self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
         else:
             raise HTTPException(status_code=503, detail="Email provider is not configured")
@@ -117,8 +121,11 @@ class TwoFAService:
     def _send_via_sendgrid(self, *, to_email: str, subject: str, body: str) -> None:
         if sendgrid is None or Mail is None:
             raise HTTPException(status_code=500, detail="SendGrid dependency is not installed")
+        api_key = str(settings.sendgrid_api_key or "").strip()
+        if not self._is_configured(api_key):
+            raise HTTPException(status_code=503, detail="SendGrid API key is not configured")
         from_email = settings.sendgrid_from or settings.smtp_from_email
-        if not from_email:
+        if not self._is_configured(from_email):
             raise HTTPException(status_code=503, detail="SendGrid sender address is not configured")
         try:
             message = Mail(
@@ -127,7 +134,7 @@ class TwoFAService:
                 subject=subject,
                 plain_text_content=body,
             )
-            sg = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key.strip())
+            sg = sendgrid.SendGridAPIClient(api_key=api_key)
             response = sg.send(message)
             if response.status_code >= 400:
                 raise RuntimeError(f"SendGrid returned HTTP {response.status_code}")
