@@ -19,6 +19,7 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         vectorDrawables {
             useSupportLibrary = true
         }
@@ -70,56 +71,83 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
-    val roomVersion = "2.6.1"
-    val retrofitVersion = "2.11.0"
-    val okhttpVersion = "4.12.0"
+
+    // ✅ Compose BOM (THIS CONTROLS ALL VERSIONS)
+    val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
 
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
+    val roomVersion = "2.6.1"
+    val retrofitVersion = "2.11.0"
+    val okhttpVersion = "4.12.0"
+
+    // Core
     implementation("androidx.core:core-ktx:1.13.1")
+
+    // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
+
+    // Compose
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.navigation:navigation-compose:2.8.0")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    implementation("androidx.compose.material3:material3:1.2.1")
-    implementation("androidx.compose.foundation:foundation")
+
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui-tooling-preview")
+
+    // 🚨 FIXED (NO VERSION HERE)
+    implementation("androidx.compose.material3:material3")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
+    // Hilt
     implementation("com.google.dagger:hilt-android:2.52")
     kapt("com.google.dagger:hilt-android-compiler:2.52")
 
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+
+    // Networking
     implementation("com.squareup.retrofit2:retrofit:$retrofitVersion")
     implementation("com.squareup.retrofit2:converter-moshi:$retrofitVersion")
+
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
     implementation("com.squareup.okhttp3:okhttp-urlconnection:$okhttpVersion")
+
     implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
     ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
 
+    // Room
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
+    // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // Browser / OAuth
     implementation("androidx.browser:browser:1.8.0")
+
+    // Splash
     implementation("androidx.core:core-splashscreen:1.0.1")
 
+    // Coroutines / Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
+    // Firebase
     implementation("com.google.firebase:firebase-messaging-ktx:24.0.1")
 
+    // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("io.mockk:mockk:1.13.12")
+
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
