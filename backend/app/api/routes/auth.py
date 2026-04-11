@@ -278,6 +278,30 @@ def me(user: User = CurrentUser) -> AuthResponse:
     return AuthResponse(user=_serialize_user(user))
 
 
+@router.get("/provider-status", summary="Check which 2FA providers are configured (no secrets exposed)")
+def provider_status() -> dict:
+    """Returns True/False for each provider based on whether required env vars are non-empty.
+    Useful for diagnosing misconfigured credentials without exposing values."""
+    twilio_ok = bool(
+        settings.twilio_account_sid
+        and settings.twilio_auth_token
+        and settings.twilio_phone_number
+    )
+    sendgrid_ok = bool(settings.sendgrid_api_key and settings.sendgrid_from)
+    smtp_ok = bool(settings.smtp_host and settings.smtp_from_email)
+
+    return {
+        "totp": True,  # always available (pyotp is bundled)
+        "sms_twilio": twilio_ok,
+        "twilio_account_sid_prefix": (settings.twilio_account_sid or "")[:6] + "…" if settings.twilio_account_sid else "(not set)",
+        "twilio_phone_number": settings.twilio_phone_number or "(not set)",
+        "email_sendgrid": sendgrid_ok,
+        "email_smtp": smtp_ok,
+        "sendgrid_from": settings.sendgrid_from or "(not set)",
+        "smtp_host": settings.smtp_host or "(not set)",
+    }
+
+
 @router.get("/alpaca/callback", summary="OAuth callback compatibility route")
 def alpaca_callback_compat(code: str, state: str) -> RedirectResponse:
     qs = urlencode({"code": code, "state": state})
