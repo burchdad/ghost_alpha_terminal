@@ -1,3 +1,9 @@
 <resources>
-    <style name="Theme.GhostAlpha" parent="Theme.Material3.DayNight" />
+
+    <!-- Minimal base theme required by Android -->
+    <style name="Theme.GhostAlpha" parent="Theme.DeviceDefault.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/black</item>
+    </style>
+
 </resources>
