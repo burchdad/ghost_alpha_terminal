@@ -1,6 +1,7 @@
 package com.ghost.alpha.data.remote
 
 import com.ghost.alpha.data.local.AuthTokenStorage
+import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
@@ -23,7 +24,7 @@ class TokenRefreshAuthenticator @Inject constructor(
         synchronized(this) {
             val currentTokens = tokenStorage.read() ?: return null
             return try {
-                val refreshed = apiProvider.get().refreshSession()
+                val refreshed = runBlocking { apiProvider.get().refreshSession() }
                 val accessToken = refreshed.accessToken ?: currentTokens.accessToken
                 val refreshToken = refreshed.refreshToken ?: currentTokens.refreshToken
                 tokenStorage.write(

@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -33,11 +37,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import compose.icons.FontAwesomeIcons
-import compose.icons.fontawesomeicons.Solid
-import compose.icons.fontawesomeicons.solid.AlertCircle
-import compose.icons.fontawesomeicons.solid.CheckCircle
-import compose.icons.fontawesomeicons.solid.ExclamationTriangle
 import com.ghost.alpha.domain.model.RiskSeverity
 import com.ghost.alpha.domain.model.TradeGuardrail
 import com.ghost.alpha.presentation.components.LoadingSkeletonBox
@@ -306,14 +305,14 @@ private fun RiskScoreDisplay(score: Double, recommendation: String) {
                 .fillMaxWidth()
                 .height(8.dp),
             color = riskColor,
-            backgroundColor = Color(0x2A2F4A)
+            trackColor = Color(0x2A2F4A)
         )
     }
 }
 
 @Composable
 private fun GuardrailStatusDisplay(status: com.ghost.alpha.domain.model.GuardrailStatus) {
-    val statusIcon = if (status.passed) FontAwesomeIcons.Solid.CheckCircle else FontAwesomeIcons.Solid.AlertCircle
+    val statusIcon = if (status.passed) Icons.Default.Check else Icons.Default.Close
     val statusColor = if (status.passed) Color(0x00FF41) else Color(0xFF6464)
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -323,7 +322,7 @@ private fun GuardrailStatusDisplay(status: com.ghost.alpha.domain.model.Guardrai
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                statusIcon,
+                imageVector = statusIcon,
                 contentDescription = null,
                 modifier = Modifier.size(20.dp),
                 tint = statusColor

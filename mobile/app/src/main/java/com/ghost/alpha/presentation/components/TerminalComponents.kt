@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.roundToPx
 import com.ghost.alpha.domain.model.AgentVote
 import kotlin.math.PI
 import kotlin.math.cos
@@ -244,7 +246,7 @@ fun SwarmNodeGraph(
 
             Box(
                 modifier = Modifier
-                    .offset { IntOffset(xDp.roundToPx(), yDp.roundToPx()) }
+                    .offset(xDp, yDp)
                     .size(52.dp)
                     .clip(RoundedCornerShape(999.dp))
                     .background(signalColor(vote.bias).copy(alpha = 0.22f)),
@@ -330,4 +332,15 @@ private fun signalColor(signal: String): Color {
         "SELL", "BEARISH" -> Color(0xFFFF7B88)
         else -> Color(0xFF8BCBFF)
     }
+}
+
+@Composable
+fun LoadingSkeletonBox(height: androidx.compose.ui.unit.Dp = 100.dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+    )
 }
