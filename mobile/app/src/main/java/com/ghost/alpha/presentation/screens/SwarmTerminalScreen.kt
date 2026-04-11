@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -16,12 +17,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ConfidenceHeatmap
 import com.ghost.alpha.presentation.components.ConfidenceMeter
 import com.ghost.alpha.presentation.components.ErrorBanner
 import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
 import com.ghost.alpha.presentation.components.SignalBadge
 import com.ghost.alpha.presentation.components.SkeletonTerminalCard
+import com.ghost.alpha.presentation.components.SwarmNodeGraph
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.SwarmViewModel
 
@@ -64,7 +67,27 @@ fun SwarmTerminalScreen(viewModel: SwarmViewModel) {
                 MetricRow("Top Strategy", swarm.topStrategy)
                 MetricRow("Risk Level", swarm.riskLevel)
                 ConfidenceMeter(swarm.confidence)
+                HorizontalDivider(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                MetricRow("Dominant Bias", state.dominantBias)
+                MetricRow("Agreement", "${(state.agreementRatio * 100).toInt()}%")
+                MetricRow("Conflict", "${(state.conflictRatio * 100).toInt()}%")
             } ?: Text("No swarm signal loaded")
+        }
+
+        TerminalCard(title = "Swarm Topology") {
+            val votes = state.swarmSignal?.agents.orEmpty()
+            if (votes.isEmpty()) {
+                Text("Awaiting graph topology")
+            } else {
+                SwarmNodeGraph(
+                    agents = votes,
+                    consensusSignal = state.swarmSignal?.signal.orEmpty()
+                )
+            }
+        }
+
+        TerminalCard(title = "Confidence Heatmap") {
+            ConfidenceHeatmap(agents = state.swarmSignal?.agents.orEmpty())
         }
 
         TerminalCard(title = "Agent Breakdown") {
