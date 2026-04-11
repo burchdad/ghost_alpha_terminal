@@ -17,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ghost.alpha.presentation.components.ConfidenceMeter
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
 import com.ghost.alpha.presentation.components.SignalBadge
+import com.ghost.alpha.presentation.components.SkeletonTerminalCard
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.SwarmViewModel
 
@@ -44,7 +47,15 @@ fun SwarmTerminalScreen(viewModel: SwarmViewModel) {
         Button(onClick = viewModel::refresh, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.isLoading) "Refreshing..." else "Refresh Consensus")
         }
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.isLoading) {
+            LoadingRow("Pulling agent consensus...")
+        }
+        state.errorMessage?.let { ErrorBanner(message = it, onRetry = viewModel::refresh) }
+
+        if (state.isLoading && state.swarmSignal == null) {
+            SkeletonTerminalCard(title = "Consensus", rows = 4)
+            SkeletonTerminalCard(title = "Agent Breakdown", rows = 5)
+        }
 
         TerminalCard(title = "Consensus") {
             state.swarmSignal?.let { swarm ->

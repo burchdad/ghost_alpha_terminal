@@ -19,7 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
+import com.ghost.alpha.presentation.components.SkeletonTerminalCard
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.BrokerViewModel
 
@@ -46,7 +49,14 @@ fun BrokerConnectionScreen(viewModel: BrokerViewModel, initialDeepLink: String?)
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Broker Access", style = MaterialTheme.typography.headlineMedium)
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.isLoading) {
+            LoadingRow("Syncing broker connection state...")
+        }
+        state.errorMessage?.let { ErrorBanner(message = it, onRetry = viewModel::refresh) }
+
+        if (state.isLoading && state.brokers.isEmpty()) {
+            SkeletonTerminalCard(title = "Broker Connectivity", rows = 5)
+        }
 
         state.brokers.forEach { broker ->
             TerminalCard(title = broker.label) {

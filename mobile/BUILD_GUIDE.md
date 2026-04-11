@@ -144,13 +144,20 @@ Handled in `BrokerConnectionScreen` via Chrome Custom Tabs.
 - **Brokers**: `ConnectBrokerUseCase`, `DisconnectBrokerUseCase`
 - **Backtest**: Upload simulation, poll results
 
-## Testing (Not Yet Implemented)
+## Testing
 
-Create `app/src/test/java/com/ghost/alpha/` with:
-- `AuthRepositoryTest.kt`
-- `MarketRepositoryTest.kt`
-- `WebSocketManagerTest.kt`
-- View model unit tests
+Implemented unit tests under `app/src/test/java/com/ghost/alpha/`:
+- `domain/usecase/AuthUseCasesTest.kt`
+- `domain/usecase/MarketUseCasesTest.kt`
+- `domain/usecase/BrokerUseCasesTest.kt`
+- `data/repository/MarketRepositoryImplTest.kt`
+- `data/repository/BrokerRepositoryImplTest.kt`
+
+To run unit tests:
+
+```bash
+./gradlew testDebugUnitTest
+```
 
 ## Deployment
 
@@ -175,14 +182,14 @@ App Bundle: `app/build/outputs/bundle/release/app-release.aab`
 | Token refresh loop | Verify refresh endpoint returns valid new access token |
 | Room DB migration error | Delete app data (Settings → Apps → Ghost Alpha → Storage → Clear) |
 
-## Next Steps
+## Security + UX Enhancements Completed
 
-1. **Add unit tests** for repositories and use cases
-2. **Implement error UI** for network failures and edge cases
-3. **Add loading skeleton** screens for better UX
-4. **Wire Firebase FCM** for real trade/alert notifications
-5. **Implement biometric auth** as optional step-up
-6. **Add device fingerprint** for risk scoring
+1. **Unit tests added** for repositories and use cases.
+2. **Error UI implemented** with retryable error banners and network-aware messaging.
+3. **Loading skeletons added** for dashboard, swarm, trading, broker, and backtesting states.
+4. **FCM wired** with typed channels (`trade`, `risk`, `signal`) and token persistence.
+5. **Biometric step-up scaffold implemented** for optional high-trust 2FA flow.
+6. **Device fingerprint risk headers implemented** via OkHttp interceptor.
 
 ---
 

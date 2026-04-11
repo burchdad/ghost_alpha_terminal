@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.AuthViewModel
 
@@ -37,6 +39,12 @@ fun LoginScreen(viewModel: AuthViewModel) {
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        if (state.isLoading) {
+            LoadingRow("Securely authenticating...")
+        }
+        state.errorMessage?.let { error ->
+            ErrorBanner(message = error, onRetry = viewModel::login)
+        }
 
         TerminalCard(title = "Secure Session") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -55,9 +63,6 @@ fun LoginScreen(viewModel: AuthViewModel) {
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation()
                 )
-                state.errorMessage?.let { error ->
-                    Text(error, color = MaterialTheme.colorScheme.error)
-                }
                 Button(
                     onClick = viewModel::login,
                     enabled = !state.isLoading && state.email.isNotBlank() && state.password.isNotBlank(),

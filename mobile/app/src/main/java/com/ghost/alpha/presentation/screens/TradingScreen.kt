@@ -17,8 +17,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
 import com.ghost.alpha.presentation.components.SignalBadge
+import com.ghost.alpha.presentation.components.SkeletonTerminalCard
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.TradingViewModel
 
@@ -34,6 +37,15 @@ fun TradingScreen(viewModel: TradingViewModel) {
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Execution Console", style = MaterialTheme.typography.headlineMedium)
+        if (state.isLoading) {
+            LoadingRow("Submitting execution plan...")
+        }
+        state.errorMessage?.let { ErrorBanner(message = it, onRetry = viewModel::executeTrade) }
+
+        if (state.isLoading && state.result == null) {
+            SkeletonTerminalCard(title = "Signal Context", rows = 2)
+            SkeletonTerminalCard(title = "Execution Result", rows = 4)
+        }
 
         TerminalCard(title = "Trade Parameters") {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -65,7 +77,5 @@ fun TradingScreen(viewModel: TradingViewModel) {
                 result.reason?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             } ?: Text("No execution submitted yet")
         }
-
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }

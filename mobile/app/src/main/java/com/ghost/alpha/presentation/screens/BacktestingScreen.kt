@@ -16,7 +16,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
+import com.ghost.alpha.presentation.components.SkeletonTerminalCard
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.BacktestViewModel
 
@@ -42,7 +45,14 @@ fun BacktestingScreen(viewModel: BacktestViewModel) {
         Button(onClick = viewModel::runBacktest, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.isLoading) "Running..." else "Run Simulation")
         }
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.isLoading) {
+            LoadingRow("Running historical simulation...")
+        }
+        state.errorMessage?.let { ErrorBanner(message = it, onRetry = viewModel::runBacktest) }
+
+        if (state.isLoading && state.result == null) {
+            SkeletonTerminalCard(title = "Results", rows = 5)
+        }
 
         TerminalCard(title = "Results") {
             state.result?.let { result ->

@@ -17,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ghost.alpha.presentation.components.ConfidenceMeter
+import com.ghost.alpha.presentation.components.ErrorBanner
+import com.ghost.alpha.presentation.components.LoadingRow
 import com.ghost.alpha.presentation.components.MetricRow
 import com.ghost.alpha.presentation.components.SignalBadge
+import com.ghost.alpha.presentation.components.SkeletonTerminalCard
 import com.ghost.alpha.presentation.components.TerminalCard
 import com.ghost.alpha.presentation.viewmodel.DashboardViewModel
 
@@ -38,7 +41,19 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text("Mission Dashboard", style = MaterialTheme.typography.headlineMedium)
-        state.errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (state.isLoading) {
+            LoadingRow("Refreshing portfolio and swarm telemetry...")
+        }
+        state.errorMessage?.let {
+            ErrorBanner(message = it, onRetry = { viewModel.refresh() })
+        }
+
+        if (state.isLoading && state.portfolio == null && state.featuredSignal == null && state.featuredSwarm == null) {
+            SkeletonTerminalCard(title = "Portfolio Pulse", rows = 4)
+            SkeletonTerminalCard(title = "Featured Signal", rows = 3)
+            SkeletonTerminalCard(title = "Swarm Snapshot", rows = 4)
+            SkeletonTerminalCard(title = "Live Alerts", rows = 3)
+        }
 
         TerminalCard(title = "Portfolio Pulse") {
             val portfolio = state.portfolio

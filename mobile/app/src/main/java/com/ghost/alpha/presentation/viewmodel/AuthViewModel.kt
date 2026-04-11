@@ -23,6 +23,9 @@ data class AuthUiState(
     val isAuthenticated: Boolean = false,
     val requiresTwoFactor: Boolean = false,
     val pendingMethod: String? = null,
+    val requireBiometricStepUp: Boolean = false,
+    val biometricVerified: Boolean = false,
+    val biometricErrorMessage: String? = null,
     val errorMessage: String? = null
 )
 
@@ -66,6 +69,24 @@ class AuthViewModel @Inject constructor(
         _uiState.update { it.copy(trustDevice = value) }
     }
 
+    fun updateRequireBiometricStepUp(value: Boolean) {
+        _uiState.update {
+            it.copy(
+                requireBiometricStepUp = value,
+                biometricVerified = if (value) it.biometricVerified else false,
+                biometricErrorMessage = null
+            )
+        }
+    }
+
+    fun onBiometricVerified() {
+        _uiState.update { it.copy(biometricVerified = true, biometricErrorMessage = null) }
+    }
+
+    fun onBiometricFailed(message: String) {
+        _uiState.update { it.copy(biometricVerified = false, biometricErrorMessage = message) }
+    }
+
     fun login() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
@@ -78,6 +99,15 @@ class AuthViewModel @Inject constructor(
 
     fun verifyTwoFactor() {
         viewModelScope.launch {
+            if (_uiState.value.requireBiometricStepUp && !_uiState.value.biometricVerified) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        biometricErrorMessage = "Biometric verification required before OTP confirmation."
+                    )
+                }
+                return@launch
+            }
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             runCatching { verifyTwoFactorUseCase(_uiState.value.otpCode.trim(), _uiState.value.trustDevice) }
                 .onFailure { error ->

@@ -1,12 +1,17 @@
 package com.ghost.alpha.presentation.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -85,5 +90,63 @@ fun ConfidenceMeter(confidence: Double) {
             color = MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
         )
+    }
+}
+
+@Composable
+fun ErrorBanner(
+    message: String,
+    modifier: Modifier = Modifier,
+    onRetry: (() -> Unit)? = null
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Network / Execution Error", color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.SemiBold)
+            Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+            if (onRetry != null) {
+                Button(onClick = onRetry) {
+                    Text("Retry")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SkeletonTerminalCard(
+    title: String,
+    rows: Int,
+    modifier: Modifier = Modifier
+) {
+    TerminalCard(title = title, modifier = modifier) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            repeat(rows) { idx ->
+                val width = if (idx % 2 == 0) 0.95f else 0.72f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(width)
+                        .height(14.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun LoadingRow(message: String = "Syncing live state...") {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LinearProgressIndicator(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

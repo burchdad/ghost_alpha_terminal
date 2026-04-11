@@ -2,6 +2,7 @@ package com.ghost.alpha.di
 
 import com.ghost.alpha.BuildConfig
 import com.ghost.alpha.data.remote.AccessTokenInterceptor
+import com.ghost.alpha.data.remote.DeviceFingerprintInterceptor
 import com.ghost.alpha.data.remote.GhostAlphaApiService
 import com.ghost.alpha.data.remote.TokenRefreshAuthenticator
 import com.squareup.moshi.Moshi
@@ -48,6 +49,7 @@ object NetworkModule {
     @Provides
     @Singleton
     fun provideOkHttpClient(
+        deviceFingerprintInterceptor: DeviceFingerprintInterceptor,
         accessTokenInterceptor: AccessTokenInterceptor,
         tokenRefreshAuthenticator: TokenRefreshAuthenticator,
         loggingInterceptor: HttpLoggingInterceptor,
@@ -58,6 +60,7 @@ object NetworkModule {
         .writeTimeout(30, TimeUnit.SECONDS)
         .pingInterval(20, TimeUnit.SECONDS)
         .cookieJar(JavaNetCookieJar(cookieManager))
+        .addInterceptor(deviceFingerprintInterceptor)
         .addInterceptor(accessTokenInterceptor)
         .addInterceptor(loggingInterceptor)
         .authenticator(tokenRefreshAuthenticator)
