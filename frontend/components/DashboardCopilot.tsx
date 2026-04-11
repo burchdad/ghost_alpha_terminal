@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../lib/apiClient";
+import { ensureHighTrust } from "../lib/highTrust";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -71,7 +73,7 @@ export default function DashboardCopilot() {
     async function boot() {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/copilot/context`, { credentials: "include" });
+        const res = await apiFetch(`${API_BASE}/copilot/context`, { apiBase: API_BASE });
         if (!res.ok) {
           return;
         }
@@ -125,10 +127,19 @@ export default function DashboardCopilot() {
 
     setSending(true);
     try {
-      const res = await fetch(`${API_BASE}/copilot/chat`, {
+      const trusted = await ensureHighTrust({ apiBase: API_BASE });
+      if (!trusted) {
+        setMessages((prev) => [
+          ...prev,
+          { id: `w-${Date.now()}`, role: "assistant", text: "Security verification was cancelled." },
+        ]);
+        return;
+      }
+
+      const res = await apiFetch(`${API_BASE}/copilot/chat`, {
+        apiBase: API_BASE,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           message: confirm ? "confirm" : text,
           confirm,

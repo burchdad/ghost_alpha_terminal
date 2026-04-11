@@ -14,6 +14,7 @@ import OrchestratorPanel, {
   type OrchestratorStatus,
 } from "../../components/OrchestratorPanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
+import { ensureHighTrust } from "../../lib/highTrust";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -596,6 +597,7 @@ export default function AlphaPage() {
   const [oauthReason, setOauthReason] = useState<string>("");
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
   const [activeBrokerProvider, setActiveBrokerProvider] = useState<string | null>(null);
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
@@ -1098,6 +1100,20 @@ export default function AlphaPage() {
     await refreshLaunchMetrics();
   }
 
+  async function ensureHighTrustOrNotify(): Promise<boolean> {
+    try {
+      return await ensureHighTrust({ apiBase: API_BASE });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Secure verification failed";
+      if (message === "Authentication required") {
+        window.location.href = "/login?next=/alpha";
+        return false;
+      }
+      pushRuntimeToast(message, "error");
+      return false;
+    }
+  }
+
   async function handleToggleAuto(enabled: boolean) {
     await fetch(`${API_BASE}/orchestrator/mode`, {
       method: "POST",
@@ -1110,6 +1126,11 @@ export default function AlphaPage() {
   }
 
   async function handleToggleKillSwitch(enabled: boolean) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
     await fetch(`${API_BASE}/control/kill-switch`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1122,6 +1143,11 @@ export default function AlphaPage() {
   }
 
   async function handleToggleAutonomous(enabled: boolean) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
     await fetch(`${API_BASE}/control/autonomous`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1148,11 +1174,21 @@ export default function AlphaPage() {
   }
 
   async function handleRunAutonomousOnce() {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
     await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
     await Promise.all([refreshRuntimeState(true), refreshScanState(false)]);
   }
 
   async function handleSetExecutionMode(mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
     await fetch(`${API_BASE}/agents/execution-mode`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1177,6 +1213,11 @@ export default function AlphaPage() {
 
 
   async function handleUpdateLimits(data: { daily_loss_limit_pct: number; max_drawdown_limit_pct: number }) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
     await fetch(`${API_BASE}/control/limits`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1224,12 +1265,34 @@ export default function AlphaPage() {
     setDecisionReplay(replayData);
   }
 
+  async function handleConnectBroker(provider: string, connectPath: string | null) {
+    if (!connectPath) {
+      return;
+    }
+    setConnectingProvider(provider);
+    try {
+      const ok = await ensureHighTrustOrNotify();
+      if (!ok) {
+        pushRuntimeToast("Security verification was cancelled.", "warning");
+        return;
+      }
+      window.location.href = `${API_BASE}${connectPath}`;
+    } finally {
+      setConnectingProvider(null);
+    }
+  }
+
   async function handleDisconnectBroker(provider: string, disconnectPath: string | null) {
     if (!disconnectPath) {
       return;
     }
     setDisconnectingProvider(provider);
     try {
+      const ok = await ensureHighTrustOrNotify();
+      if (!ok) {
+        pushRuntimeToast("Security verification was cancelled.", "warning");
+        return;
+      }
       await fetch(`${API_BASE}${disconnectPath}`, { method: "POST" });
       if (provider === "alpaca") {
         setOauthStatus("idle");
@@ -1437,12 +1500,18 @@ export default function AlphaPage() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {activeBroker.connect_path && activeBroker.connectable && !activeBroker.connected && (
-                  <a
-                    href={`${API_BASE}${activeBroker.connect_path}`}
+                  <button
+                    type="button"
+                    disabled={connectingProvider === activeBroker.provider}
+                    onClick={() => void handleConnectBroker(activeBroker.provider, activeBroker.connect_path)}
                     className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
                   >
-                    {activeBroker.auth_type === "oauth" ? `Connect ${activeBroker.label}` : `Authorize ${activeBroker.label}`}
-                  </a>
+                    {connectingProvider === activeBroker.provider
+                      ? "Securing..."
+                      : activeBroker.auth_type === "oauth"
+                        ? `Connect ${activeBroker.label}`
+                        : `Authorize ${activeBroker.label}`}
+                  </button>
                 )}
                 {activeBroker.planned && activeBroker.oauth_url && (
                   <a
@@ -1456,7 +1525,12 @@ export default function AlphaPage() {
                 )}
                 <button
                   type="button"
-                  disabled={!activeBroker.connected || !activeBroker.disconnect_supported || disconnectingProvider === activeBroker.provider}
+                  disabled={
+                    !activeBroker.connected ||
+                    !activeBroker.disconnect_supported ||
+                    disconnectingProvider === activeBroker.provider ||
+                    connectingProvider === activeBroker.provider
+                  }
                   onClick={() => handleDisconnectBroker(activeBroker.provider, activeBroker.disconnect_path)}
                   className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >

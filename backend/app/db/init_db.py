@@ -33,6 +33,43 @@ def _apply_lightweight_migrations() -> None:
                 if column_name not in user_columns:
                     conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
 
+        if "user_2fa_setup" in tables:
+            setup_columns = {col["name"] for col in inspector.get_columns("user_2fa_setup")}
+            if "verification_code_hash" not in setup_columns:
+                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN verification_code_hash VARCHAR(128)"))
+            if "failed_attempts" not in setup_columns:
+                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
+            if "locked_until" not in setup_columns:
+                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN locked_until TIMESTAMP"))
+
+        if "user_sessions" in tables:
+            session_columns = {col["name"] for col in inspector.get_columns("user_sessions")}
+            session_column_specs = {
+                "access_token_hash": "VARCHAR(128)",
+                "device_fingerprint_hash": "VARCHAR(128)",
+                "twofa_required": "BOOLEAN DEFAULT FALSE",
+                "twofa_verified_at": "TIMESTAMP",
+                "high_trust_expires_at": "TIMESTAMP",
+                "twofa_challenge_method": "VARCHAR(32)",
+                "twofa_challenge_code_hash": "VARCHAR(128)",
+                "twofa_challenge_expires_at": "TIMESTAMP",
+                "twofa_failed_attempts": "INTEGER DEFAULT 0",
+                "twofa_locked_until": "TIMESTAMP",
+                "risk_score": "INTEGER DEFAULT 0",
+                "risk_reasons_json": "TEXT DEFAULT '[]'",
+                "access_expires_at": "TIMESTAMP",
+            }
+            for column_name, column_type in session_column_specs.items():
+                if column_name not in session_columns:
+                    conn.execute(text(f"ALTER TABLE user_sessions ADD COLUMN {column_name} {column_type}"))
+
+        if "password_reset_tokens" in tables:
+            reset_columns = {col["name"] for col in inspector.get_columns("password_reset_tokens")}
+            if "failed_attempts" not in reset_columns:
+                conn.execute(text("ALTER TABLE password_reset_tokens ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
+            if "max_attempts" not in reset_columns:
+                conn.execute(text("ALTER TABLE password_reset_tokens ADD COLUMN max_attempts INTEGER DEFAULT 5"))
+
 
 def initialize_database() -> None:
     try:

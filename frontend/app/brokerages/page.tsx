@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ensureHighTrust } from "../../lib/highTrust";
+import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -37,8 +39,8 @@ export default function BrokeragesPage() {
     setError("");
     try {
       const [meRes, brokerRes] = await Promise.all([
-        fetch(`${API_BASE}/auth/me`, { credentials: "include" }),
-        fetch(`${API_BASE}/brokers/status`, { credentials: "include" }),
+        apiFetch(`${API_BASE}/auth/me`, { apiBase: API_BASE }),
+        apiFetch(`${API_BASE}/brokers/status`, { apiBase: API_BASE }),
       ]);
 
       if (meRes.status === 401 || brokerRes.status === 401) {
@@ -91,7 +93,23 @@ export default function BrokeragesPage() {
       return;
     }
     setConnecting(provider);
-    window.location.href = `${API_BASE}/alpaca/oauth/start?next=/brokerages`;
+    setError("");
+    try {
+      const ok = await ensureHighTrust({ apiBase: API_BASE });
+      if (!ok) {
+        setError("Security verification was cancelled.");
+        return;
+      }
+      window.location.href = `${API_BASE}/alpaca/oauth/start?next=/brokerages`;
+    } catch (err) {
+      if (err instanceof Error && err.message === "Authentication required") {
+        router.replace("/login?next=/brokerages");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Unable to start secure connect flow");
+    } finally {
+      setConnecting(null);
+    }
   }
 
   return (

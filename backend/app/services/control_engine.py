@@ -21,6 +21,8 @@ class ControlEngine:
         self._current_day = datetime.now(tz=timezone.utc).date()
         self._reject_log: list[dict] = []
         self._safe_mode = True
+        self._defensive_forced = False
+        self._defensive_reason = ""
         self._daily_loss_limit_pct: float = 0.05
         self._max_drawdown_limit_pct: float = 0.10
 
@@ -125,6 +127,17 @@ class ControlEngine:
     def set_kill_switch(self, enabled: bool) -> bool:
         return kill_switch.set_enabled(enabled)
 
+    def set_defensive_mode(self, *, enabled: bool, reason: str = "") -> dict:
+        with self._lock:
+            self._safe_mode = bool(enabled)
+            self._defensive_forced = bool(enabled)
+            self._defensive_reason = reason if enabled else ""
+            return {
+                "defensive_mode": self._safe_mode,
+                "defensive_forced": self._defensive_forced,
+                "defensive_reason": self._defensive_reason,
+            }
+
     def status(self) -> dict:
         with self._lock:
             self._rollover_day_if_needed()
@@ -134,6 +147,8 @@ class ControlEngine:
                 "trading_enabled": kill_switch.is_enabled(),
                 "system_status": "ACTIVE" if kill_switch.is_enabled() else "PAUSED",
                 "mode": "SAFE" if self._safe_mode else "NORMAL",
+                "defensive_forced": self._defensive_forced,
+                "defensive_reason": self._defensive_reason,
                 "daily_pnl": round(self._daily_pnl, 2),
                 "daily_loss": round(self._daily_loss, 2),
                 "daily_loss_limit": round(self._starting_balance * self._daily_loss_limit_pct, 2),

@@ -109,13 +109,44 @@ class UserSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     session_token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    access_token_hash: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True, index=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    device_fingerprint_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    twofa_required: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    twofa_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    high_trust_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    twofa_challenge_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    twofa_challenge_code_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    twofa_challenge_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    twofa_failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    twofa_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0)
+    risk_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class TrustedDevice(Base):
+    __tablename__ = "trusted_devices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    device_fingerprint_hash: Mapped[str] = mapped_column(String(128), index=True)
+    label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    last_ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trusted_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class CopilotConversationMessage(Base):
@@ -290,9 +321,114 @@ class User2FASetup(Base):
     email: Mapped[str] = mapped_column(String(320), index=True, unique=True)
     twofa_method: Mapped[str] = mapped_column(String(32))
     twofa_secret: Mapped[str] = mapped_column(String(255))
-    verification_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verification_code_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class AuthRateLimitBucket(Base):
+    __tablename__ = "auth_rate_limit_buckets"
+    __table_args__ = (UniqueConstraint("scope", "bucket_key_hash", name="uq_auth_rate_limit_scope_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(64), index=True)
+    bucket_key_hash: Mapped[str] = mapped_column(String(128), index=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class LoginSecurityState(Base):
+    __tablename__ = "login_security_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email_key_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    first_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class AuthAuditLog(Base):
+    __tablename__ = "auth_audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True)
+    method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    device_fingerprint_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class WebAuthnCredential(Base):
+    __tablename__ = "webauthn_credentials"
+    __table_args__ = (UniqueConstraint("credential_id", name="uq_webauthn_credential_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    credential_id: Mapped[str] = mapped_column(String(1024), index=True)
+    public_key_pem: Mapped[str] = mapped_column(Text)
+    algorithm: Mapped[str] = mapped_column(String(32), default="ES256")
+    sign_count: Mapped[int] = mapped_column(Integer, default=0)
+    device_fingerprint_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    transports_json: Mapped[str] = mapped_column(Text, default="[]")
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class WithdrawalApproval(Base):
+    __tablename__ = "withdrawal_approvals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    destination: Mapped[str] = mapped_column(String(128), index=True)
+    memo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    request_metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    confirm_token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    deny_token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )

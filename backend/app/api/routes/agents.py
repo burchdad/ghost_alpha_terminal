@@ -51,7 +51,7 @@ from app.models.schemas import (
     SwarmStatusResponse,
 )
 from app.core.config import settings
-from app.api.deps.auth import CurrentUser
+from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.db.models import BrokerOAuthConnection, User
 from app.db.session import get_session
 from app.services.control_engine import control_engine
@@ -67,6 +67,7 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
 from app.services.swarm.weight_engine import dynamic_weight_engine
+from app.services.auth_service import auth_service
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -76,7 +77,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
     response_model=SwarmStatusResponse,
     summary="Agent swarm health and latest decision",
 )
-def get_agent_status() -> SwarmStatusResponse:
+def get_agent_status(user: User = CurrentUser) -> SwarmStatusResponse:
     raw = swarm_manager.status()
     return SwarmStatusResponse(
         agents=raw["agents"],
@@ -92,7 +93,7 @@ def get_agent_status() -> SwarmStatusResponse:
     response_model=ExecutionModeResponse,
     summary="Get current swarm execution mode",
 )
-def get_execution_mode() -> ExecutionModeResponse:
+def get_execution_mode(user: User = CurrentUser) -> ExecutionModeResponse:
     return ExecutionModeResponse(mode=execution_bridge.get_mode())
 
 
@@ -101,7 +102,7 @@ def get_execution_mode() -> ExecutionModeResponse:
     response_model=ExecutionModeResponse,
     summary="Set swarm execution mode",
 )
-def update_execution_mode(payload: ExecutionModeUpdateRequest) -> ExecutionModeResponse:
+def update_execution_mode(payload: ExecutionModeUpdateRequest, user: User = HighTrustUser) -> ExecutionModeResponse:
     mode = execution_bridge.set_mode(payload.mode)
     return ExecutionModeResponse(mode=mode)
 
@@ -579,7 +580,23 @@ def get_execution_history(limit: int = Query(default=50, ge=1, le=200)) -> Execu
         "logged to the swarm decision store and returned in the response."
     ),
 )
-def run_cycle(payload: SwarmCycleRequest, request: Request) -> SwarmCycleResponse:
+def run_cycle(payload: SwarmCycleRequest, request: Request, user: User = HighTrustUser) -> SwarmCycleResponse:
+    signal_risk_high = payload.regime == "HIGH_VOLATILITY" or payload.regime_confidence >= 0.75
+    force_defensive, reasons, risk_score = auth_service.should_force_defensive(
+        request=request,
+        signal_risk_high=signal_risk_high,
+    )
+
+    if force_defensive:
+        execution_bridge.set_mode("SIMULATION")
+        control_engine.set_defensive_mode(
+            enabled=True,
+            reason=(
+                "Adaptive policy forced defensive mode "
+                f"(risk_score={risk_score}; reasons={','.join(reasons)})."
+            ),
+        )
+
     record = swarm_manager.run_cycle(
         symbol=payload.symbol,
         close_prices=payload.close_prices,
@@ -597,7 +614,7 @@ def run_cycle(payload: SwarmCycleRequest, request: Request) -> SwarmCycleRespons
     response_model=SwarmCycleResponse,
     summary="Attach entry/exit outcome and attribution to a swarm cycle",
 )
-def update_decision_outcome(cycle_id: str, payload: DecisionOutcomeUpdateRequest) -> SwarmCycleResponse:
+def update_decision_outcome(cycle_id: str, payload: DecisionOutcomeUpdateRequest, user: User = HighTrustUser) -> SwarmCycleResponse:
     updated = swarm_decision_store.update_outcome(
         cycle_id=cycle_id,
         entry_price=payload.entry_price,

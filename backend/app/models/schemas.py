@@ -402,6 +402,28 @@ class AlpacaAssetsQuery(BaseModel):
     asset_class: Literal["us_equity", "crypto"] = "us_equity"
 
 
+class AlpacaWithdrawalRequest(BaseModel):
+    amount: float = Field(gt=0)
+    destination: str = Field(min_length=2, max_length=64)
+    memo: str | None = Field(default=None, max_length=255)
+
+
+class AlpacaWithdrawalResponse(BaseModel):
+    provider: str = "alpaca"
+    status: Literal["PENDING", "SUBMITTED"]
+    transfer_id: str | None = None
+    amount: float
+    destination: str
+    requested_at: datetime
+    hold_until: datetime | None = None
+    hold_reasons: list[str] = []
+    requires_confirmation: bool = False
+    risk_score: int = 0
+    risk_rating: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"] = "LOW"
+    risk_components: dict[str, int] = {}
+    approval_id: int | None = None
+
+
 # ---------------------------------------------------------------------------
 # Agent Swarm Layer schemas
 # ---------------------------------------------------------------------------

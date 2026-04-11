@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ensureHighTrust } from "../lib/highTrust";
+import { apiFetch } from "../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -90,7 +92,12 @@ export default function ControlPanel({
           max_drawdown_limit_pct: draftMaxDrawdown / 100,
         });
       } else {
-        await fetch(`${API_BASE}/control/limits`, {
+        const ok = await ensureHighTrust({ apiBase: API_BASE });
+        if (!ok) {
+          throw new Error("Security verification was cancelled");
+        }
+        await apiFetch(`${API_BASE}/control/limits`, {
+          apiBase: API_BASE,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

@@ -3,6 +3,8 @@ from typing import Literal
 
 from fastapi import APIRouter
 
+from app.api.deps.auth import HighTrustUser
+from app.db.models import User
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.context_intelligence import context_intelligence
 from app.services.control_engine import control_engine
@@ -53,7 +55,7 @@ def _derive_market_context(symbol: str, timeframe: str = "1d") -> tuple[Literal[
 
 
 @router.post("", response_model=ExecuteTradeResponse)
-def execute_trade(payload: ExecuteTradeRequest) -> ExecuteTradeResponse:
+def execute_trade(payload: ExecuteTradeRequest, user: User = HighTrustUser) -> ExecuteTradeResponse:
     portfolio_manager.configure(balance=payload.account_balance)
     portfolio_state = portfolio_manager.snapshot()
     control_state = control_engine.status()

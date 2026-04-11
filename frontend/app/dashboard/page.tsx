@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ensureHighTrust } from "../../lib/highTrust";
+import { apiFetch } from "../../lib/apiClient";
 
 import DashboardCopilot from "../../components/DashboardCopilot";
 
@@ -40,8 +42,8 @@ export default function DashboardPage() {
     setError("");
     try {
       const [meRes, brokerRes] = await Promise.all([
-        fetch(`${API_BASE}/auth/me`, { credentials: "include" }),
-        fetch(`${API_BASE}/brokers/status`, { credentials: "include" }),
+        apiFetch(`${API_BASE}/auth/me`, { apiBase: API_BASE }),
+        apiFetch(`${API_BASE}/brokers/status`, { apiBase: API_BASE }),
       ]);
 
       if (meRes.status === 401 || brokerRes.status === 401) {
@@ -96,9 +98,9 @@ export default function DashboardPage() {
   }, [brokers]);
 
   async function handleLogout() {
-    await fetch(`${API_BASE}/auth/logout`, {
+    await apiFetch(`${API_BASE}/auth/logout`, {
+      apiBase: API_BASE,
       method: "POST",
-      credentials: "include",
     });
     router.replace("/login");
   }
@@ -108,7 +110,23 @@ export default function DashboardPage() {
       return;
     }
     setConnecting(provider);
-    window.location.href = `${API_BASE}/alpaca/oauth/start?next=/dashboard`;
+    setError("");
+    try {
+      const ok = await ensureHighTrust({ apiBase: API_BASE });
+      if (!ok) {
+        setError("Security verification was cancelled.");
+        return;
+      }
+      window.location.href = `${API_BASE}/alpaca/oauth/start?next=/dashboard`;
+    } catch (err) {
+      if (err instanceof Error && err.message === "Authentication required") {
+        router.replace("/login?next=/dashboard");
+        return;
+      }
+      setError(err instanceof Error ? err.message : "Unable to start secure connect flow");
+    } finally {
+      setConnecting(null);
+    }
   }
 
   async function handleDisconnect(provider: string) {
@@ -117,9 +135,14 @@ export default function DashboardPage() {
     }
     setConnecting(provider);
     try {
-      const res = await fetch(`${API_BASE}/alpaca/oauth/disconnect`, {
+      const ok = await ensureHighTrust({ apiBase: API_BASE });
+      if (!ok) {
+        setError("Security verification was cancelled.");
+        return;
+      }
+      const res = await apiFetch(`${API_BASE}/alpaca/oauth/disconnect`, {
+        apiBase: API_BASE,
         method: "POST",
-        credentials: "include",
       });
       if (!res.ok) {
         throw new Error("Disconnect failed");

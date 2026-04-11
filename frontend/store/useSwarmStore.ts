@@ -1,6 +1,8 @@
 "use client";
 
 import { create } from "zustand";
+import { ensureHighTrust } from "../lib/highTrust";
+import { apiFetch } from "../lib/apiClient";
 
 import type {
   AgentWeightHistoryResponse,
@@ -81,7 +83,7 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
 
   fetchStatus: async () => {
     try {
-      const res = await fetch(`${API_BASE}/agents/status`, { cache: "no-store" });
+      const res = await apiFetch(`${API_BASE}/agents/status`, { apiBase: API_BASE, cache: "no-store" });
       if (!res.ok) {
         throw new Error(`Status request failed: HTTP ${res.status}`);
       }
@@ -101,7 +103,7 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
   fetchDecisions: async (limit = 150) => {
     set({ loading: true });
     try {
-      const res = await fetch(`${API_BASE}/agents/decisions?limit=${limit}`, { cache: "no-store" });
+      const res = await apiFetch(`${API_BASE}/agents/decisions?limit=${limit}`, { apiBase: API_BASE, cache: "no-store" });
       if (!res.ok) {
         throw new Error(`Decisions request failed: HTTP ${res.status}`);
       }
@@ -124,7 +126,8 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
   runCycle: async (payload: RunCycleRequest) => {
     set({ runningCycle: true });
     try {
-      const res = await fetch(`${API_BASE}/agents/run-cycle`, {
+      const res = await apiFetch(`${API_BASE}/agents/run-cycle`, {
+        apiBase: API_BASE,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -153,7 +156,13 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
 
   setExecutionMode: async (mode) => {
     try {
-      const res = await fetch(`${API_BASE}/agents/execution-mode`, {
+      const ok = await ensureHighTrust({ apiBase: API_BASE });
+      if (!ok) {
+        set({ error: "Security verification was cancelled" });
+        return;
+      }
+      const res = await apiFetch(`${API_BASE}/agents/execution-mode`, {
+        apiBase: API_BASE,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
@@ -170,7 +179,8 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
 
   updateOutcome: async (cycleId, payload) => {
     try {
-      const res = await fetch(`${API_BASE}/agents/decisions/${cycleId}/outcome`, {
+      const res = await apiFetch(`${API_BASE}/agents/decisions/${cycleId}/outcome`, {
+        apiBase: API_BASE,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -194,8 +204,8 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
   fetchWeights: async () => {
     try {
       const [weightsRes, historyRes] = await Promise.all([
-        fetch(`${API_BASE}/agents/weights`, { cache: "no-store" }),
-        fetch(`${API_BASE}/agents/weights/history?limit=100`, { cache: "no-store" }),
+        apiFetch(`${API_BASE}/agents/weights`, { apiBase: API_BASE, cache: "no-store" }),
+        apiFetch(`${API_BASE}/agents/weights/history?limit=100`, { apiBase: API_BASE, cache: "no-store" }),
       ]);
       if (!weightsRes.ok || !historyRes.ok) {
         throw new Error("Failed to load agent weights");

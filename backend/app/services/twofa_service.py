@@ -118,6 +118,82 @@ class TwoFAService:
         else:
             raise HTTPException(status_code=503, detail="Email provider is not configured")
 
+    def send_security_alert(
+        self,
+        *,
+        to_email: str,
+        method: str,
+        ip_address: str | None,
+        device: str | None,
+        location: str | None = None,
+        event: str = "New login detected",
+    ) -> None:
+        subject = "Ghost Alpha Terminal security alert"
+        details = [
+            f"Event: {event}",
+            f"2FA method: {method}",
+            f"IP address: {ip_address or 'unknown'}",
+            f"Device: {device or 'unknown'}",
+        ]
+        if location:
+            details.append(f"Location: {location}")
+        body = "\n".join(details)
+
+        try:
+            if self._is_configured(settings.sendgrid_api_key):
+                self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            elif self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
+                self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+        except Exception:
+            # Alerts should never block auth/session flow.
+            return
+
+    def send_password_reset_email(self, *, to_email: str, reset_link: str) -> None:
+        subject = "Reset your Ghost Alpha Terminal password"
+        body = (
+            "We received a request to reset your password.\n\n"
+            f"Reset link: {reset_link}\n\n"
+            f"This link expires in {settings.password_reset_ttl_minutes} minutes. "
+            "If you did not request this, you can safely ignore this email."
+        )
+
+        if self._is_configured(settings.sendgrid_api_key):
+            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            return
+        if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
+            self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+            return
+        raise HTTPException(status_code=503, detail="Email provider is not configured")
+
+    def send_withdrawal_approval_email(
+        self,
+        *,
+        to_email: str,
+        amount: float,
+        destination: str,
+        confirm_link: str,
+        deny_link: str,
+        hold_minutes: int,
+    ) -> None:
+        subject = "Confirm or deny your withdrawal request"
+        body = (
+            "A withdrawal request is currently held pending your approval.\n\n"
+            f"Amount: {amount:.2f}\n"
+            f"Destination: {destination}\n"
+            f"Hold window: {hold_minutes} minutes\n\n"
+            f"Confirm: {confirm_link}\n"
+            f"Deny: {deny_link}\n\n"
+            "If this was not you, deny immediately and rotate credentials."
+        )
+
+        if self._is_configured(settings.sendgrid_api_key):
+            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            return
+        if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
+            self._send_via_smtp(to_email=to_email, subject=subject, body=body)
+            return
+        raise HTTPException(status_code=503, detail="Email provider is not configured")
+
     def _send_via_sendgrid(self, *, to_email: str, subject: str, body: str) -> None:
         if sendgrid is None or Mail is None:
             raise HTTPException(status_code=500, detail="SendGrid dependency is not installed")

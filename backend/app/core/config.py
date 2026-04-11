@@ -65,11 +65,47 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     frontend_base_url: str = "http://localhost:3000"
+    auth_access_ttl_minutes: int = 30
+    auth_refresh_ttl_days: int = 14
+    risk_new_ip_prefix_length: int = 24
+    login_failure_window_minutes: int = 15
+    login_progressive_delay_after_failures: int = 5
+    login_progressive_delay_seconds: int = 1
+    login_lock_after_failures: int = 10
+    login_lock_minutes: int = 15
 
     # ---------------------------------------------------------------------------
     # 2FA / OTP settings
     # ---------------------------------------------------------------------------
     otp_code_ttl_minutes: int = 10
+    otp_max_attempts: int = 5
+    otp_lockout_minutes: int = 10
+    trusted_device_days: int = 30
+    high_trust_session_minutes: int = 30
+    webauthn_challenge_ttl_seconds: int = 300
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_origin: str = "http://localhost:3000"
+    webauthn_assertion_window_minutes: int = 10
+    withdrawal_step_up_max_age_minutes: int = 10
+    withdrawal_first_cooldown_minutes: int = 20
+    withdrawal_new_destination_cooldown_minutes: int = 30
+    withdrawal_anomaly_amount_multiplier: float = 3.0
+    withdrawal_anomaly_amount_absolute: float = 25000
+    withdrawal_anomaly_timing_hour_delta: int = 6
+    withdrawal_hold_on_anomaly: bool = True
+    withdrawal_approval_ttl_minutes: int = 30
+    fraud_agent_escalate_score: int = 60
+    fraud_agent_block_score: int = 85
+    password_reset_ttl_minutes: int = 30
+    password_reset_max_attempts: int = 5
+    password_reset_request_window_minutes: int = 15
+    password_reset_request_max_per_ip: int = 10
+    password_reset_request_max_per_email: int = 5
+    password_reset_submit_window_minutes: int = 15
+    password_reset_submit_max_per_ip: int = 20
+    password_reset_captcha_after_attempts: int = 3
+    turnstile_site_key: str = ""
+    turnstile_secret_key: str = ""
     twofa_totp_issuer: str = "Ghost Alpha Terminal"
 
     # Twilio Verify (preferred — no from-number required)

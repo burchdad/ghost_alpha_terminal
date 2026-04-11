@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps.auth import CurrentUser
+from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.core.config import settings
 from app.db.models import CopilotConversationMessage, CopilotTelemetryEvent, User
 from app.db.session import get_session
@@ -515,7 +515,7 @@ def copilot_context(user: User = CurrentUser) -> CopilotContextResponse:
 
 
 @router.post("/chat", response_model=CopilotChatResponse)
-def copilot_chat(payload: CopilotChatRequest, user: User = CurrentUser) -> CopilotChatResponse:
+def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> CopilotChatResponse:
     state_before = _state_snapshot()
     mode_assigned = _assign_mode(str(user.id))
     state_before["copilot_mode_assigned"] = mode_assigned

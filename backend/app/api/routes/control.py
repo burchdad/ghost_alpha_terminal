@@ -3,6 +3,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter
 
+from app.api.deps.auth import CurrentUser, HighTrustUser
+from app.db.models import User
+
 from app.models.schemas import (
     AutonomousModeStatusResponse,
     AutonomousModeUpdateRequest,
@@ -60,7 +63,7 @@ def _coerce_timestamp(value: object) -> datetime | None:
 
 
 @router.get("", response_model=ControlStatusResponse)
-def get_control_status() -> ControlStatusResponse:
+def get_control_status(user: User = CurrentUser) -> ControlStatusResponse:
     try:
         status = control_engine.status()
         auto = autonomous_runner.status()
@@ -157,7 +160,7 @@ def get_control_status() -> ControlStatusResponse:
 
 
 @router.post("/kill-switch", response_model=KillSwitchUpdateResponse)
-def update_kill_switch(payload: KillSwitchUpdateRequest) -> KillSwitchUpdateResponse:
+def update_kill_switch(payload: KillSwitchUpdateRequest, user: User = HighTrustUser) -> KillSwitchUpdateResponse:
     enabled = control_engine.set_kill_switch(payload.trading_enabled)
     return KillSwitchUpdateResponse(
         trading_enabled=enabled,
@@ -166,7 +169,7 @@ def update_kill_switch(payload: KillSwitchUpdateRequest) -> KillSwitchUpdateResp
 
 
 @router.post("/limits", response_model=RiskLimitUpdateResponse)
-def update_risk_limits(payload: RiskLimitUpdateRequest) -> RiskLimitUpdateResponse:
+def update_risk_limits(payload: RiskLimitUpdateRequest, user: User = HighTrustUser) -> RiskLimitUpdateResponse:
     result = control_engine.set_limits(
         daily_loss_limit_pct=payload.daily_loss_limit_pct,
         max_drawdown_limit_pct=payload.max_drawdown_limit_pct,
@@ -175,12 +178,12 @@ def update_risk_limits(payload: RiskLimitUpdateRequest) -> RiskLimitUpdateRespon
 
 
 @router.get("/autonomous", response_model=AutonomousModeStatusResponse)
-def get_autonomous_status() -> AutonomousModeStatusResponse:
+def get_autonomous_status(user: User = CurrentUser) -> AutonomousModeStatusResponse:
     return AutonomousModeStatusResponse(**autonomous_runner.status())
 
 
 @router.post("/autonomous", response_model=AutonomousModeStatusResponse)
-def update_autonomous(payload: AutonomousModeUpdateRequest) -> AutonomousModeStatusResponse:
+def update_autonomous(payload: AutonomousModeUpdateRequest, user: User = HighTrustUser) -> AutonomousModeStatusResponse:
     return AutonomousModeStatusResponse(
         **autonomous_runner.configure(
             enabled=payload.enabled,
@@ -191,7 +194,7 @@ def update_autonomous(payload: AutonomousModeUpdateRequest) -> AutonomousModeSta
 
 
 @router.post("/autonomous/run-once", response_model=AutonomousModeStatusResponse)
-def run_autonomous_once() -> AutonomousModeStatusResponse:
+def run_autonomous_once(user: User = HighTrustUser) -> AutonomousModeStatusResponse:
     return AutonomousModeStatusResponse(**autonomous_runner.trigger_run_once())
 
 
@@ -201,12 +204,12 @@ def _current_capital() -> float:
 
 
 @router.get("/goal", response_model=GoalStatusResponse)
-def get_goal_status() -> GoalStatusResponse:
+def get_goal_status(user: User = CurrentUser) -> GoalStatusResponse:
     return GoalStatusResponse(**goal_engine.status(current_capital=_current_capital()))
 
 
 @router.post("/goal", response_model=GoalStatusResponse)
-def set_goal(payload: GoalTargetRequest) -> GoalStatusResponse:
+def set_goal(payload: GoalTargetRequest, user: User = HighTrustUser) -> GoalStatusResponse:
     status = goal_engine.configure(
         start_capital=payload.start_capital,
         target_capital=payload.target_capital,
@@ -216,13 +219,13 @@ def set_goal(payload: GoalTargetRequest) -> GoalStatusResponse:
 
 
 @router.delete("/goal", response_model=GoalStatusResponse)
-def clear_goal() -> GoalStatusResponse:
+def clear_goal(user: User = HighTrustUser) -> GoalStatusResponse:
     goal_engine.clear()
     return GoalStatusResponse(**goal_engine.status(current_capital=_current_capital()))
 
 
 @router.post("/mission", response_model=GoalMissionResponse)
-def start_goal_mission(payload: GoalMissionRequest) -> GoalMissionResponse:
+def start_goal_mission(payload: GoalMissionRequest, user: User = HighTrustUser) -> GoalMissionResponse:
     current_capital = _current_capital()
     start_capital = float(payload.start_capital) if payload.start_capital is not None else current_capital
 
@@ -260,7 +263,7 @@ def start_goal_mission(payload: GoalMissionRequest) -> GoalMissionResponse:
 
 
 @router.get("/mission/simulate")
-def simulate_mission(target_capital: float, timeframe_days: int, start_capital: float | None = None) -> dict:
+def simulate_mission(target_capital: float, timeframe_days: int, start_capital: float | None = None, user: User = CurrentUser) -> dict:
     return mission_intelligence_service.simulate_mission(
         target_capital=target_capital,
         timeframe_days=timeframe_days,
@@ -269,14 +272,14 @@ def simulate_mission(target_capital: float, timeframe_days: int, start_capital: 
 
 
 @router.get("/strategy-kill-switch")
-def get_strategy_kill_switch_overrides() -> dict:
+def get_strategy_kill_switch_overrides(user: User = CurrentUser) -> dict:
     return {
         "manual_force_enabled": strategy_kill_switch_service.list_force_enabled(),
     }
 
 
 @router.post("/strategy-kill-switch/override")
-def set_strategy_kill_switch_override(strategy: str, force_enabled: bool = True) -> dict:
+def set_strategy_kill_switch_override(strategy: str, force_enabled: bool = True, user: User = HighTrustUser) -> dict:
     result = strategy_kill_switch_service.set_force_enabled(strategy=strategy, enabled=force_enabled)
     return {
         **result,
@@ -285,7 +288,7 @@ def set_strategy_kill_switch_override(strategy: str, force_enabled: bool = True)
 
 
 @router.delete("/strategy-kill-switch/override")
-def clear_strategy_kill_switch_override(strategy: str) -> dict:
+def clear_strategy_kill_switch_override(strategy: str, user: User = HighTrustUser) -> dict:
     result = strategy_kill_switch_service.clear_force_enabled(strategy=strategy)
     return {
         **result,
@@ -294,7 +297,7 @@ def clear_strategy_kill_switch_override(strategy: str) -> dict:
 
 
 @router.get("/strategy-lifecycle-transitions")
-def get_strategy_lifecycle_transitions(limit: int = 200, since_hours: int = 168) -> dict:
+def get_strategy_lifecycle_transitions(limit: int = 200, since_hours: int = 168, user: User = CurrentUser) -> dict:
     bounded_limit = max(1, min(limit, 1000))
     bounded_since = max(1, min(since_hours, 24 * 30))
     return {
@@ -304,7 +307,7 @@ def get_strategy_lifecycle_transitions(limit: int = 200, since_hours: int = 168)
 
 
 @router.post("/admin/reset-runtime-state")
-def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool = True, reset_system_mode: bool = True) -> dict:
+def reset_runtime_state(*, reset_live_mode: bool = True, reset_meta_risk: bool = True, reset_system_mode: bool = True, user: User = HighTrustUser) -> dict:
     result: dict = {
         "reset_live_mode": bool(reset_live_mode),
         "reset_meta_risk": bool(reset_meta_risk),
