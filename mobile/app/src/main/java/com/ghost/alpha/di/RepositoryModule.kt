@@ -1,6 +1,7 @@
 package com.ghost.alpha.di
 
 import com.ghost.alpha.data.repository.AuthRepositoryImpl
+import com.ghost.alpha.data.repository.AuditTrailRepositoryImpl
 import com.ghost.alpha.data.repository.BrokerRepositoryImpl
 import com.ghost.alpha.data.repository.CopilotRepositoryImpl
 import com.ghost.alpha.data.repository.GuardrailRepositoryImpl
@@ -8,6 +9,7 @@ import com.ghost.alpha.data.repository.MarketRepositoryImpl
 import com.ghost.alpha.data.repository.PerformanceRepositoryImpl
 import com.ghost.alpha.data.repository.RealtimeRepositoryImpl
 import com.ghost.alpha.domain.repository.AuthRepository
+import com.ghost.alpha.domain.repository.AuditTrailRepository
 import com.ghost.alpha.domain.repository.BrokerRepository
 import com.ghost.alpha.domain.repository.CopilotRepository
 import com.ghost.alpha.domain.repository.GuardrailRepository
@@ -26,6 +28,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAuditTrailRepository(impl: AuditTrailRepositoryImpl): AuditTrailRepository
 
     @Binds
     @Singleton

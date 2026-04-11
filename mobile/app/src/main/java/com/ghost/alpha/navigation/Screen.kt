@@ -11,6 +11,7 @@ sealed class Screen(val route: String, val label: String) {
     data object TradeGuardrails : Screen("guardrails", "Guardrails")
     data object Copilot : Screen("copilot", "Copilot")
     data object Performance : Screen("performance", "Performance")
+    data object AuditTrail : Screen("audit_trail", "Audit")
 }
 
 val primaryScreens = listOf(
@@ -21,5 +22,6 @@ val primaryScreens = listOf(
     Screen.Backtest,
     Screen.TradeGuardrails,
     Screen.Copilot,
-    Screen.Performance
+    Screen.Performance,
+    Screen.AuditTrail
 )

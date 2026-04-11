@@ -446,3 +446,54 @@ data class PerformanceResponseDto(
     @Json(name = "by_regime") val byRegime: Map<String, Map<String, Double>> = emptyMap(),
     @Json(name = "generated_at") val generatedAt: String
 )
+
+// Audit Trail DTOs
+
+@JsonClass(generateAdapter = true)
+data class DecisionAuditSummaryDto(
+    @Json(name = "audit_id") val auditId: String,
+    val timestamp: String,
+    @Json(name = "decision_type") val decisionType: String,
+    val symbol: String,
+    val status: String,
+    @Json(name = "cycle_id") val cycleId: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class DecisionAuditSummaryListResponseDto(
+    val entries: List<DecisionAuditSummaryDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class DecisionReplayStepDto(
+    val stage: String,
+    val title: String,
+    val summary: String,
+    val payload: Map<String, Any?> = emptyMap()
+)
+
+@JsonClass(generateAdapter = true)
+data class DecisionReplayResponseDto(
+    @Json(name = "audit_id") val auditId: String,
+    val symbol: String,
+    @Json(name = "decision_type") val decisionType: String,
+    val status: String,
+    @Json(name = "generated_at") val generatedAt: String,
+    @Json(name = "replay_steps") val replaySteps: List<DecisionReplayStepDto> = emptyList(),
+    @Json(name = "why_not") val whyNot: List<String> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class DecisionAuditDetailResponseDto(
+    @Json(name = "audit_id") val auditId: String,
+    val timestamp: String,
+    @Json(name = "decision_type") val decisionType: String,
+    val symbol: String,
+    val status: String,
+    @Json(name = "cycle_id") val cycleId: String? = null,
+    @Json(name = "governor_snapshot") val governorSnapshot: Map<String, Any?> = emptyMap(),
+    @Json(name = "allocation_snapshot") val allocationSnapshot: Map<String, Any?> = emptyMap(),
+    @Json(name = "execution_snapshot") val executionSnapshot: Map<String, Any?> = emptyMap(),
+    @Json(name = "context_snapshot") val contextSnapshot: Map<String, Any?> = emptyMap(),
+    @Json(name = "explainability_snapshot") val explainabilitySnapshot: Map<String, Any?> = emptyMap()
+)

@@ -78,4 +78,18 @@ interface GhostAlphaApiService {
 
     @GET("performance/{symbol}")
     suspend fun getSymbolPerformance(@Path("symbol") symbol: String): PerformanceResponseDto
+
+    // Decision Audit Trail
+    @GET("agents/audit/decisions")
+    suspend fun getDecisionAudits(
+        @Query("limit") limit: Int = 50,
+        @Query("symbol") symbol: String? = null,
+        @Query("status") status: String? = null
+    ): DecisionAuditSummaryListResponseDto
+
+    @GET("agents/audit/replay/{auditId}")
+    suspend fun getDecisionReplay(@Path("auditId") auditId: String): DecisionReplayResponseDto
+
+    @GET("agents/audit/decisions/{auditId}")
+    suspend fun getDecisionAuditDetail(@Path("auditId") auditId: String): DecisionAuditDetailResponseDto
 }
