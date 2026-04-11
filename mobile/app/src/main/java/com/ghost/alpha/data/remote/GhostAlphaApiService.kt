@@ -4,6 +4,7 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface GhostAlphaApiService {
     @POST("auth/login")
@@ -64,4 +65,17 @@ interface GhostAlphaApiService {
 
     @GET("copilot/telemetry/summary")
     suspend fun getCopilotTelemetrySummary(): CopilotTelemetrySummaryResponseDto
+
+    // Performance Intelligence
+    @GET("metrics/truth-dashboard")
+    suspend fun getTruthDashboard(@Query("days") days: Int = 7): TruthDashboardResponseDto
+
+    @GET("agents/weights")
+    suspend fun getAgentWeights(): AgentWeightsResponseDto
+
+    @GET("agents/execution-history")
+    suspend fun getExecutionHistory(@Query("limit") limit: Int = 50): ExecutionHistoryResponseDto
+
+    @GET("performance/{symbol}")
+    suspend fun getSymbolPerformance(@Path("symbol") symbol: String): PerformanceResponseDto
 }

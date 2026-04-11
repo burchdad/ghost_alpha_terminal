@@ -355,3 +355,94 @@ data class CopilotTelemetrySummaryResponseDto(
     @Json(name = "success_rate") val successRate: Double,
     @Json(name = "confirmation_rate") val confirmationRate: Double
 )
+
+// Performance Intelligence DTOs
+
+@JsonClass(generateAdapter = true)
+data class StrategyStatDto(
+    val strategy: String,
+    val trades: Int,
+    @Json(name = "win_rate") val winRate: Double,
+    @Json(name = "net_pnl") val netPnl: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class TruthDashboardResponseDto(
+    @Json(name = "window_days") val windowDays: Int,
+    @Json(name = "as_of") val asOf: String,
+    val trades: Int,
+    @Json(name = "settled_trades") val settledTrades: Int,
+    @Json(name = "win_rate") val winRate: Double,
+    @Json(name = "net_pnl") val netPnl: Double,
+    @Json(name = "best_strategy") val bestStrategy: StrategyStatDto? = null,
+    @Json(name = "worst_strategy") val worstStrategy: StrategyStatDto? = null,
+    @Json(name = "strategy_breakdown") val strategyBreakdown: List<StrategyStatDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class AgentWeightEntryDto(
+    @Json(name = "agent_name") val agentName: String,
+    val weight: Double,
+    @Json(name = "raw_score") val rawScore: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class AgentWeightsResponseDto(
+    @Json(name = "regime_weights") val regimeWeights: Map<String, List<AgentWeightEntryDto>> = emptyMap()
+)
+
+@JsonClass(generateAdapter = true)
+data class ExecutionHistoryEntryDto(
+    @Json(name = "execution_id") val executionId: String,
+    @Json(name = "cycle_id") val cycleId: String,
+    val symbol: String,
+    val regime: String,
+    val action: String,
+    val strategy: String,
+    val confidence: Double,
+    @Json(name = "risk_level") val riskLevel: String,
+    @Json(name = "allocation_pct") val allocationPct: Double,
+    val qty: Double,
+    val notional: Double,
+    val mode: String,
+    val submitted: Boolean,
+    @Json(name = "order_id") val orderId: String? = null,
+    val reason: String? = null,
+    val error: String? = null,
+    val timestamp: String,
+    @Json(name = "outcome_label") val outcomeLabel: String? = null,
+    val pnl: Double? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ExecutionHistoryResponseDto(
+    val executions: List<ExecutionHistoryEntryDto> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class AgentPerformanceRowDto(
+    @Json(name = "agent_name") val agentName: String,
+    val accuracy: Double,
+    @Json(name = "win_rate") val winRate: Double,
+    @Json(name = "avg_return") val avgReturn: Double,
+    @Json(name = "confidence_calibration") val confidenceCalibration: Double,
+    @Json(name = "composite_score") val compositeScore: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class StrategyPerformanceRowDto(
+    val strategy: String,
+    val trades: Int,
+    @Json(name = "win_rate") val winRate: Double,
+    @Json(name = "avg_pnl") val avgPnl: Double
+)
+
+@JsonClass(generateAdapter = true)
+data class PerformanceResponseDto(
+    val symbol: String,
+    @Json(name = "best_agent") val bestAgent: String,
+    @Json(name = "agent_leaderboard") val agentLeaderboard: List<AgentPerformanceRowDto> = emptyList(),
+    @Json(name = "top_strategies") val topStrategies: List<StrategyPerformanceRowDto> = emptyList(),
+    @Json(name = "by_regime") val byRegime: Map<String, Map<String, Double>> = emptyMap(),
+    @Json(name = "generated_at") val generatedAt: String
+)

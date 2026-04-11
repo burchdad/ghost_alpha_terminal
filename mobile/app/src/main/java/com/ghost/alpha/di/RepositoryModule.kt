@@ -5,12 +5,14 @@ import com.ghost.alpha.data.repository.BrokerRepositoryImpl
 import com.ghost.alpha.data.repository.CopilotRepositoryImpl
 import com.ghost.alpha.data.repository.GuardrailRepositoryImpl
 import com.ghost.alpha.data.repository.MarketRepositoryImpl
+import com.ghost.alpha.data.repository.PerformanceRepositoryImpl
 import com.ghost.alpha.data.repository.RealtimeRepositoryImpl
 import com.ghost.alpha.domain.repository.AuthRepository
 import com.ghost.alpha.domain.repository.BrokerRepository
 import com.ghost.alpha.domain.repository.CopilotRepository
 import com.ghost.alpha.domain.repository.GuardrailRepository
 import com.ghost.alpha.domain.repository.MarketRepository
+import com.ghost.alpha.domain.repository.PerformanceRepository
 import com.ghost.alpha.domain.repository.RealtimeRepository
 import dagger.Binds
 import dagger.Module
@@ -40,6 +42,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindCopilotRepository(impl: CopilotRepositoryImpl): CopilotRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindPerformanceRepository(impl: PerformanceRepositoryImpl): PerformanceRepository
 
     @Binds
     @Singleton
