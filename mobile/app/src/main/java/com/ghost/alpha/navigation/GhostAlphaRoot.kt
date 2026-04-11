@@ -18,6 +18,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ghost.alpha.presentation.screens.BacktestingScreen
 import com.ghost.alpha.presentation.screens.BrokerConnectionScreen
+import com.ghost.alpha.presentation.screens.CopilotCommandScreen
 import com.ghost.alpha.presentation.screens.DashboardScreen
 import com.ghost.alpha.presentation.screens.LoginScreen
 import com.ghost.alpha.presentation.screens.SwarmTerminalScreen
@@ -118,9 +119,12 @@ fun GhostAlphaRoot(initialDeepLink: String?) {
                 val viewModel: BacktestViewModel = hiltViewModel()
                 BacktestingScreen(viewModel = viewModel)
             }
-                composable(Screen.TradeGuardrails.route) {
-                    TradeGuardrailsScreen()
-                }
+            composable(Screen.TradeGuardrails.route) {
+                TradeGuardrailsScreen()
+            }
+            composable(Screen.Copilot.route) {
+                CopilotCommandScreen()
+            }
         }
     }
 }

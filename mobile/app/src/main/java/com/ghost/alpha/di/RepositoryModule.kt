@@ -2,11 +2,13 @@ package com.ghost.alpha.di
 
 import com.ghost.alpha.data.repository.AuthRepositoryImpl
 import com.ghost.alpha.data.repository.BrokerRepositoryImpl
+import com.ghost.alpha.data.repository.CopilotRepositoryImpl
 import com.ghost.alpha.data.repository.GuardrailRepositoryImpl
 import com.ghost.alpha.data.repository.MarketRepositoryImpl
 import com.ghost.alpha.data.repository.RealtimeRepositoryImpl
 import com.ghost.alpha.domain.repository.AuthRepository
 import com.ghost.alpha.domain.repository.BrokerRepository
+import com.ghost.alpha.domain.repository.CopilotRepository
 import com.ghost.alpha.domain.repository.GuardrailRepository
 import com.ghost.alpha.domain.repository.MarketRepository
 import com.ghost.alpha.domain.repository.RealtimeRepository
@@ -34,6 +36,10 @@ abstract class RepositoryModule {
     @Binds
     @Singleton
     abstract fun bindRealtimeRepository(impl: RealtimeRepositoryImpl): RealtimeRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCopilotRepository(impl: CopilotRepositoryImpl): CopilotRepository
 
     @Binds
     @Singleton

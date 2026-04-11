@@ -54,4 +54,14 @@ interface GhostAlphaApiService {
 
     @GET("trade/audits/recent/{limit}")
     suspend fun getRecentTradeAudits(@Path("limit") limit: Int = 10): List<TradeExecutionAuditDto>
+
+    // Copilot AI Command Layer
+    @GET("copilot/context")
+    suspend fun getCopilotContext(): CopilotContextResponseDto
+
+    @POST("copilot/chat")
+    suspend fun sendCopilotMessage(@Body payload: CopilotChatRequestDto): CopilotChatResponseDto
+
+    @GET("copilot/telemetry/summary")
+    suspend fun getCopilotTelemetrySummary(): CopilotTelemetrySummaryResponseDto
 }

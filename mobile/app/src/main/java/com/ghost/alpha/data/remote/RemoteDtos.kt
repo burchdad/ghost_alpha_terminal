@@ -307,3 +307,51 @@ data class AgentContributionDto(
     val signal: String,
     val reasoning: String
 )
+
+// Copilot AI Command Layer DTOs
+
+@JsonClass(generateAdapter = true)
+data class CopilotMessageItemDto(
+    val role: String,
+    val text: String,
+    val timestamp: String
+)
+
+@JsonClass(generateAdapter = true)
+data class CopilotContextResponseDto(
+    val greeting: String,
+    @Json(name = "first_name") val firstName: String,
+    val state: Map<String, Any?> = emptyMap(),
+    val history: List<CopilotMessageItemDto> = emptyList(),
+    @Json(name = "copilot_mode") val copilotMode: String = "rule-based"
+)
+
+@JsonClass(generateAdapter = true)
+data class CopilotChatRequestDto(
+    val message: String,
+    val confirm: Boolean = false,
+    @Json(name = "pending_action") val pendingAction: Map<String, Any?>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class CopilotChatResponseDto(
+    val reply: String,
+    val state: Map<String, Any?> = emptyMap(),
+    @Json(name = "actions_applied") val actionsApplied: List<String> = emptyList(),
+    @Json(name = "requires_confirmation") val requiresConfirmation: Boolean = false,
+    @Json(name = "confirmation_prompt") val confirmationPrompt: String? = null,
+    @Json(name = "pending_action") val pendingAction: Map<String, Any?>? = null,
+    @Json(name = "copilot_mode") val copilotMode: String = "rule-based",
+    @Json(name = "parser_used") val parserUsed: String = "rule"
+)
+
+@JsonClass(generateAdapter = true)
+data class CopilotTelemetrySummaryResponseDto(
+    @Json(name = "window_days") val windowDays: Int,
+    @Json(name = "total_events") val totalEvents: Int,
+    @Json(name = "mode_breakdown") val modeBreakdown: Map<String, Int> = emptyMap(),
+    @Json(name = "parser_breakdown") val parserBreakdown: Map<String, Int> = emptyMap(),
+    @Json(name = "action_breakdown") val actionBreakdown: Map<String, Int> = emptyMap(),
+    @Json(name = "success_rate") val successRate: Double,
+    @Json(name = "confirmation_rate") val confirmationRate: Double
+)
