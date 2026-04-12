@@ -119,6 +119,7 @@ export default function DashboardPage() {
 
   function handleContinueToDashboard() {
     setShowPostConnectPrompt(false);
+    router.push("/alpha");
   }
 
   async function handleLogout() {
@@ -298,7 +299,7 @@ export default function DashboardPage() {
                 onClick={handleContinueToDashboard}
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
               >
-                No, continue to dashboard
+                No, continue to trading dashboard
               </button>
             </div>
           </div>
