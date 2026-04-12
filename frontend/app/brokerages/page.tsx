@@ -69,6 +69,11 @@ export default function BrokeragesPage() {
   }
 
   useEffect(() => {
+    // Refresh broker status on mount, especially after OAuth callback
+    const oauthState = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
+    if (oauthState === "connected") {
+      console.log("[BrokeragesMount] OAuth callback detected, fetching fresh broker status...");
+    }
     void fetchSessionAndStatus();
   }, []);
 
@@ -108,6 +113,7 @@ export default function BrokeragesPage() {
     });
 
     if (!loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession)) {
+      console.log("[BrokeragesModal] Showing post-connect prompt");
       setShowPostConnectPrompt(true);
       if (shouldPromptFromSession) {
         try {
