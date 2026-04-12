@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ensureHighTrust } from "../../lib/highTrust";
 import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
+const POST_CONNECT_PROMPT_KEY = "alpaca-post-connect-prompt";
 
 const BROKER_ORDER = ["alpaca", "coinbase", "tradier", "schwab", "tastytrade", "robinhood", "tradestation"];
 
@@ -28,11 +29,13 @@ type AuthMeResponse = {
 
 export default function BrokeragesPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [brokers, setBrokers] = useState<BrokerStatusResponse>({});
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [showPostConnectPrompt, setShowPostConnectPrompt] = useState(false);
 
   async function fetchSessionAndStatus() {
     setLoading(true);
@@ -88,6 +91,47 @@ export default function BrokeragesPage() {
     return cards.some((card) => Boolean(card.status.connected) || Boolean(card.status.configured));
   }, [cards]);
 
+  useEffect(() => {
+    const oauthState = searchParams.get("alpaca_oauth");
+    let shouldPromptFromSession = false;
+    try {
+      shouldPromptFromSession = window.sessionStorage.getItem(POST_CONNECT_PROMPT_KEY) === "1";
+    } catch {
+      shouldPromptFromSession = false;
+    }
+
+    if (!loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession)) {
+      setShowPostConnectPrompt(true);
+      if (shouldPromptFromSession) {
+        try {
+          window.sessionStorage.removeItem(POST_CONNECT_PROMPT_KEY);
+        } catch {
+          // Ignore storage access failures and continue with the prompt.
+        }
+      }
+    }
+  }, [searchParams, loading, hasConnectedBroker]);
+
+  function handleStayOnBrokerages() {
+    setShowPostConnectPrompt(false);
+    try {
+      window.sessionStorage.removeItem(POST_CONNECT_PROMPT_KEY);
+    } catch {
+      // Ignore storage access failures and continue navigation.
+    }
+    router.replace("/brokerages");
+  }
+
+  function handleContinueToDashboard() {
+    setShowPostConnectPrompt(false);
+    try {
+      window.sessionStorage.removeItem(POST_CONNECT_PROMPT_KEY);
+    } catch {
+      // Ignore storage access failures and continue navigation.
+    }
+    router.push("/dashboard");
+  }
+
   async function handleConnect(provider: string) {
     if (provider !== "alpaca") {
       return;
@@ -99,6 +143,11 @@ export default function BrokeragesPage() {
       if (!ok) {
         setError("Security verification was cancelled.");
         return;
+      }
+      try {
+        window.sessionStorage.setItem(POST_CONNECT_PROMPT_KEY, "1");
+      } catch {
+        // Ignore storage access failures and fall back to URL-based detection.
       }
       window.location.href = `${API_BASE}/alpaca/oauth/start?next=/brokerages`;
     } catch (err) {
@@ -195,6 +244,35 @@ export default function BrokeragesPage() {
           </button>
         </div>
       </div>
+
+      {showPostConnectPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4" role="dialog" aria-modal="true" aria-labelledby="post-connect-title">
+          <div className="w-full max-w-lg rounded-xl border border-cyan-700/40 bg-slate-900 p-6 shadow-2xl">
+            <h2 id="post-connect-title" className="text-xl font-semibold text-slate-100">
+              Brokerage Connected
+            </h2>
+            <p className="mt-3 text-sm text-slate-300">
+              Would you like to add any more accounts before proceeding to dashboard?
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleStayOnBrokerages}
+                className="rounded-md border border-slate-600 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-400"
+              >
+                Yes, connect more accounts
+              </button>
+              <button
+                type="button"
+                onClick={handleContinueToDashboard}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+              >
+                No, continue to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

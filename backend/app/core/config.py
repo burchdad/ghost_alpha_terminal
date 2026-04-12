@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     copilot_openai_rollout_pct: int = 0
 
     # ---------------------------------------------------------------------------
+    # External market data providers
+    # ---------------------------------------------------------------------------
+    massive_api_key: str = ""
+    finnhub_api_key: str = ""
+    fmp_api_key: str = ""  # Financial Modeling Prep
+    dynamic_universe_enabled: bool = True
+    dynamic_universe_sources: str = "finnhub,fmp,massive,static"
+    dynamic_universe_max_symbols: int = 180
+    dynamic_universe_refresh_seconds: int = 3600
+
+    # ---------------------------------------------------------------------------
     # Alpaca credentials — set via Railway environment variables, never committed
     # ---------------------------------------------------------------------------
     alpaca_api_key: str = ""
@@ -64,6 +75,7 @@ class Settings(BaseSettings):
     auth_session_secret: str = ""
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    auth_cookie_persistent: bool = True
     frontend_base_url: str = "http://localhost:3000"
     auth_access_ttl_minutes: int = 30
     auth_refresh_ttl_days: int = 14

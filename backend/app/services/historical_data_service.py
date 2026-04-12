@@ -7,6 +7,7 @@ import pandas as pd
 from app.core.config import settings
 from app.services.alpaca_client import alpaca_client
 from app.services.coinbase_market_data_service import coinbase_market_data_service
+from app.services.external_market_data_service import external_market_data_service
 from app.utils.data_loader import load_mock_ohlcv
 
 
@@ -65,6 +66,20 @@ class HistoricalDataService:
                         return df
             except Exception:
                 pass
+
+        try:
+            rows = external_market_data_service.get_candles(
+                symbol=symbol,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+            )
+            if rows:
+                df = self._to_dataframe(rows)
+                if not df.empty:
+                    return df
+        except Exception:
+            pass
 
         if settings.use_mock_data:
             periods = 90 if timeframe in {"1h", "4h"} else 140

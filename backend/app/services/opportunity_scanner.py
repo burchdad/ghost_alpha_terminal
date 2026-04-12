@@ -27,6 +27,7 @@ from app.services.live_experiment_promotion_service import live_experiment_promo
 from app.services.meta_risk_governor import meta_risk_governor
 from app.services.system_mode_service import system_mode_service
 from app.services.strategy_evolution_service import strategy_evolution_service
+from app.services.dynamic_universe_service import dynamic_universe_service
 
 
 @dataclass
@@ -427,12 +428,37 @@ class OpportunityScanner:
         symbols = configured or list(DEFAULT_HIGH_RISK_SPRINT_SYMBOLS)
         return [UniverseTicker(symbol, "equity", "US") for symbol in symbols]
 
+    def _base_scan_universe(self) -> list[UniverseTicker]:
+        if not settings.dynamic_universe_enabled:
+            return list(UNIVERSE)
+
+        try:
+            snapshot = dynamic_universe_service.get_equity_symbols()
+        except Exception as exc:
+            logger.warning("dynamic_universe_load_failed error=%s", exc)
+            return list(UNIVERSE)
+
+        dynamic_equities = [UniverseTicker(symbol, "equity", "US") for symbol in snapshot.symbols]
+        if not dynamic_equities:
+            return list(UNIVERSE)
+
+        # Preserve curated crypto and ETF coverage while replacing static equities.
+        static_non_equity = [ticker for ticker in UNIVERSE if ticker.asset_class != "equity"]
+        combined = dynamic_equities + static_non_equity
+        logger.info(
+            "dynamic_universe_applied symbols=%s sources=%s",
+            len(dynamic_equities),
+            snapshot.source_counts,
+        )
+        return combined
+
     def _scan_universe(self, *, goal_pressure_multiplier: float) -> list[tuple[UniverseTicker, bool]]:
-        scan_universe: list[tuple[UniverseTicker, bool]] = [(ticker, False) for ticker in UNIVERSE]
+        base_universe = self._base_scan_universe()
+        scan_universe: list[tuple[UniverseTicker, bool]] = [(ticker, False) for ticker in base_universe]
         if not self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier):
             return scan_universe
 
-        existing_symbols = {ticker.symbol for ticker in UNIVERSE}
+        existing_symbols = {ticker.symbol for ticker in base_universe}
         for ticker in self._high_risk_sprint_universe():
             if ticker.symbol in existing_symbols:
                 continue
