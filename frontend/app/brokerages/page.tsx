@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ensureHighTrust } from "../../lib/highTrust";
 import { apiFetch } from "../../lib/apiClient";
 
@@ -29,7 +29,6 @@ type AuthMeResponse = {
 
 export default function BrokeragesPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -92,7 +91,7 @@ export default function BrokeragesPage() {
   }, [cards]);
 
   useEffect(() => {
-    const oauthState = searchParams.get("alpaca_oauth");
+    const oauthState = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
     let shouldPromptFromSession = false;
     try {
       shouldPromptFromSession = window.sessionStorage.getItem(POST_CONNECT_PROMPT_KEY) === "1";
@@ -110,7 +109,7 @@ export default function BrokeragesPage() {
         }
       }
     }
-  }, [searchParams, loading, hasConnectedBroker]);
+  }, [loading, hasConnectedBroker]);
 
   function handleStayOnBrokerages() {
     setShowPostConnectPrompt(false);
