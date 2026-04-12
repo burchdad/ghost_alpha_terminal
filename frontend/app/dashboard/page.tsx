@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string>("");
   const [brokers, setBrokers] = useState<BrokerStatusResponse>({});
   const [connecting, setConnecting] = useState<string | null>(null);
+  const [showPostConnectPrompt, setShowPostConnectPrompt] = useState(false);
 
   async function fetchSessionAndStatus() {
     setLoading(true);
@@ -96,6 +97,29 @@ export default function DashboardPage() {
       };
     });
   }, [brokers]);
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const oauthParam = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
+    const alpacaConnected = Boolean(brokers.alpaca?.connected);
+    if (oauthParam === "connected" && alpacaConnected) {
+      setShowPostConnectPrompt(true);
+      // Clear the query parameter so refreshes don't keep retriggering prompt logic.
+      router.replace("/dashboard");
+    }
+  }, [loading, brokers.alpaca?.connected, router]);
+
+  function handleConnectMoreAccounts() {
+    setShowPostConnectPrompt(false);
+    router.push("/brokerages?next=/dashboard");
+  }
+
+  function handleContinueToDashboard() {
+    setShowPostConnectPrompt(false);
+  }
 
   async function handleLogout() {
     await apiFetch(`${API_BASE}/auth/logout`, {
@@ -247,6 +271,39 @@ export default function DashboardPage() {
           })}
         </section>
       </div>
+      {showPostConnectPrompt ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="post-connect-title"
+        >
+          <div className="w-full max-w-lg rounded-xl border border-cyan-700/40 bg-slate-900 p-6 shadow-2xl">
+            <h2 id="post-connect-title" className="text-xl font-semibold text-slate-100">
+              Brokerage Connected
+            </h2>
+            <p className="mt-3 text-sm text-slate-300">
+              Would you like to add any more accounts before proceeding to dashboard?
+            </p>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleConnectMoreAccounts}
+                className="rounded-md border border-slate-600 px-4 py-2 text-sm font-medium text-slate-100 hover:border-slate-400"
+              >
+                Yes, connect more accounts
+              </button>
+              <button
+                type="button"
+                onClick={handleContinueToDashboard}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+              >
+                No, continue to dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <DashboardCopilot />
     </main>
   );
