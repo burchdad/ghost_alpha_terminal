@@ -99,6 +99,14 @@ export default function BrokeragesPage() {
       shouldPromptFromSession = false;
     }
 
+    console.log("[BrokeragesDebug]", {
+      oauthState,
+      shouldPromptFromSession,
+      loading,
+      hasConnectedBroker,
+      conditionMet: !loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession),
+    });
+
     if (!loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession)) {
       setShowPostConnectPrompt(true);
       if (shouldPromptFromSession) {
