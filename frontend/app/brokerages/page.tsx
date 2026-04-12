@@ -35,7 +35,7 @@ export default function BrokeragesPage() {
   const [brokers, setBrokers] = useState<BrokerStatusResponse>({});
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showPostConnectPrompt, setShowPostConnectPrompt] = useState(false);
-  const [prevAlpacaConnected, setPrevAlpacaConnected] = useState<boolean | null>(null);
+
 
   async function fetchSessionAndStatus() {
     setLoading(true);
@@ -96,36 +96,21 @@ export default function BrokeragesPage() {
     return cards.some((card) => Boolean(card.status.connected) || Boolean(card.status.configured));
   }, [cards]);
 
-  // Detect when Alpaca connection status changes (new connection on this page load).
+
+  // Show modal if OAuth callback succeeded and Alpaca is connected.
   useEffect(() => {
-    if (!loading && prevAlpacaConnected === null) {
-      // First load: capture initial state
-      const alpacaConnected = Boolean(brokers.alpaca?.connected);
-      setPrevAlpacaConnected(alpacaConnected);
-      console.log("[BrokeragesInit] Initial Alpaca state:", alpacaConnected);
-      return;
-    }
+    if (loading) return;
 
-    if (loading || prevAlpacaConnected === null) {
-      return;
-    }
-
-    // Detect transition: was not connected before, now is connected
+    const oauthParam = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
     const alpacaConnected = Boolean(brokers.alpaca?.connected);
-    const justConnected = !prevAlpacaConnected && alpacaConnected;
 
-    console.log("[BrokeragesTransition]", {
-      prevAlpacaConnected,
-      alpacaConnected,
-      justConnected,
-    });
+    console.log("[BrokeragesOAuth]", { oauthParam, alpacaConnected, loading });
 
-    if (justConnected) {
-      console.log("[BrokeragesModal] Alpaca just connected, showing prompt");
+    if (oauthParam === "connected" && alpacaConnected) {
+      console.log("[BrokeragesModal] Showing post-connect prompt");
       setShowPostConnectPrompt(true);
-      setPrevAlpacaConnected(alpacaConnected);
     }
-  }, [loading, brokers.alpaca?.connected, prevAlpacaConnected]);
+  }, [loading, brokers.alpaca?.connected]);
 
   function handleStayOnBrokerages() {
     setShowPostConnectPrompt(false);
@@ -291,3 +276,5 @@ export default function BrokeragesPage() {
     </main>
   );
 }
+
+
