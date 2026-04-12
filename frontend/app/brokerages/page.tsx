@@ -35,6 +35,7 @@ export default function BrokeragesPage() {
   const [brokers, setBrokers] = useState<BrokerStatusResponse>({});
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showPostConnectPrompt, setShowPostConnectPrompt] = useState(false);
+  const [prevAlpacaConnected, setPrevAlpacaConnected] = useState<boolean | null>(null);
 
   async function fetchSessionAndStatus() {
     setLoading(true);
@@ -95,35 +96,36 @@ export default function BrokeragesPage() {
     return cards.some((card) => Boolean(card.status.connected) || Boolean(card.status.configured));
   }, [cards]);
 
+  // Detect when Alpaca connection status changes (new connection on this page load).
   useEffect(() => {
-    const oauthState = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
-    let shouldPromptFromSession = false;
-    try {
-      shouldPromptFromSession = window.sessionStorage.getItem(POST_CONNECT_PROMPT_KEY) === "1";
-    } catch {
-      shouldPromptFromSession = false;
+    if (!loading && prevAlpacaConnected === null) {
+      // First load: capture initial state
+      const alpacaConnected = Boolean(brokers.alpaca?.connected);
+      setPrevAlpacaConnected(alpacaConnected);
+      console.log("[BrokeragesInit] Initial Alpaca state:", alpacaConnected);
+      return;
     }
 
-    console.log("[BrokeragesDebug]", {
-      oauthState,
-      shouldPromptFromSession,
-      loading,
-      hasConnectedBroker,
-      conditionMet: !loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession),
+    if (loading || prevAlpacaConnected === null) {
+      return;
+    }
+
+    // Detect transition: was not connected before, now is connected
+    const alpacaConnected = Boolean(brokers.alpaca?.connected);
+    const justConnected = !prevAlpacaConnected && alpacaConnected;
+
+    console.log("[BrokeragesTransition]", {
+      prevAlpacaConnected,
+      alpacaConnected,
+      justConnected,
     });
 
-    if (!loading && hasConnectedBroker && (oauthState === "connected" || shouldPromptFromSession)) {
-      console.log("[BrokeragesModal] Showing post-connect prompt");
+    if (justConnected) {
+      console.log("[BrokeragesModal] Alpaca just connected, showing prompt");
       setShowPostConnectPrompt(true);
-      if (shouldPromptFromSession) {
-        try {
-          window.sessionStorage.removeItem(POST_CONNECT_PROMPT_KEY);
-        } catch {
-          // Ignore storage access failures and continue with the prompt.
-        }
-      }
+      setPrevAlpacaConnected(alpacaConnected);
     }
-  }, [loading, hasConnectedBroker]);
+  }, [loading, brokers.alpaca?.connected, prevAlpacaConnected]);
 
   function handleStayOnBrokerages() {
     setShowPostConnectPrompt(false);
