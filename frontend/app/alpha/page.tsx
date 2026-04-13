@@ -270,6 +270,37 @@ type RuntimeReadinessResponse = {
   lightweight_7d: LightweightMetricsResponse;
 };
 
+type OpsSummaryResponse = {
+  generated_at: string;
+  window: {
+    last_24h_start: string;
+    last_7d_start: string;
+  };
+  growth: {
+    users_total: number;
+    users_created_7d: number;
+  };
+  funnel: {
+    registered_users: number;
+    twofa_verified_users: number;
+    users_with_connected_broker: number;
+    symbols_with_submitted_execution_24h: number;
+  };
+  conversions: {
+    signup_to_twofa_verified_pct: number;
+    twofa_verified_to_broker_connected_pct: number;
+  };
+  reliability: {
+    active_sessions_24h: number;
+    auth_failures_24h: number;
+    executions_total_24h: number;
+    executions_submitted_24h: number;
+    execution_errors_24h: number;
+    execution_submit_rate_pct: number;
+    execution_error_rate_pct: number;
+  };
+};
+
 type TruthDashboardResponse = {
   window_days: number;
   as_of: string;
@@ -602,6 +633,7 @@ export default function AlphaPage() {
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
+  const [opsSummary, setOpsSummary] = useState<OpsSummaryResponse | null>(null);
   const [truthDashboard, setTruthDashboard] = useState<TruthDashboardResponse | null>(null);
   const [missionIntel, setMissionIntel] = useState<MissionIntelligenceResponse | null>(null);
   const [manualForceEnabledStrategies, setManualForceEnabledStrategies] = useState<string[]>([]);
@@ -761,6 +793,12 @@ export default function AlphaPage() {
     setMissionIntel(missionData);
     setTruthDashboard(truthData);
     setManualForceEnabledStrategies(overrideData?.manual_force_enabled ?? []);
+  }
+
+  async function refreshOpsSummary() {
+    const res = await fetch(`${API_BASE}/telemetry/ops-summary`);
+    const data = await parseJsonOrNull<OpsSummaryResponse>(res);
+    setOpsSummary(data);
   }
 
   async function setStrategyKillSwitchOverride(strategy: string, forceEnabled: boolean) {
@@ -1071,6 +1109,10 @@ export default function AlphaPage() {
     refreshRuntimeReadiness().catch((err: unknown) => {
       console.error("Failed to fetch runtime readiness telemetry", err);
     });
+
+    refreshOpsSummary().catch((err: unknown) => {
+      console.error("Failed to fetch launch ops summary", err);
+    });
   }, []);
 
   useEffect(() => {
@@ -1089,6 +1131,7 @@ export default function AlphaPage() {
         refreshScanState(false),
         refreshBrokerConnections(),
         refreshRuntimeReadiness(),
+        refreshOpsSummary(),
       ]).catch((error: unknown) => {
         console.error("Failed to poll live alpha dashboard state", error);
       });
@@ -1360,6 +1403,19 @@ export default function AlphaPage() {
     return { label: "Live Capital Mode", tone: "text-green-100", panel: "border-green-500/40 bg-green-500/10" };
   }, [runtimeReadiness]);
 
+  const opsAlertTone = useMemo(() => {
+    if (!opsSummary) {
+      return "text-slate-300";
+    }
+    if (opsSummary.reliability.execution_error_rate_pct >= 25 || opsSummary.reliability.auth_failures_24h >= 25) {
+      return "text-red-300";
+    }
+    if (opsSummary.reliability.execution_error_rate_pct >= 10 || opsSummary.reliability.auth_failures_24h >= 10) {
+      return "text-amber-300";
+    }
+    return "text-green-300";
+  }, [opsSummary]);
+
   return (
     <main className="min-h-screen p-4 md:p-6">
       {runtimeToasts.length > 0 && (
@@ -1603,6 +1659,25 @@ export default function AlphaPage() {
             <p className="text-xs text-slate-300">Clear operational phase labeling for paper soak and live cutover</p>
           </div>
           <div className={`text-sm font-semibold ${runtimePhase.tone}`}>{runtimePhase.label}</div>
+        </div>
+
+        <div className="mt-3 rounded border border-terminal-line bg-black/20 px-3 py-3 text-xs text-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[10px] uppercase tracking-wider text-terminal-accent">Ops Pulse: Funnel + Reliability</div>
+            <div className={`text-[11px] font-semibold ${opsAlertTone}`}>
+              {opsSummary ? `Updated ${new Date(opsSummary.generated_at).toLocaleTimeString()}` : "Loading ops summary..."}
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div className="rounded border border-current/20 px-2 py-2">Users: {opsSummary?.growth.users_total ?? 0}</div>
+            <div className="rounded border border-current/20 px-2 py-2">New 7d: {opsSummary?.growth.users_created_7d ?? 0}</div>
+            <div className="rounded border border-current/20 px-2 py-2">2FA Conv: {(opsSummary?.conversions.signup_to_twofa_verified_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-current/20 px-2 py-2">Broker Conv: {(opsSummary?.conversions.twofa_verified_to_broker_connected_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-current/20 px-2 py-2">Active Sessions 24h: {opsSummary?.reliability.active_sessions_24h ?? 0}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Auth Failures 24h: {opsSummary?.reliability.auth_failures_24h ?? 0}</div>
+            <div className="rounded border border-current/20 px-2 py-2">Exec Submit Rate: {(opsSummary?.reliability.execution_submit_rate_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-current/20 px-2 py-2">Exec Error Rate: {(opsSummary?.reliability.execution_error_rate_pct ?? 0).toFixed(1)}%</div>
+          </div>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-200 md:grid-cols-4">
@@ -1861,12 +1936,16 @@ export default function AlphaPage() {
                 type="number"
                 value={scenarioTarget}
                 onChange={(event) => setScenarioTarget(Number(event.target.value || 0))}
+                title="Mission target capital"
+                placeholder="Target capital"
                 className="w-36 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
               />
               <input
                 type="number"
                 value={scenarioDays}
                 onChange={(event) => setScenarioDays(Number(event.target.value || 1))}
+                title="Mission timeframe days"
+                placeholder="Days"
                 className="w-24 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
               />
               <button
