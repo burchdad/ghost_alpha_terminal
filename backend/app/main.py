@@ -2,6 +2,7 @@ import uuid
 import time
 import hmac
 import secrets
+from urllib.parse import urlparse
 from collections import defaultdict, deque
 from threading import Lock
 
@@ -46,12 +47,40 @@ class CsrfProtectionMiddleware(BaseHTTPMiddleware):
     def _has_session_cookie(request: Request) -> bool:
         return bool(request.cookies.get("ghost_auth_session") or request.cookies.get("ghost_auth_access"))
 
+    @staticmethod
+    def _same_origin_request(request: Request) -> bool:
+        expected = str(settings.frontend_base_url or "").strip()
+        if not expected:
+            return False
+        expected_origin = urlparse(expected)
+        if not expected_origin.scheme or not expected_origin.netloc:
+            return False
+
+        origin = str(request.headers.get("origin") or "").strip()
+        if origin:
+            parsed_origin = urlparse(origin)
+            return (
+                parsed_origin.scheme == expected_origin.scheme
+                and parsed_origin.netloc == expected_origin.netloc
+            )
+
+        referer = str(request.headers.get("referer") or "").strip()
+        if referer:
+            parsed_ref = urlparse(referer)
+            return (
+                parsed_ref.scheme == expected_origin.scheme
+                and parsed_ref.netloc == expected_origin.netloc
+            )
+
+        return False
+
     async def dispatch(self, request: Request, call_next) -> Response:
         method = request.method.upper()
         if method not in self._SAFE_METHODS and self._has_session_cookie(request):
             csrf_cookie = str(request.cookies.get(self._CSRF_COOKIE) or "")
             csrf_header = str(request.headers.get("x-csrf-token") or "")
-            if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+            csrf_valid = bool(csrf_cookie and csrf_header and hmac.compare_digest(csrf_cookie, csrf_header))
+            if not csrf_valid and not self._same_origin_request(request):
                 response = JSONResponse(
                     status_code=403,
                     content={"detail": "CSRF validation failed."},
