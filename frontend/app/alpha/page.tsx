@@ -14,6 +14,7 @@ import OrchestratorPanel, {
   type OrchestratorStatus,
 } from "../../components/OrchestratorPanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
+import { apiFetch } from "../../lib/apiClient";
 import { ensureHighTrust } from "../../lib/highTrust";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
@@ -894,7 +895,10 @@ export default function AlphaPage() {
     }
     setLoading(true);
     try {
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=12`, { method: "POST" });
+      const scanRes = await apiFetch(`${API_BASE}/orchestrator/scan?limit=12`, {
+        apiBase: API_BASE,
+        method: "POST",
+      });
       const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
       setScan(scanData);
       const refreshed = await fetch(`${API_BASE}/orchestrator/status`);
@@ -1115,7 +1119,8 @@ export default function AlphaPage() {
   }
 
   async function handleToggleAuto(enabled: boolean) {
-    await fetch(`${API_BASE}/orchestrator/mode`, {
+    await apiFetch(`${API_BASE}/orchestrator/mode`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auto_mode: enabled }),
@@ -1131,7 +1136,8 @@ export default function AlphaPage() {
       pushRuntimeToast("Security verification was cancelled.", "warning");
       return;
     }
-    await fetch(`${API_BASE}/control/kill-switch`, {
+    await apiFetch(`${API_BASE}/control/kill-switch`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trading_enabled: enabled }),
@@ -1148,13 +1154,15 @@ export default function AlphaPage() {
       pushRuntimeToast("Security verification was cancelled.", "warning");
       return;
     }
-    await fetch(`${API_BASE}/control/autonomous`, {
+    await apiFetch(`${API_BASE}/control/autonomous`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     });
     // Keep scan automation and autonomous execution aligned to avoid dual-mode confusion.
-    await fetch(`${API_BASE}/orchestrator/mode`, {
+    await apiFetch(`${API_BASE}/orchestrator/mode`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auto_mode: enabled }),
@@ -1179,7 +1187,10 @@ export default function AlphaPage() {
       pushRuntimeToast("Security verification was cancelled.", "warning");
       return;
     }
-    await fetch(`${API_BASE}/control/autonomous/run-once`, { method: "POST" });
+    await apiFetch(`${API_BASE}/control/autonomous/run-once`, {
+      apiBase: API_BASE,
+      method: "POST",
+    });
     await Promise.all([refreshRuntimeState(true), refreshScanState(false)]);
   }
 
@@ -1189,7 +1200,8 @@ export default function AlphaPage() {
       pushRuntimeToast("Security verification was cancelled.", "warning");
       return;
     }
-    await fetch(`${API_BASE}/agents/execution-mode`, {
+    await apiFetch(`${API_BASE}/agents/execution-mode`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
@@ -1201,7 +1213,8 @@ export default function AlphaPage() {
   }
 
   async function handleSetGoal(payload: { start_capital: number; target_capital: number; timeframe_days: number }) {
-    await fetch(`${API_BASE}/agents/goal`, {
+    await apiFetch(`${API_BASE}/agents/goal`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -1218,7 +1231,8 @@ export default function AlphaPage() {
       pushRuntimeToast("Security verification was cancelled.", "warning");
       return;
     }
-    await fetch(`${API_BASE}/control/limits`, {
+    await apiFetch(`${API_BASE}/control/limits`, {
+      apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -1293,7 +1307,10 @@ export default function AlphaPage() {
         pushRuntimeToast("Security verification was cancelled.", "warning");
         return;
       }
-      await fetch(`${API_BASE}${disconnectPath}`, { method: "POST" });
+      await apiFetch(`${API_BASE}${disconnectPath}`, {
+        apiBase: API_BASE,
+        method: "POST",
+      });
       if (provider === "alpaca") {
         setOauthStatus("idle");
         setOauthReason("");

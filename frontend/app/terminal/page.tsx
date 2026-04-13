@@ -14,6 +14,7 @@ import OptionsPanel from "../../components/OptionsPanel";
 import PerformancePanel from "../../components/PerformancePanel";
 import SignalPanel from "../../components/SignalPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
+import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -285,7 +286,10 @@ export default function TerminalPage() {
         return;
       }
 
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=15`, { method: "POST" });
+      const scanRes = await apiFetch(`${API_BASE}/orchestrator/scan?limit=15`, {
+        apiBase: API_BASE,
+        method: "POST",
+      });
       const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
       setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 30).map((c) => c.symbol));
     }
