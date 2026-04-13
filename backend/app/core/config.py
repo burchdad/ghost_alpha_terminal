@@ -167,6 +167,17 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     request_id_max_entries: int = 100
 
+    # ---------------------------------------------------------------------------
+    # API guardrails (rate limiting + scoped API keys)
+    # ---------------------------------------------------------------------------
+    api_rate_limit_window_seconds: int = 60
+    api_rate_limit_anon: int = 90
+    api_rate_limit_session: int = 240
+    api_rate_limit_readonly_key: int = 360
+    api_rate_limit_trading_key: int = 240
+    api_key_readonly: str = ""
+    api_key_trading: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
