@@ -29,6 +29,24 @@ type AuthMeResponse = {
   };
 };
 
+type OpsSummaryResponse = {
+  generated_at: string;
+  growth: {
+    users_total: number;
+    users_created_7d: number;
+  };
+  conversions: {
+    signup_to_twofa_verified_pct: number;
+    twofa_verified_to_broker_connected_pct: number;
+  };
+  reliability: {
+    active_sessions_24h: number;
+    auth_failures_24h: number;
+    execution_submit_rate_pct: number;
+    execution_error_rate_pct: number;
+  };
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState<string>("");
@@ -37,6 +55,7 @@ export default function DashboardPage() {
   const [brokers, setBrokers] = useState<BrokerStatusResponse>({});
   const [connecting, setConnecting] = useState<string | null>(null);
   const [showPostConnectPrompt, setShowPostConnectPrompt] = useState(false);
+  const [opsSummary, setOpsSummary] = useState<OpsSummaryResponse | null>(null);
 
   async function fetchSessionAndStatus() {
     setLoading(true);
@@ -81,6 +100,28 @@ export default function DashboardPage() {
 
   useEffect(() => {
     void fetchSessionAndStatus();
+  }, []);
+
+  useEffect(() => {
+    async function refreshOpsSummary() {
+      try {
+        const res = await apiFetch(`${API_BASE}/telemetry/ops-summary`, { apiBase: API_BASE });
+        if (!res.ok) {
+          return;
+        }
+        const payload = (await res.json()) as OpsSummaryResponse;
+        setOpsSummary(payload);
+      } catch {
+        // Non-blocking telemetry panel.
+      }
+    }
+
+    void refreshOpsSummary();
+    const interval = window.setInterval(() => {
+      void refreshOpsSummary();
+    }, 30000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   // Priority order for display: active/configured brokers first, planned last.
@@ -200,6 +241,25 @@ export default function DashboardPage() {
 
         {loading ? <p className="text-sm text-slate-400">Loading dashboard...</p> : null}
         {error ? <p className="mb-4 rounded-md border border-red-800 bg-red-950/40 px-3 py-2 text-sm text-red-200">{error}</p> : null}
+
+        <section className="mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Ops Pulse</h2>
+            <span className="text-[11px] text-slate-400">
+              {opsSummary ? `Updated ${new Date(opsSummary.generated_at).toLocaleTimeString()}` : "Loading..."}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-200 md:grid-cols-4">
+            <div className="rounded border border-slate-700 px-2 py-2">Users: {opsSummary?.growth.users_total ?? 0}</div>
+            <div className="rounded border border-slate-700 px-2 py-2">New 7d: {opsSummary?.growth.users_created_7d ?? 0}</div>
+            <div className="rounded border border-slate-700 px-2 py-2">2FA Conv: {(opsSummary?.conversions.signup_to_twofa_verified_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-slate-700 px-2 py-2">Broker Conv: {(opsSummary?.conversions.twofa_verified_to_broker_connected_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-slate-700 px-2 py-2">Active Sessions 24h: {opsSummary?.reliability.active_sessions_24h ?? 0}</div>
+            <div className="rounded border border-slate-700 px-2 py-2">Auth Fail 24h: {opsSummary?.reliability.auth_failures_24h ?? 0}</div>
+            <div className="rounded border border-slate-700 px-2 py-2">Exec Submit: {(opsSummary?.reliability.execution_submit_rate_pct ?? 0).toFixed(1)}%</div>
+            <div className="rounded border border-slate-700 px-2 py-2">Exec Error: {(opsSummary?.reliability.execution_error_rate_pct ?? 0).toFixed(1)}%</div>
+          </div>
+        </section>
 
         <section className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {cards.map((card) => {
