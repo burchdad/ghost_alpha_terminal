@@ -49,16 +49,53 @@ function shouldAttemptRefresh(path: string): boolean {
   return !EXCLUDED_REFRESH_PATHS.has(path);
 }
 
+const CSRF_COOKIE_NAME = "ghost_csrf";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function readCookie(name: string): string {
+  if (typeof document === "undefined") {
+    return "";
+  }
+  const source = `; ${document.cookie}`;
+  const parts = source.split(`; ${name}=`);
+  if (parts.length < 2) {
+    return "";
+  }
+  return decodeURIComponent(parts.pop()?.split(";").shift() ?? "");
+}
+
+function withCsrfHeader(init: RequestInit): RequestInit {
+  const method = String(init.method ?? "GET").toUpperCase();
+  if (SAFE_METHODS.has(method)) {
+    return init;
+  }
+
+  const csrfToken = readCookie(CSRF_COOKIE_NAME);
+  if (!csrfToken) {
+    return init;
+  }
+
+  const headers = new Headers(init.headers ?? {});
+  if (!headers.has("x-csrf-token")) {
+    headers.set("x-csrf-token", csrfToken);
+  }
+
+  return {
+    ...init,
+    headers,
+  };
+}
+
 export async function apiFetch(input: string, options: ApiFetchOptions = {}): Promise<Response> {
   const apiBase = options.apiBase ?? DEFAULT_API_BASE;
   const { apiBase: _apiBase, headers, ...rest } = options;
   void _apiBase;
 
-  const baseInit: RequestInit = {
+  const baseInit: RequestInit = withCsrfHeader({
     credentials: "include",
     ...rest,
     headers,
-  };
+  });
 
   const firstResponse = await fetch(input, baseInit);
   if (firstResponse.status !== 401 || typeof window === "undefined") {
@@ -70,10 +107,10 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
     return firstResponse;
   }
 
-  const refreshResponse = await fetch(`${apiBase}/auth/refresh`, {
+  const refreshResponse = await fetch(`${apiBase}/auth/refresh`, withCsrfHeader({
     method: "POST",
     credentials: "include",
-  });
+  }));
 
   if (!refreshResponse.ok) {
     return firstResponse;

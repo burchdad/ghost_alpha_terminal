@@ -1,5 +1,7 @@
 import uuid
 import time
+import hmac
+import secrets
 from collections import defaultdict, deque
 from threading import Lock
 
@@ -32,6 +34,44 @@ from app.db.init_db import initialize_database
 from app.services.news.coinbase_ws_service import coinbase_ws_service
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
+
+
+class CsrfProtectionMiddleware(BaseHTTPMiddleware):
+    """Double-submit CSRF protection for cookie-authenticated state-changing requests."""
+
+    _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+    _CSRF_COOKIE = "ghost_csrf"
+
+    @staticmethod
+    def _has_session_cookie(request: Request) -> bool:
+        return bool(request.cookies.get("ghost_auth_session") or request.cookies.get("ghost_auth_access"))
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        method = request.method.upper()
+        if method not in self._SAFE_METHODS and self._has_session_cookie(request):
+            csrf_cookie = str(request.cookies.get(self._CSRF_COOKIE) or "")
+            csrf_header = str(request.headers.get("x-csrf-token") or "")
+            if not csrf_cookie or not csrf_header or not hmac.compare_digest(csrf_cookie, csrf_header):
+                response = JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF validation failed."},
+                )
+                response.headers["X-Request-ID"] = uuid.uuid4().hex
+                return response
+
+        response = await call_next(request)
+
+        if not request.cookies.get(self._CSRF_COOKIE):
+            response.set_cookie(
+                key=self._CSRF_COOKIE,
+                value=secrets.token_urlsafe(32),
+                httponly=False,
+                secure=bool(settings.auth_cookie_secure),
+                samesite="lax",
+                path="/",
+            )
+
+        return response
 
 
 class ApiGuardMiddleware(BaseHTTPMiddleware):
@@ -163,6 +203,12 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if bool(settings.auth_cookie_secure):
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
         response.headers["X-Platform-Notice"] = "Ghost Alpha Terminal is software tooling, not investment advice."
         response.headers["X-API-Usage"] = "No reverse engineering, model extraction, or unauthorized signal resale."
         response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
@@ -171,6 +217,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(ApiGuardMiddleware)
+app.add_middleware(CsrfProtectionMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
