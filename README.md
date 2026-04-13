@@ -2,7 +2,7 @@
 
 Production-oriented MVP for an AI-powered trading intelligence platform that combines:
 
-- Kronos-style time-series forecasting service (mock-compatible)
+- Kronos-style time-series forecasting service with live-data-first fallback behavior
 - Options market intelligence (IV, OI, volume, Greeks)
 - Rule-based strategy signal engine
 - Multi-agent swarm consensus engine
@@ -48,7 +48,7 @@ Operational launch docs:
 
 ### Data
 
-- Mock market data for MVP bootstrapping
+- Live market data with limited fallback behavior where provider/history coverage is unavailable
 - PostgreSQL integration can be added next (Supabase/local)
 
 ## Repository Structure
@@ -231,7 +231,7 @@ Rule-based decision logic:
 	- Volatility agent
 	- Mean-reversion agent
 	- Options agent
-- Scores each agent using mock live metrics:
+- Scores each agent using realized historical metrics when available, with fallback-generated scoring only when outcome history is insufficient:
 	- Accuracy
 	- Win rate
 	- Confidence calibration
@@ -472,5 +472,6 @@ Frontend dashboard now includes `ControlPanel` with:
 
 ## Notes
 
-- This MVP uses deterministic mock data for stable local development.
-- Set `use_mock_data=false` and configure `kronos_model_id` in env when connecting a real model/API.
+- Production should run with `use_mock_data=false`.
+- `kronos_model_id` is optional until real model inference is wired into the forecast path; current forecasts are live-data-driven and should fail explicitly when providers do not return usable history.
+- Agent scoring now uses realized history only; when outcome history is insufficient, performance fields remain unranked instead of falling back to synthetic metrics.

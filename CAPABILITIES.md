@@ -113,6 +113,7 @@ This document is a quick reference for what the platform can currently do.
 - Persistence for forecast history, signals, agent predictions, and trade outcomes.
 - Feedback loop improves agent weighting over time via stored outcomes.
 - Regime-aware attribution for better evaluation under varying market conditions.
+- Agent scoring is historical-data-first, with fallback-generated metrics only when there is not yet enough realized outcome history.
 
 ## Goal and Trajectory Layer
 

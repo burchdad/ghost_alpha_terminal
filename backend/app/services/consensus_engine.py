@@ -18,13 +18,17 @@ class ConsensusEngine:
         scored: list[AgentDecision] = []
         for output in outputs:
             metrics = agent_scorer.get_metrics(output.agent_name, symbol=symbol)
-            return_boost = max(0.0, min(1.0, 0.5 + metrics.avg_return * 10))
             raw_confidence = output.confidence
-            adjusted_confidence = max(0.0, min(1.0, raw_confidence * metrics.confidence_calibration))
-            weighted_confidence = round(
-                adjusted_confidence * 0.5 + metrics.composite_score * 0.4 + return_boost * 0.1,
-                3,
-            )
+            if metrics is None:
+                adjusted_confidence = raw_confidence
+                weighted_confidence = round(raw_confidence, 3)
+            else:
+                return_boost = max(0.0, min(1.0, 0.5 + metrics.avg_return * 10))
+                adjusted_confidence = max(0.0, min(1.0, raw_confidence * metrics.confidence_calibration))
+                weighted_confidence = round(
+                    adjusted_confidence * 0.5 + metrics.composite_score * 0.4 + return_boost * 0.1,
+                    3,
+                )
             scored.append(
                 output.model_copy(
                     update={
