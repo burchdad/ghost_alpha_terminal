@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from app.services.agents import MeanReversionAgent, MomentumAgent, OptionsAgent, VolatilityAgent
+from app.services.agents import (
+    BreakoutAgent,
+    LiquidityFlowAgent,
+    MeanReversionAgent,
+    MomentumAgent,
+    OptionsAgent,
+    TermStructureAgent,
+    TrendPullbackAgent,
+    VolatilityAgent,
+)
 
 
 def get_registered_agents() -> list:
@@ -9,4 +18,8 @@ def get_registered_agents() -> list:
         VolatilityAgent(),
         MeanReversionAgent(),
         OptionsAgent(),
+        TrendPullbackAgent(),
+        BreakoutAgent(),
+        TermStructureAgent(),
+        LiquidityFlowAgent(),
     ]

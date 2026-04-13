@@ -61,6 +61,13 @@ export default function TermsOfUsePage() {
                   We do not act as your broker, financial advisor, or fiduciary. We provide tools and data. You retain all decision-making authority and responsibility for your trading activity.
                 </p>
               </div>
+
+              <div>
+                <h3 className="font-semibold text-slate-200 mb-2">2.4 Platform Role and Brokerage Overlay</h3>
+                <p>
+                  Ghost Alpha Terminal is a software orchestration layer that may connect to third-party brokerages you authorize. We do not custody funds, clear trades, or execute as a broker-dealer. Your brokerage relationship remains directly between you and the relevant broker.
+                </p>
+              </div>
             </div>
           </section>
 
@@ -129,6 +136,13 @@ export default function TermsOfUsePage() {
                   When connecting external brokerage accounts, you authorize us to interact with those accounts on your behalf within the scope you authorize. You are responsible for any consequences of such connections and for maintaining valid broker credentials.
                 </p>
               </div>
+
+              <div>
+                <h3 className="font-semibold text-slate-200 mb-2">4.5 API and Automation Restrictions</h3>
+                <p>
+                  You may not use automated or manual techniques to scrape, replicate, benchmark for publication, or extract model behavior from the Platform or API. You may not resell, rebroadcast, or syndicate Platform-generated signals, rankings, or trade recommendations without express written authorization.
+                </p>
+              </div>
             </div>
           </section>
 
@@ -154,6 +168,13 @@ export default function TermsOfUsePage() {
                 <h3 className="font-semibold text-slate-200 mb-2">5.3 User Content</h3>
                 <p>
                   You retain ownership of any content you upload or create on the Platform. By uploading, you grant us a worldwide, royalty-free license to use such content for Platform operation, improvement, and support.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-slate-200 mb-2">5.4 Model and Signal Protection</h3>
+                <p>
+                  Platform outputs, including but not limited to model scores, strategy rankings, confidence values, and orchestration policies, are protected intellectual property and trade secrets. Any attempt to clone, infer, train on, or recreate substantially similar model behavior from Platform outputs is prohibited.
                 </p>
               </div>
             </div>

@@ -23,6 +23,7 @@ from app.api.routes.swarm import router as swarm_router
 from app.api.routes.trade import router as trade_router
 from app.api.routes.metrics import router as metrics_router
 from app.api.routes.telemetry import router as telemetry_router
+from app.api.routes.universe import router as universe_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
 from app.services.news.coinbase_ws_service import coinbase_ws_service
@@ -38,6 +39,9 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Platform-Notice"] = "Ghost Alpha Terminal is software tooling, not investment advice."
+        response.headers["X-API-Usage"] = "No reverse engineering, model extraction, or unauthorized signal resale."
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
         return response
 
 
@@ -69,6 +73,7 @@ app.include_router(metrics_router)
 app.include_router(auth_router)
 app.include_router(brokers_router)
 app.include_router(telemetry_router)
+app.include_router(universe_router)
 
 
 @app.on_event("startup")
