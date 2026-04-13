@@ -7,6 +7,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -38,6 +39,7 @@ type ChartDataPoint = {
 type Props = {
   symbol: string;
   days?: number;
+  signalLabel?: string | null;
 };
 
 function CandleBody({ x, y, width, height, payload }: any) {
@@ -77,7 +79,7 @@ function CandleBody({ x, y, width, height, payload }: any) {
   );
 }
 
-export default function CandlestickChart({ symbol, days = 90 }: Props) {
+export default function CandlestickChart({ symbol, days = 90, signalLabel = null }: Props) {
   const [data, setData] = useState<ChartDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [consensusScore, setConsensusScore] = useState(0.5);
@@ -112,6 +114,27 @@ export default function CandlestickChart({ symbol, days = 90 }: Props) {
       })
       .finally(() => setLoading(false));
   }, [symbol, days]);
+
+  const latestSignalOverlay = useMemo(() => {
+    if (!signalLabel || data.length === 0) {
+      return null;
+    }
+
+    const normalized = signalLabel.toUpperCase();
+    const isBuy = normalized.includes("BUY") || normalized.includes("BULL");
+    const isSell = normalized.includes("SELL") || normalized.includes("BEAR");
+    if (!isBuy && !isSell) {
+      return null;
+    }
+
+    const last = data[data.length - 1];
+    return {
+      x: last.time,
+      y: last.close,
+      label: isBuy ? "BUY" : "SELL",
+      color: isBuy ? "#10b981" : "#ef4444",
+    };
+  }, [data, signalLabel]);
 
   return (
     <div className="w-full h-96 bg-slate-950 rounded-lg p-4 border border-slate-800">
@@ -187,6 +210,25 @@ export default function CandlestickChart({ symbol, days = 90 }: Props) {
               name="Swarm Consensus"
               isAnimationActive={false}
             />
+
+            {latestSignalOverlay && (
+              <ReferenceDot
+                yAxisId="left"
+                x={latestSignalOverlay.x}
+                y={latestSignalOverlay.y}
+                r={6}
+                fill={latestSignalOverlay.color}
+                stroke="#0f172a"
+                strokeWidth={2}
+                label={{
+                  value: latestSignalOverlay.label,
+                  position: "top",
+                  fill: latestSignalOverlay.color,
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       )}

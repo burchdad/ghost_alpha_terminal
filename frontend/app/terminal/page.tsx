@@ -390,7 +390,7 @@ export default function TerminalPage() {
         </aside>
 
         <div className="space-y-4">
-          <CandlestickChart symbol={symbol} days={90} />
+          <CandlestickChart symbol={symbol} days={90} signalLabel={signal?.signal ?? null} />
           <Chart
             symbol={symbol}
             forecastPrices={forecast?.forecast_prices ?? []}
