@@ -123,11 +123,11 @@ def _state_snapshot() -> dict:
 
 
 def _assign_mode(user_id: str) -> str:
-    if not settings.copilot_openai_enabled or settings.copilot_openai_rollout_pct <= 0:
+    if not settings.effective_copilot_llm_enabled or settings.effective_copilot_llm_rollout_pct <= 0:
         return "rule-based"
 
     bucket = int(hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:8], 16) % 100
-    if bucket < settings.copilot_openai_rollout_pct and copilot_llm_service.is_available():
+    if bucket < settings.effective_copilot_llm_rollout_pct and copilot_llm_service.is_available():
         return "hybrid"
     return "rule-based"
 

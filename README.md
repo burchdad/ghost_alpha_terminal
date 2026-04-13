@@ -190,6 +190,9 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Database (recommended now): Neon Postgres using pooled URL with `sslmode=require`.
 - Set backend `DATABASE_URL` to Neon connection string.
 - Set backend auth vars: `AUTH_SESSION_SECRET`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAMESITE`, `FRONTEND_BASE_URL`.
+- Copilot LLM routing is OpenAI-compatible and now supports custom providers via `LLM_API_KEY`, `LLM_MODEL`, and optional `LLM_BASE_URL`.
+- Existing `OPENAI_API_KEY` and `OPENAI_MODEL` vars remain supported as backward-compatible aliases.
+- Enable only non-critical copilot routing with `COPILOT_LLM_ENABLED=true` and a bounded `COPILOT_LLM_ROLLOUT_PCT`.
 - Frontend (Vercel): set `NEXT_PUBLIC_API_BASE` to your backend URL (for example, Railway service URL).
 - Backend (Railway): ensure all required env values are configured in Railway project variables.
 - Coinbase key-mode broker visibility uses backend vars `COINBASE_API_KEY_NAME` and `COINBASE_API_PRIVATE_KEY`.

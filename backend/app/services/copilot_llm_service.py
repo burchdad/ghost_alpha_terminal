@@ -21,13 +21,16 @@ class LLMActionResult:
 
 class CopilotLLMService:
     def _client(self):
-        if not settings.openai_api_key:
+        if not settings.effective_llm_api_key:
             return None
         try:
             from openai import OpenAI
         except Exception:
             return None
-        return OpenAI(api_key=settings.openai_api_key)
+        kwargs: dict[str, Any] = {"api_key": settings.effective_llm_api_key}
+        if settings.effective_llm_base_url:
+            kwargs["base_url"] = settings.effective_llm_base_url
+        return OpenAI(**kwargs)
 
     def is_available(self) -> bool:
         return self._client() is not None
@@ -48,7 +51,7 @@ class CopilotLLMService:
                 reply=None,
                 raw_json={},
                 latency_ms=None,
-                error="OpenAI client unavailable",
+                error="Configured LLM client unavailable",
             )
 
         schema = {
@@ -116,7 +119,7 @@ class CopilotLLMService:
         start = time.perf_counter()
         try:
             completion = client.chat.completions.create(
-                model=settings.openai_model,
+                model=settings.effective_llm_model,
                 temperature=0.1,
                 messages=[
                     {"role": "system", "content": system},
