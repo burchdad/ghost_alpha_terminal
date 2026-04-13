@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
   AnimatedContainer,
@@ -110,6 +111,9 @@ export default function HomePage() {
             </Link>
             <Link href="/privacy-policy" className="transition hover:text-terminal-accent">
               Privacy
+            </Link>
+            <Link href="/features" className="transition hover:text-terminal-accent">
+              Features
             </Link>
             <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
               Terms
@@ -277,6 +281,58 @@ export default function HomePage() {
             </div>
           </AnimatedItem>
         </AnimatedContainer>
+
+        <SlideUp delay={0.35}>
+          <div className="rounded-2xl border border-terminal-line/60 bg-black/20 p-5">
+            <div className="mb-2 text-[11px] uppercase tracking-wider text-slate-500">Trust and Capability Preview</div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Link href="/features" className="overflow-hidden rounded-xl border border-terminal-line/60 bg-black/25 transition hover:border-terminal-accent/60">
+                <Image
+                  src="/images/control-tower.svg"
+                  alt="Control tower preview"
+                  width={1200}
+                  height={700}
+                  className="h-40 w-full object-cover"
+                />
+                <div className="p-3 text-xs text-slate-300">Growth and operations in one control tower</div>
+              </Link>
+              <Link href="/features" className="overflow-hidden rounded-xl border border-terminal-line/60 bg-black/25 transition hover:border-terminal-accent/60">
+                <Image
+                  src="/images/agent-observability.svg"
+                  alt="Agent observability preview"
+                  width={1200}
+                  height={700}
+                  className="h-40 w-full object-cover"
+                />
+                <div className="p-3 text-xs text-slate-300">Agent performance and reliability observability</div>
+              </Link>
+              <Link href="/cybersecurity" className="overflow-hidden rounded-xl border border-terminal-line/60 bg-black/25 transition hover:border-terminal-accent/60">
+                <Image
+                  src="/images/security-shield.svg"
+                  alt="Security shield preview"
+                  width={1200}
+                  height={700}
+                  className="h-40 w-full object-cover"
+                />
+                <div className="p-3 text-xs text-slate-300">Security controls and cybersecurity practices</div>
+              </Link>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href="/features"
+                className="inline-flex items-center rounded-lg border border-terminal-accent/60 bg-terminal-accent/10 px-4 py-2 text-xs font-semibold text-terminal-accent transition hover:bg-terminal-accent/20"
+              >
+                Explore all capabilities
+              </Link>
+              <Link
+                href="/cybersecurity"
+                className="inline-flex items-center rounded-lg border border-terminal-line px-4 py-2 text-xs font-semibold text-slate-200 transition hover:border-terminal-accent/70 hover:text-terminal-accent"
+              >
+                Review cybersecurity documentation
+              </Link>
+            </div>
+          </div>
+        </SlideUp>
 
         <SlideUp delay={0.4}>
           <div className="rounded-2xl border border-terminal-line/60 bg-black/20 p-5">

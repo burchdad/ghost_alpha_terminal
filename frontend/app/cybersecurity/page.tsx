@@ -21,7 +21,7 @@ export default function CybersecurityPage() {
         </div>
 
         <div className="mb-6 bg-black/30 p-4 rounded-lg border border-terminal-line/40">
-          <p className="text-xs text-slate-400"><strong>Last Updated:</strong> April 9, 2026</p>
+          <p className="text-xs text-slate-400"><strong>Last Updated:</strong> April 12, 2026</p>
           <p className="text-xs text-slate-400 mt-2"><strong>Classification:</strong> Security & Compliance Documentation</p>
         </div>
 
@@ -35,6 +35,27 @@ export default function CybersecurityPage() {
             <p>
               This document is for informational purposes and does not constitute a warranty of absolute security or compliance with specific regulatory frameworks. Organizations should conduct independent security assessments and risk evaluations.
             </p>
+          </section>
+
+          <section>
+            <h2 className="mb-4 text-lg font-bold text-terminal-accent border-b border-terminal-line/40 pb-2">1A. IMPLEMENTED CONTROLS IN CURRENT BUILD</h2>
+
+            <div className="ml-4 space-y-2 text-sm text-slate-300">
+              <p>Session security with hardened cookie policy (HttpOnly, SameSite, and secure mode support).</p>
+              <p>CSRF middleware protecting authenticated state-changing routes.</p>
+              <p>Scoped API guardrails with request limits by credential scope.</p>
+              <p>Frontend and backend security headers, including CSP hardening rules.</p>
+              <p>Runtime and launch telemetry endpoints for monitoring auth and execution reliability.</p>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/features" className="rounded border border-terminal-accent/60 bg-terminal-accent/10 px-3 py-2 text-xs text-terminal-accent hover:bg-terminal-accent/20">
+                View Feature and Trust Center
+              </Link>
+              <Link href="/terms-of-use" className="rounded border border-terminal-line px-3 py-2 text-xs text-slate-200 hover:border-terminal-accent/70 hover:text-terminal-accent">
+                Terms of Use
+              </Link>
+            </div>
           </section>
 
           <section>

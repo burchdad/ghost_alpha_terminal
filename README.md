@@ -15,10 +15,15 @@ Production-oriented MVP for an AI-powered trading intelligence platform that com
 
 - Backend is deployed and verified on Railway.
 - Frontend is deployed and verified on Vercel.
-- Latest checkpoint commit on `main`: `d63e810`.
-- Latest checkpoint commit on `main`: `48a1e98`.
+- Launch-readiness telemetry is active (`/metrics/runtime-readiness` and `/telemetry/ops-summary`).
+- Security hardening is active (CSRF middleware, scoped API guardrails, and response security headers).
 
 For a concise feature inventory, see `CAPABILITIES.md`.
+
+Trust and transparency resources:
+
+- Landing Features page: `/features`
+- Cybersecurity practices: `/cybersecurity`
 
 Operational launch docs:
 
@@ -151,6 +156,8 @@ API endpoints:
 - `GET /agents/audit/decisions/{audit_id}` (full decision lineage payload)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 - `GET /metrics/runtime-readiness` (cutover and operator telemetry snapshot)
+- `GET /telemetry/ops-summary` (growth, funnel conversion, and reliability pulse)
+- `GET /telemetry/landing-summary` (landing page variant and CTA summary)
 
 Coinbase websocket integration:
 

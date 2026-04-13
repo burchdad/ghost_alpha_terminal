@@ -1,0 +1,28 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="700" rx="24" fill="#06141B"/>
+  <rect x="34" y="34" width="1132" height="632" rx="20" fill="#081A22" stroke="#1F3B47"/>
+  <text x="70" y="90" fill="#7DD3FC" font-family="IBM Plex Mono, monospace" font-size="28" font-weight="700">GHOST ALPHA CONTROL TOWER</text>
+  <rect x="70" y="120" width="510" height="240" rx="14" fill="#0A1F28" stroke="#224452"/>
+  <text x="90" y="156" fill="#A5F3FC" font-family="IBM Plex Mono, monospace" font-size="18">Growth Lane</text>
+  <rect x="90" y="178" width="220" height="66" rx="10" fill="#08242E" stroke="#1E4B5B"/>
+  <text x="104" y="215" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Funnel Conversion</text>
+  <rect x="330" y="178" width="220" height="66" rx="10" fill="#08242E" stroke="#1E4B5B"/>
+  <text x="346" y="215" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Campaign Attribution</text>
+  <rect x="90" y="264" width="460" height="76" rx="10" fill="#08242E" stroke="#1E4B5B"/>
+  <text x="104" y="307" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Lifecycle Automations + Experiments</text>
+  <rect x="620" y="120" width="510" height="240" rx="14" fill="#141B0A" stroke="#4F6221"/>
+  <text x="640" y="156" fill="#BBF7D0" font-family="IBM Plex Mono, monospace" font-size="18">Ops Lane</text>
+  <rect x="640" y="178" width="220" height="66" rx="10" fill="#18260E" stroke="#587A22"/>
+  <text x="656" y="215" fill="#F1F5F9" font-family="IBM Plex Mono, monospace" font-size="14">Reliability Alerts</text>
+  <rect x="880" y="178" width="220" height="66" rx="10" fill="#18260E" stroke="#587A22"/>
+  <text x="894" y="215" fill="#F1F5F9" font-family="IBM Plex Mono, monospace" font-size="14">Agent Monitoring</text>
+  <rect x="640" y="264" width="460" height="76" rx="10" fill="#18260E" stroke="#587A22"/>
+  <text x="654" y="307" fill="#F1F5F9" font-family="IBM Plex Mono, monospace" font-size="14">Automation Runbooks + Kill Switch</text>
+  <rect x="70" y="390" width="1060" height="230" rx="14" fill="#0A1014" stroke="#30424C"/>
+  <text x="90" y="430" fill="#67E8F9" font-family="IBM Plex Mono, monospace" font-size="17">Shared Data Spine</text>
+  <text x="90" y="462" fill="#D1D5DB" font-family="IBM Plex Mono, monospace" font-size="14">events -> telemetry -> ops summary -> dashboard cards -> action policies</text>
+  <line x1="300" y1="360" x2="300" y2="390" stroke="#38BDF8" stroke-width="2"/>
+  <line x1="880" y1="360" x2="880" y2="390" stroke="#86EFAC" stroke-width="2"/>
+  <circle cx="300" cy="360" r="6" fill="#38BDF8"/>
+  <circle cx="880" cy="360" r="6" fill="#86EFAC"/>
+</svg>
