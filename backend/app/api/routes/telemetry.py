@@ -17,7 +17,7 @@ from app.db.models import (
 )
 from app.core.config import settings
 
-router = APIRouter(prefix="/api/telemetry", tags=["telemetry"])
+router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 
 class VariantShownEvent(BaseModel):
