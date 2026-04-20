@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from urllib.request import Request as UrlRequest, urlopen
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ from app.db.models import (
     AuthRateLimitBucket,
     LoginSecurityState,
     PasswordResetToken,
+    BrokerOAuthConnection,
     TrustedDevice,
     User,
     User2FASetup,
@@ -1472,10 +1474,97 @@ def alpaca_callback_compat(code: str, state: str) -> RedirectResponse:
 
 
 @router.get("/schwab/callback", summary="Charles Schwab OAuth callback route")
-def schwab_callback(code: str, state: str) -> RedirectResponse:
-    """
-    Charles Schwab OAuth callback endpoint.
-    Exchanges authorization code for access token via Schwab API.
-    """
-    qs = urlencode({"code": code, "state": state})
-    return RedirectResponse(url=f"/api/auth/schwab/oauth/callback?{qs}", status_code=307)
+def schwab_callback(request: Request, code: str, state: str) -> RedirectResponse:
+    return _complete_schwab_oauth(request=request, code=code, state=state)
+
+
+@router.get("/schwab/oauth/callback", summary="Charles Schwab OAuth callback compatibility route")
+def schwab_oauth_callback(request: Request, code: str, state: str) -> RedirectResponse:
+    return _complete_schwab_oauth(request=request, code=code, state=state)
+
+
+def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> RedirectResponse:
+    if not settings.schwab_client_id or not settings.schwab_client_secret or not settings.schwab_redirect_uri:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Schwab OAuth not configured. Set SCHWAB_CLIENT_ID, "
+                "SCHWAB_CLIENT_SECRET, and SCHWAB_REDIRECT_URI."
+            ),
+        )
+
+    # Schwab requires HTTP Basic auth with client_id:client_secret for token exchange.
+    basic = base64.b64encode(f"{settings.schwab_client_id}:{settings.schwab_client_secret}".encode("utf-8")).decode("utf-8")
+    token_body = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": settings.schwab_redirect_uri,
+    }
+
+    try:
+        with httpx.Client(timeout=20) as client:
+            token_resp = client.post(
+                settings.schwab_token_url,
+                data=token_body,
+                headers={
+                    "Authorization": f"Basic {basic}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/json",
+                },
+            )
+        token_resp.raise_for_status()
+        payload = token_resp.json()
+    except httpx.HTTPStatusError as err:
+        detail = err.response.text if err.response is not None else str(err)
+        status = err.response.status_code if err.response is not None else 502
+        raise HTTPException(status_code=status, detail=f"Schwab token exchange failed: {detail}") from err
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Schwab token exchange failed: {err}") from err
+
+    try:
+        user = auth_service.get_current_user(request)
+    except HTTPException as err:
+        raise HTTPException(
+            status_code=401,
+            detail=(
+                "Schwab token exchange succeeded, but no authenticated session was found to bind this broker "
+                "connection. Sign in and start OAuth from the app so cookies/state are present."
+            ),
+        ) from err
+
+    now = datetime.now(timezone.utc)
+    expires_in_raw = payload.get("expires_in")
+    expires_in: int | None = None
+    if expires_in_raw is not None:
+        try:
+            expires_in = int(expires_in_raw)
+        except (TypeError, ValueError):
+            expires_in = None
+
+    with get_session() as session:
+        connection = session.execute(
+            select(BrokerOAuthConnection).where(
+                BrokerOAuthConnection.user_id == str(user.id),
+                BrokerOAuthConnection.provider == "schwab",
+            )
+        ).scalar_one_or_none()
+        if connection is None:
+            connection = BrokerOAuthConnection(user_id=str(user.id), provider="schwab")
+            session.add(connection)
+
+        connection.connected = bool(payload.get("access_token"))
+        connection.access_token = payload.get("access_token")
+        connection.refresh_token = payload.get("refresh_token")
+        connection.token_type = payload.get("token_type")
+        scope_value = payload.get("scope")
+        connection.scope = str(scope_value) if scope_value is not None else None
+        connection.expires_in = expires_in
+        connection.obtained_at = now
+        connection.disconnected_at = None
+        connection.last_error = None
+        connection.updated_at = now
+        session.flush()
+
+    redirect_base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
+    redirect_url = f"{redirect_base}/alpha?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
+    return RedirectResponse(url=redirect_url, status_code=307)
