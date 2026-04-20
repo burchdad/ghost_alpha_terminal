@@ -50,12 +50,28 @@ type ChatResponse = {
   pending_action: { action: string; params: Record<string, unknown> } | null;
   copilot_mode?: string;
   parser_used?: string;
+  guardrail?: boolean;
+  guardrail_options?: string[];
+};
+
+const GUARDRAIL_OPTION_LABELS: Record<string, string> = {
+  simulate_strategy: "Run Simulation First",
+  enable_high_risk_mode: "Enable High-Risk Sprint Mode",
+  set_realistic_goal: "Set Controlled Growth Target",
+};
+
+const GUARDRAIL_OPTION_MESSAGES: Record<string, string> = {
+  simulate_strategy: "simulate mission with my current balance over 30 days",
+  enable_high_risk_mode: "enable options sprint high-risk mode",
+  set_realistic_goal: "set a controlled growth goal",
 };
 
 type Msg = {
   id: string;
   role: "assistant" | "user";
   text: string;
+  guardrail?: boolean;
+  guardrail_options?: string[];
 };
 
 function shortMode(mode: CopilotState["execution_mode"]) {
@@ -120,8 +136,8 @@ export default function DashboardCopilot() {
     return bits.join(" · ");
   }, [state]);
 
-  async function sendMessage(confirm = false) {
-    const text = input.trim();
+  async function sendMessage(confirm = false, overrideText?: string) {
+    const text = (overrideText ?? input).trim();
     if (!text && !confirm) return;
 
     if (!confirm) {
@@ -163,7 +179,16 @@ export default function DashboardCopilot() {
       setState(data.state);
       setPendingAction(data.pending_action);
       const parserSuffix = data.parser_used ? ` (${data.parser_used})` : "";
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", text: `${data.reply}${parserSuffix}` }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: "assistant",
+          text: `${data.reply}${parserSuffix}`,
+          guardrail: data.guardrail ?? false,
+          guardrail_options: data.guardrail_options ?? [],
+        },
+      ]);
     } finally {
       setSending(false);
     }
@@ -189,15 +214,33 @@ export default function DashboardCopilot() {
             <div className="mb-3 max-h-64 space-y-2 overflow-y-auto pr-1">
               {loading ? <p className="text-xs text-slate-500">Loading copilot...</p> : null}
               {messages.map((m) => (
-                <div
-                  key={m.id}
-                  className={`rounded-lg px-3 py-2 text-xs ${
-                    m.role === "assistant"
-                      ? "border border-cyan-700/30 bg-cyan-900/20 text-cyan-100"
-                      : "border border-slate-700 bg-slate-800/70 text-slate-100"
-                  }`}
-                >
-                  {m.text}
+                <div key={m.id}>
+                  <div
+                    className={`rounded-lg px-3 py-2 text-xs ${
+                      m.role === "assistant"
+                        ? "border border-cyan-700/30 bg-cyan-900/20 text-cyan-100"
+                        : "border border-slate-700 bg-slate-800/70 text-slate-100"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                  {m.guardrail && m.guardrail_options && m.guardrail_options.length > 0 && (
+                    <div className="mt-1.5 flex flex-col gap-1">
+                      {m.guardrail_options.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          disabled={sending}
+                          onClick={() => {
+                            void sendMessage(false, GUARDRAIL_OPTION_MESSAGES[opt] ?? opt);
+                          }}
+                          className="rounded border border-amber-600/50 bg-amber-900/20 px-3 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-800/30 disabled:opacity-50"
+                        >
+                          {GUARDRAIL_OPTION_LABELS[opt] ?? opt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

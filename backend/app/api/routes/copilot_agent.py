@@ -17,6 +17,7 @@ from app.models.schemas import OptionsExecutionRequest
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
 from app.services.copilot_llm_service import copilot_llm_service
+from app.services.intent_classifier import IntentType, classify as classify_intent
 from app.services.execution_policy_service import execution_policy_service
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
@@ -59,6 +60,8 @@ class CopilotChatResponse(BaseModel):
     pending_action: dict | None = None
     copilot_mode: str = "rule-based"
     parser_used: str = "rule"
+    guardrail: bool = False
+    guardrail_options: list[str] = Field(default_factory=list)
 
 
 class CopilotTelemetrySummaryResponse(BaseModel):
@@ -702,6 +705,36 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
     assistant_hint: str | None = None
     latency_ms: int | None = None
 
+    if payload.confirm and payload.pending_action:
+    # ── Intent classification guardrail (skip on confirm flow) ──────────────
+    if not payload.confirm:
+        intent = classify_intent(payload.message, state_before)
+        if intent.intent_type in (IntentType.UNREALISTIC_GAIN, IntentType.DANGEROUS):
+            _log_message(str(user.id), "user", payload.message)
+            _log_message(str(user.id), "assistant", intent.guardrail_reply or "")
+            _log_telemetry(
+                user_id=str(user.id),
+                mode_assigned=mode_assigned,
+                parser_used="guardrail",
+                action_detected=False,
+                action_name=None,
+                action_applied=False,
+                requires_confirmation=False,
+                success=True,
+                latency_ms=None,
+                error=None,
+                message=payload.message,
+            )
+            return CopilotChatResponse(
+                reply=intent.guardrail_reply or "That request falls outside safe operating parameters.",
+                state=state_before,
+                actions_applied=[],
+                copilot_mode=mode_assigned,
+                parser_used="guardrail",
+                guardrail=True,
+                guardrail_options=intent.guardrail_options,
+            )
+    # ── Normal parse / confirm flow ─────────────────────────────────────────
     if payload.confirm and payload.pending_action:
         parsed = ParsedAction(
             action=str(payload.pending_action.get("action", "")),
