@@ -1469,3 +1469,13 @@ def provider_status() -> dict:
 def alpaca_callback_compat(code: str, state: str) -> RedirectResponse:
     qs = urlencode({"code": code, "state": state})
     return RedirectResponse(url=f"/alpaca/oauth/callback?{qs}", status_code=307)
+
+
+@router.get("/schwab/callback", summary="Charles Schwab OAuth callback route")
+def schwab_callback(code: str, state: str) -> RedirectResponse:
+    """
+    Charles Schwab OAuth callback endpoint.
+    Exchanges authorization code for access token via Schwab API.
+    """
+    qs = urlencode({"code": code, "state": state})
+    return RedirectResponse(url=f"/api/auth/schwab/oauth/callback?{qs}", status_code=307)

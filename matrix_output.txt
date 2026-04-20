@@ -1,0 +1,43 @@
+Starting registration for matrix_test_f1adcb4e@example.com...
+High Trust Status: {'high_trust': True, 'expires_at': '2026-04-20T14:41:57.137119+00:00', 'user': 'matrix_test_f1adcb4e@example.com', 'step_up_required': False, 'risk_score': 50, 'risk_reasons': ['new_device']}
+Executing matrix for 25 strategies...
+.........................
+Done.
+
+--- FIRST 10 ROWS ---
+{'strategy': 'LONG_CALL', 'status': 200, 'request_id': '1344705e266a44289e6f79aff66b0805', 'approved': True, 'order_response_present': True, 'reason': 'Tradier long_call order submitted.'}
+{'strategy': 'LONG_PUT', 'status': 200, 'request_id': 'e2e13bcbe28c4fd3a907fe754938cf3e', 'approved': True, 'order_response_present': True, 'reason': 'Tradier long_put order submitted.'}
+{'strategy': 'VERTICAL_CALL', 'status': 400, 'request_id': 'd5ed360893ae4952b0aed2088e296548', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'VERTICAL_PUT', 'status': 400, 'request_id': '8fd17e64c66b488fb5e845ea47fc4403', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CALENDAR_CALL', 'status': 400, 'request_id': '55e92a4e036c4329812746c521837ba6', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CALENDAR_PUT', 'status': 400, 'request_id': '12c474f23ed54e478e3527c0bbe8a321', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'DIAGONAL_CALL', 'status': 400, 'request_id': '84f7cc150f484e50ab9a07ee151e7642', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'DIAGONAL_PUT', 'status': 400, 'request_id': 'dd5746e546dd40e4b6a5ad31e7151ed3', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'RATIO_CALL', 'status': 400, 'request_id': 'd1d6b4b7796643229fbf35baed20f78f', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'RATIO_PUT', 'status': 400, 'request_id': '95fcd1978a274a269ccf48cd5250849d', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+
+--- NON-200 ROWS ---
+{'strategy': 'VERTICAL_CALL', 'status': 400, 'request_id': 'd5ed360893ae4952b0aed2088e296548', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'VERTICAL_PUT', 'status': 400, 'request_id': '8fd17e64c66b488fb5e845ea47fc4403', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CALENDAR_CALL', 'status': 400, 'request_id': '55e92a4e036c4329812746c521837ba6', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CALENDAR_PUT', 'status': 400, 'request_id': '12c474f23ed54e478e3527c0bbe8a321', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'DIAGONAL_CALL', 'status': 400, 'request_id': '84f7cc150f484e50ab9a07ee151e7642', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'DIAGONAL_PUT', 'status': 400, 'request_id': 'dd5746e546dd40e4b6a5ad31e7151ed3', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'RATIO_CALL', 'status': 400, 'request_id': 'd1d6b4b7796643229fbf35baed20f78f', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'RATIO_PUT', 'status': 400, 'request_id': '95fcd1978a274a269ccf48cd5250849d', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'BUTTERFLY_CALL', 'status': 400, 'request_id': '0e3ae0ca346b407e913b4a78ee2f0a43', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'BUTTERFLY_PUT', 'status': 400, 'request_id': 'bc801520fb4642f9ada15af2d911a95b', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CONDOR_CALL', 'status': 400, 'request_id': '3079889855824b01809269cfff135193', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CONDOR_PUT', 'status': 400, 'request_id': '7f616a1abd9048f798a021a80802e4b6', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'IRON_CONDOR', 'status': 400, 'request_id': 'a32d86fb93a847acafadf507a6189630', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'COVERED_PUT', 'status': 400, 'request_id': 'ea9015e9305a4b068a472b647feed7ae', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'PROTECTIVE_CALL', 'status': 400, 'request_id': '1ad3f18246c341d8820803e985946410', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CUSTOM_2_LEG', 'status': 400, 'request_id': '369427e25e13454d8ff99921223694d2', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CUSTOM_3_LEG', 'status': 400, 'request_id': 'b8d6c07838cd4d5b866b9907d581f2cb', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+{'strategy': 'CUSTOM_4_LEG', 'status': 400, 'request_id': '4188d8008ad246eb9a8b4db8dcdd9697', 'approved': None, 'order_response_present': False, 'reason': '{"detail":"Invalid parameter, tag: contains invalid characters."}'}
+
+--- AGGREGATES ---
+Status Codes: {200: 7, 400: 18}
+Submitted: 4
+Approved w/o Submit: 0
+Blocked: 3

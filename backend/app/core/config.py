@@ -76,6 +76,15 @@ class Settings(BaseSettings):
     alpaca_connect_token_url: str = "https://api.alpaca.markets/oauth/token"
 
     # ---------------------------------------------------------------------------
+    # Charles Schwab OAuth credentials
+    # ---------------------------------------------------------------------------
+    schwab_client_id: str = ""
+    schwab_client_secret: str = ""
+    schwab_redirect_uri: str = ""
+    schwab_authorize_url: str = "https://api.schwab.com/v1/oauth/authorize"
+    schwab_token_url: str = "https://api.schwab.com/v1/oauth/token"
+
+    # ---------------------------------------------------------------------------
     # Auth/session settings
     # ---------------------------------------------------------------------------
     auth_session_secret: str = ""
