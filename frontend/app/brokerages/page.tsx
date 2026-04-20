@@ -133,7 +133,7 @@ export default function BrokeragesPage() {
     } catch {
       // Ignore storage access failures and continue navigation.
     }
-    router.push("/dashboard");
+    router.push("/alpha");
   }
 
   async function handleConnect(provider: string) {
@@ -238,7 +238,7 @@ export default function BrokeragesPage() {
           <button
             type="button"
             disabled={!hasConnectedBroker}
-            onClick={() => router.push("/dashboard")}
+            onClick={() => router.push("/alpha")}
             className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Continue to Dashboard
