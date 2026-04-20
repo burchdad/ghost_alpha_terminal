@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -300,7 +301,7 @@ private fun RiskScoreDisplay(score: Double, recommendation: String) {
             Text(recommendation, fontSize = 12.sp, color = riskColor)
         }
         LinearProgressIndicator(
-            progress = { score / 100f },
+            progress = { (score / 100.0).toFloat().coerceIn(0f, 1f) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp),

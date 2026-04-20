@@ -15,6 +15,8 @@ class PerformanceService:
 
         for agent in get_registered_agents():
             metrics = agent_scorer.get_metrics(agent.name, symbol=symbol)
+            if metrics is None:
+                continue
             agent_rows.append(
                 AgentPerformanceRow(
                     agent_name=agent.name,
@@ -27,7 +29,7 @@ class PerformanceService:
             )
 
         agent_rows.sort(key=lambda row: row.composite_score, reverse=True)
-        best_agent = agent_rows[0].agent_name if agent_rows else "n/a"
+        best_agent = agent_rows[0].agent_name if agent_rows else "insufficient_history"
 
         strategy_rows = [StrategyPerformanceRow(**item) for item in learning_store.get_strategy_success_rates(symbol=symbol)]
         by_regime = learning_store.get_regime_performance(symbol=symbol)

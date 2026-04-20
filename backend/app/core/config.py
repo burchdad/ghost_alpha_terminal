@@ -37,10 +37,27 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     kronos_model_id: str = "NeoQuasar/Kronos-tiny"
     use_mock_data: bool = False
+    llm_provider: str = "openai-compatible"
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    copilot_llm_enabled: bool = False
+    copilot_llm_rollout_pct: int = 0
     copilot_openai_enabled: bool = False
     copilot_openai_rollout_pct: int = 0
+
+    # ---------------------------------------------------------------------------
+    # External market data providers
+    # ---------------------------------------------------------------------------
+    massive_api_key: str = ""
+    finnhub_api_key: str = ""
+    fmp_api_key: str = ""  # Financial Modeling Prep
+    dynamic_universe_enabled: bool = True
+    dynamic_universe_sources: str = "finnhub,fmp,massive,static"
+    dynamic_universe_max_symbols: int = 180
+    dynamic_universe_refresh_seconds: int = 3600
 
     # ---------------------------------------------------------------------------
     # Alpaca credentials — set via Railway environment variables, never committed
@@ -64,6 +81,7 @@ class Settings(BaseSettings):
     auth_session_secret: str = ""
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    auth_cookie_persistent: bool = True
     frontend_base_url: str = "http://localhost:3000"
     auth_access_ttl_minutes: int = 30
     auth_refresh_ttl_days: int = 14
@@ -170,6 +188,17 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     request_id_max_entries: int = 100
 
+    # ---------------------------------------------------------------------------
+    # API guardrails (rate limiting + scoped API keys)
+    # ---------------------------------------------------------------------------
+    api_rate_limit_window_seconds: int = 60
+    api_rate_limit_anon: int = 90
+    api_rate_limit_session: int = 240
+    api_rate_limit_readonly_key: int = 360
+    api_rate_limit_trading_key: int = 240
+    api_key_readonly: str = ""
+    api_key_trading: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -266,17 +295,38 @@ class Settings(BaseSettings):
             if not self.alpaca_connect_redirect_uri:
                 errors.append("ALPACA_CONNECT_REDIRECT_URI must be set")
 
-            if self.copilot_openai_enabled and not self.openai_api_key:
-                errors.append("OPENAI_API_KEY must be set when COPILOT_OPENAI_ENABLED=true")
+            if self.effective_copilot_llm_enabled and not self.effective_llm_api_key:
+                errors.append("LLM_API_KEY or OPENAI_API_KEY must be set when copilot LLM routing is enabled")
 
-            if self.copilot_openai_rollout_pct < 0 or self.copilot_openai_rollout_pct > 100:
-                errors.append("COPILOT_OPENAI_ROLLOUT_PCT must be between 0 and 100")
+            if self.effective_copilot_llm_rollout_pct < 0 or self.effective_copilot_llm_rollout_pct > 100:
+                errors.append("Copilot LLM rollout percentage must be between 0 and 100")
         
         if errors:
             raise ValueError(
                 f"Production configuration validation failed:\n" + 
                 "\n".join(f"  - {e}" for e in errors)
             )
+
+    @property
+    def effective_llm_api_key(self) -> str:
+        return self.llm_api_key or self.openai_api_key
+
+    @property
+    def effective_llm_model(self) -> str:
+        return self.llm_model or self.openai_model
+
+    @property
+    def effective_llm_base_url(self) -> str | None:
+        value = self.llm_base_url.strip()
+        return value or None
+
+    @property
+    def effective_copilot_llm_enabled(self) -> bool:
+        return bool(self.copilot_llm_enabled or self.copilot_openai_enabled)
+
+    @property
+    def effective_copilot_llm_rollout_pct(self) -> int:
+        return self.copilot_llm_rollout_pct if self.copilot_llm_rollout_pct > 0 else self.copilot_openai_rollout_pct
 
 
 settings = Settings()

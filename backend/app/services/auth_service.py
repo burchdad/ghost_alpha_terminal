@@ -254,8 +254,9 @@ class AuthService:
 
     def issue_login_cookie(self, *, response: Response, user_id: str, request: Request) -> None:
         refresh_token, access_token = self._create_session(user_id=user_id, request=request)
-        refresh_max_age = int(timedelta(days=max(1, int(settings.auth_refresh_ttl_days))).total_seconds())
-        access_max_age = int(timedelta(minutes=max(1, int(settings.auth_access_ttl_minutes))).total_seconds())
+        persistent_cookie = bool(settings.auth_cookie_persistent)
+        refresh_max_age = int(timedelta(days=max(1, int(settings.auth_refresh_ttl_days))).total_seconds()) if persistent_cookie else None
+        access_max_age = int(timedelta(minutes=max(1, int(settings.auth_access_ttl_minutes))).total_seconds()) if persistent_cookie else None
         response.set_cookie(
             key=self.SESSION_COOKIE_NAME,
             value=refresh_token,
@@ -370,8 +371,9 @@ class AuthService:
             user_session.expires_at = now + timedelta(days=max(1, int(settings.auth_refresh_ttl_days)))
             user_session.access_expires_at = now + timedelta(minutes=max(1, int(settings.auth_access_ttl_minutes)))
 
-            refresh_max_age = int(timedelta(days=max(1, int(settings.auth_refresh_ttl_days))).total_seconds())
-            access_max_age = int(timedelta(minutes=max(1, int(settings.auth_access_ttl_minutes))).total_seconds())
+            persistent_cookie = bool(settings.auth_cookie_persistent)
+            refresh_max_age = int(timedelta(days=max(1, int(settings.auth_refresh_ttl_days))).total_seconds()) if persistent_cookie else None
+            access_max_age = int(timedelta(minutes=max(1, int(settings.auth_access_ttl_minutes))).total_seconds()) if persistent_cookie else None
             response.set_cookie(
                 key=self.SESSION_COOKIE_NAME,
                 value=new_refresh_token,

@@ -1,0 +1,25 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="700" rx="24" fill="#081117"/>
+  <rect x="34" y="34" width="1132" height="632" rx="20" fill="#0A1921" stroke="#244351"/>
+  <text x="70" y="90" fill="#7DD3FC" font-family="IBM Plex Mono, monospace" font-size="28" font-weight="700">SECURITY + TRUST CONTROLS</text>
+  <path d="M600 160L760 220V360C760 460 700 548 600 590C500 548 440 460 440 360V220L600 160Z" fill="#0B2A37" stroke="#38BDF8" stroke-width="4"/>
+  <path d="M535 360L585 410L675 310" stroke="#22C55E" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="90" y="190" width="280" height="88" rx="12" fill="#0C2430" stroke="#27546A"/>
+  <text x="108" y="228" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Session Security</text>
+  <text x="108" y="252" fill="#93C5FD" font-family="IBM Plex Mono, monospace" font-size="12">HttpOnly + SameSite + CSRF</text>
+  <rect x="90" y="300" width="280" height="88" rx="12" fill="#0C2430" stroke="#27546A"/>
+  <text x="108" y="338" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">API Guardrails</text>
+  <text x="108" y="362" fill="#93C5FD" font-family="IBM Plex Mono, monospace" font-size="12">Scoped limits + abuse controls</text>
+  <rect x="90" y="410" width="280" height="88" rx="12" fill="#0C2430" stroke="#27546A"/>
+  <text x="108" y="448" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Auditability</text>
+  <text x="108" y="472" fill="#93C5FD" font-family="IBM Plex Mono, monospace" font-size="12">Decision + auth event trails</text>
+  <rect x="830" y="190" width="280" height="88" rx="12" fill="#122617" stroke="#3A6B44"/>
+  <text x="848" y="228" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Execution Safety</text>
+  <text x="848" y="252" fill="#86EFAC" font-family="IBM Plex Mono, monospace" font-size="12">Kill switch + mode gating</text>
+  <rect x="830" y="300" width="280" height="88" rx="12" fill="#122617" stroke="#3A6B44"/>
+  <text x="848" y="338" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Ops Telemetry</text>
+  <text x="848" y="362" fill="#86EFAC" font-family="IBM Plex Mono, monospace" font-size="12">Live reliability + funnel pulse</text>
+  <rect x="830" y="410" width="280" height="88" rx="12" fill="#122617" stroke="#3A6B44"/>
+  <text x="848" y="448" fill="#E2E8F0" font-family="IBM Plex Mono, monospace" font-size="14">Security Headers</text>
+  <text x="848" y="472" fill="#86EFAC" font-family="IBM Plex Mono, monospace" font-size="12">CSP + hardening responses</text>
+</svg>

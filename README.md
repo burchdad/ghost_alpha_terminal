@@ -2,7 +2,7 @@
 
 Production-oriented MVP for an AI-powered trading intelligence platform that combines:
 
-- Kronos-style time-series forecasting service (mock-compatible)
+- Kronos-style time-series forecasting service with live-data-first fallback behavior
 - Options market intelligence (IV, OI, volume, Greeks)
 - Rule-based strategy signal engine
 - Multi-agent swarm consensus engine
@@ -15,10 +15,15 @@ Production-oriented MVP for an AI-powered trading intelligence platform that com
 
 - Backend is deployed and verified on Railway.
 - Frontend is deployed and verified on Vercel.
-- Latest checkpoint commit on `main`: `d63e810`.
-- Latest checkpoint commit on `main`: `48a1e98`.
+- Launch-readiness telemetry is active (`/metrics/runtime-readiness` and `/telemetry/ops-summary`).
+- Security hardening is active (CSRF middleware, scoped API guardrails, and response security headers).
 
 For a concise feature inventory, see `CAPABILITIES.md`.
+
+Trust and transparency resources:
+
+- Landing Features page: `/features`
+- Cybersecurity practices: `/cybersecurity`
 
 Operational launch docs:
 
@@ -43,7 +48,7 @@ Operational launch docs:
 
 ### Data
 
-- Mock market data for MVP bootstrapping
+- Live market data with limited fallback behavior where provider/history coverage is unavailable
 - PostgreSQL integration can be added next (Supabase/local)
 
 ## Repository Structure
@@ -151,6 +156,8 @@ API endpoints:
 - `GET /agents/audit/decisions/{audit_id}` (full decision lineage payload)
 - `GET|POST /alpaca/*` (broker connectivity and order/position operations)
 - `GET /metrics/runtime-readiness` (cutover and operator telemetry snapshot)
+- `GET /telemetry/ops-summary` (growth, funnel conversion, and reliability pulse)
+- `GET /telemetry/landing-summary` (landing page variant and CTA summary)
 
 Coinbase websocket integration:
 
@@ -183,6 +190,9 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Database (recommended now): Neon Postgres using pooled URL with `sslmode=require`.
 - Set backend `DATABASE_URL` to Neon connection string.
 - Set backend auth vars: `AUTH_SESSION_SECRET`, `AUTH_COOKIE_SECURE`, `AUTH_COOKIE_SAMESITE`, `FRONTEND_BASE_URL`.
+- Copilot LLM routing is OpenAI-compatible and now supports custom providers via `LLM_API_KEY`, `LLM_MODEL`, and optional `LLM_BASE_URL`.
+- Existing `OPENAI_API_KEY` and `OPENAI_MODEL` vars remain supported as backward-compatible aliases.
+- Enable only non-critical copilot routing with `COPILOT_LLM_ENABLED=true` and a bounded `COPILOT_LLM_ROLLOUT_PCT`.
 - Frontend (Vercel): set `NEXT_PUBLIC_API_BASE` to your backend URL (for example, Railway service URL).
 - Backend (Railway): ensure all required env values are configured in Railway project variables.
 - Coinbase key-mode broker visibility uses backend vars `COINBASE_API_KEY_NAME` and `COINBASE_API_PRIVATE_KEY`.
@@ -225,7 +235,7 @@ Rule-based decision logic:
 	- Volatility agent
 	- Mean-reversion agent
 	- Options agent
-- Scores each agent using mock live metrics:
+- Scores each agent using realized historical metrics when available, with fallback-generated scoring only when outcome history is insufficient:
 	- Accuracy
 	- Win rate
 	- Confidence calibration
@@ -466,5 +476,6 @@ Frontend dashboard now includes `ControlPanel` with:
 
 ## Notes
 
-- This MVP uses deterministic mock data for stable local development.
-- Set `use_mock_data=false` and configure `kronos_model_id` in env when connecting a real model/API.
+- Production should run with `use_mock_data=false`.
+- `kronos_model_id` is optional until real model inference is wired into the forecast path; current forecasts are live-data-driven and should fail explicitly when providers do not return usable history.
+- Agent scoring now uses realized history only; when outcome history is insufficient, performance fields remain unranked instead of falling back to synthetic metrics.

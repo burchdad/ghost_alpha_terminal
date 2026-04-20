@@ -170,7 +170,7 @@ export default function DashboardCopilot() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[min(420px,calc(100vw-2rem))]">
+    <div className="fixed bottom-2 right-2 z-[70] w-[min(420px,calc(100vw-1rem))] sm:bottom-4 sm:right-4 sm:w-[min(420px,calc(100vw-2rem))]">
       <div className="rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
         <button
           type="button"

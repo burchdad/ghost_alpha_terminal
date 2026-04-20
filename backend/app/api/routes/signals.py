@@ -41,5 +41,5 @@ def get_price_history(symbol: str, days: int = 90) -> PriceHistoryResponse:
                     "volume": float(row["volume"]),
                 }
             )
-    source = "mock" if not bars else "alpaca"
+    source = "live" if bars else "unavailable"
     return PriceHistoryResponse(symbol=symbol.upper(), timeframe="1d", bars=bars, source=source)

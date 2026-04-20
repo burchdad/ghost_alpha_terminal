@@ -4,7 +4,7 @@ import hashlib
 import hmac
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -34,6 +34,31 @@ router = APIRouter(prefix="/alpaca", tags=["alpaca"])
 _OAUTH_STATE_TTL_SECONDS = 600
 _OAUTH_PROVIDER = "alpaca"
 _oauth_states: dict[str, dict] = {}
+
+
+def _normalize_origin(raw: str | None) -> str | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def _resolve_frontend_origin(request: Request) -> str:
+    allowed = [origin.rstrip("/") for origin in settings.cors_origins if origin and origin != "*"]
+
+    origin = _normalize_origin(request.headers.get("origin"))
+    if origin and (not allowed or origin in allowed):
+        return origin
+
+    referer_origin = _normalize_origin(request.headers.get("referer"))
+    if referer_origin and (not allowed or referer_origin in allowed):
+        return referer_origin
+
+    fallback = _normalize_origin(settings.frontend_base_url)
+    return fallback or "http://localhost:3000"
 
 
 def _extract_client_ip(request: Request) -> str:
@@ -482,9 +507,11 @@ def start_oauth_flow(
     _purge_expired_oauth_states()
     state = secrets.token_urlsafe(24)
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=_OAUTH_STATE_TTL_SECONDS)
+    frontend_origin = _resolve_frontend_origin(request)
     _oauth_states[state] = {
         "user_id": str(user.id),
         "next": next_path if next_path.startswith("/") else "/alpha",
+        "frontend_origin": frontend_origin,
         "expires_at": expires_at,
     }
 
@@ -565,7 +592,8 @@ def complete_oauth_flow(
     next_path = str(state_payload.get("next", "/alpha") or "/alpha")
     if not next_path.startswith("/"):
         next_path = "/alpha"
-    redirect_to = f"{settings.frontend_base_url.rstrip('/')}{next_path}?alpaca_oauth=connected"
+    frontend_origin = _normalize_origin(state_payload.get("frontend_origin")) or _normalize_origin(settings.frontend_base_url)
+    redirect_to = f"{(frontend_origin or 'http://localhost:3000').rstrip('/')}{next_path}?alpaca_oauth=connected"
     return RedirectResponse(url=redirect_to, status_code=307)
 
 

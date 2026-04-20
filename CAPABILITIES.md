@@ -9,7 +9,9 @@ This document is a quick reference for what the platform can currently do.
 - Risk filtering, position sizing, and execution guardrails.
 - Portfolio and performance tracking with regime-aware analytics.
 - Operator controls for kill switch and autonomous execution mode.
+- Launch operations telemetry for growth, funnel conversion, and runtime reliability.
 - Web dashboard for monitoring, controls, and simulation workflows.
+- Public features/trust surface for onboarding and conversion (`/features`).
 - Target-seeking goal engine with trajectory-aware pressure control.
 - Broad-universe opportunity scanner with allocation recommendations.
 - Reality-check layer with success-probability and adjusted-goal guidance.
@@ -87,6 +89,15 @@ This document is a quick reference for what the platform can currently do.
 - `GET|POST /alpaca/*`
   - Broker account, assets, orders, and positions routes.
 
+### Telemetry and Launch Operations
+
+- `GET /metrics/runtime-readiness`
+  - Runtime cutover status including broker connectivity and execution health.
+- `GET /telemetry/ops-summary`
+  - Unified launch pulse for growth, funnel conversion, and reliability KPIs.
+- `GET /telemetry/landing-summary`
+  - Landing page variant and CTA conversion summary.
+
 ## Frontend Capabilities
 
 - Real-time dashboard at `/dashboard` with:
@@ -102,6 +113,7 @@ This document is a quick reference for what the platform can currently do.
 - Persistence for forecast history, signals, agent predictions, and trade outcomes.
 - Feedback loop improves agent weighting over time via stored outcomes.
 - Regime-aware attribution for better evaluation under varying market conditions.
+- Agent scoring is historical-data-first, with fallback-generated metrics only when there is not yet enough realized outcome history.
 
 ## Goal and Trajectory Layer
 
@@ -195,6 +207,9 @@ This document is a quick reference for what the platform can currently do.
 - Guardrails reject low-quality or over-risk trades.
 - Daily loss and drawdown limits enforced by control engine.
 - Kill switch can hard-stop execution at runtime.
+- CSRF protection is enforced for state-changing authenticated requests.
+- API scope/rate controls are applied to protect sensitive routes.
+- Security headers and CSP policies are applied for browser hardening.
 
 ## Deployment Status
 

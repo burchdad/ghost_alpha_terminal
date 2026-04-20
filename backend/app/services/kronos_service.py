@@ -8,7 +8,6 @@ import numpy as np
 from app.core.config import settings
 from app.models.schemas import ForecastResponse
 from app.services.historical_data_service import historical_data_service
-from app.utils.data_loader import load_mock_ohlcv
 
 
 class KronosService:
@@ -29,9 +28,9 @@ class KronosService:
             tokenizer = AutoTokenizer.from_pretrained(settings.kronos_model_id)
             model = AutoModelForCausalLM.from_pretrained(settings.kronos_model_id)
             self._model = {"tokenizer": tokenizer, "model": model}
-        except Exception:
-            # Fallback to mock mode to keep API reliable in dev.
-            self._model = "mock"
+        except Exception as exc:
+            # Forecast generation remains live-data-driven even if model loading fails.
+            self._model = {"status": "load_failed", "error": str(exc)}
 
     def generate_forecast(self, symbol: str, timeframe: str = "1d") -> ForecastResponse:
         self._load_model()
@@ -44,10 +43,8 @@ class KronosService:
             start_date=start,
             end_date=end,
         )
-        if df.empty and settings.use_mock_data:
-            df = load_mock_ohlcv(symbol=symbol, timeframe=timeframe)
         if df.empty:
-            raise RuntimeError(f"No live Alpaca bar data available for {symbol.upper()}")
+            raise RuntimeError(f"No historical market data available from configured live providers for {symbol.upper()}")
         closes = df["close"].to_numpy(dtype=float)
         returns = np.diff(closes) / closes[:-1]
 

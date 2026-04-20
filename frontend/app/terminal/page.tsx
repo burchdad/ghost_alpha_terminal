@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AgentPanel from "../../components/AgentPanel";
 import BacktestPanel from "../../components/BacktestPanel";
+import CandlestickChart from "../../components/CandlestickChart";
 import Chart from "../../components/Chart";
+import DashboardCopilot from "../../components/DashboardCopilot";
 import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
 import ForecastPanel from "../../components/ForecastPanel";
 import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
@@ -12,6 +14,7 @@ import OptionsPanel from "../../components/OptionsPanel";
 import PerformancePanel from "../../components/PerformancePanel";
 import SignalPanel from "../../components/SignalPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
+import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -252,18 +255,29 @@ export default function TerminalPage() {
   const [opportunities, setOpportunities] = useState<OpportunitiesResponse | null>(null);
   const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
   const [orchestratorWatchlist, setOrchestratorWatchlist] = useState<string[]>([]);
+  const [universeFallback, setUniverseFallback] = useState<string[]>([]);
 
   const watchlist = useMemo(() => {
     const ranked = opportunities?.opportunities ?? [];
     const topOpportunities = ranked.slice(0, 25).map((item) => item.symbol);
-    const fallback = [
-      "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "IWM",
-    ];
+    const fallback = universeFallback.length > 0
+      ? universeFallback
+      : ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "IWM"];
     return Array.from(new Set([symbol, ...orchestratorWatchlist, ...topOpportunities, ...fallback])).slice(0, 50);
-  }, [opportunities, symbol, orchestratorWatchlist]);
+  }, [opportunities, symbol, orchestratorWatchlist, universeFallback]);
 
   useEffect(() => {
     async function hydrateWatchlist() {
+      // Fetch dynamic universe as fallback base (runs in background, non-blocking).
+      fetch(`${API_BASE}/universe/symbols`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { symbols?: string[] } | null) => {
+          if (data?.symbols?.length) {
+            setUniverseFallback(data.symbols.slice(0, 100));
+          }
+        })
+        .catch(() => { /* silent — static seed stays active */ });
+
       // Reuse orchestrator rankings for a broader, high-signal watchlist without re-adding orchestrator UI.
       const latestRes = await fetch(`${API_BASE}/orchestrator/scan/latest`);
       const latest = await parseJsonOrNull<OrchestratorScanLite>(latestRes);
@@ -272,7 +286,10 @@ export default function TerminalPage() {
         return;
       }
 
-      const scanRes = await fetch(`${API_BASE}/orchestrator/scan?limit=15`, { method: "POST" });
+      const scanRes = await apiFetch(`${API_BASE}/orchestrator/scan?limit=15`, {
+        apiBase: API_BASE,
+        method: "POST",
+      });
       const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
       setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 30).map((c) => c.symbol));
     }
@@ -373,6 +390,7 @@ export default function TerminalPage() {
         </aside>
 
         <div className="space-y-4">
+          <CandlestickChart symbol={symbol} days={90} signalLabel={signal?.signal ?? null} />
           <Chart
             symbol={symbol}
             forecastPrices={forecast?.forecast_prices ?? []}
@@ -411,6 +429,10 @@ export default function TerminalPage() {
           </div>
           <ExecutionHistoryPanel history={executionHistory} />
         </aside>
+      </section>
+
+      <section className="mt-6 rounded-xl border border-terminal-line bg-terminal-panel/70 p-4">
+        <DashboardCopilot />
       </section>
     </main>
   );
