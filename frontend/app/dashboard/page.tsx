@@ -188,7 +188,7 @@ export default function DashboardPage() {
       if (provider === "alpaca") {
         window.location.href = `${API_BASE}/alpaca/oauth/start?next=/dashboard`;
       } else {
-        window.location.href = `${API_BASE}/auth/schwab/oauth/start`;
+        window.location.href = `${API_BASE}/auth/schwab/oauth/start?next=/dashboard`;
       }
     } catch (err) {
       if (err instanceof Error && err.message === "Authentication required") {

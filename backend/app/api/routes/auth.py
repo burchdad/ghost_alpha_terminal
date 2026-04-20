@@ -39,6 +39,8 @@ from app.services.twofa_service import twofa_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _webauthn_challenges: dict[str, dict] = {}
+_schwab_oauth_states: dict[str, dict] = {}
+_SCHWAB_STATE_TTL_SECONDS = 15 * 60
 
 
 class SignupRequest(BaseModel):
@@ -1446,6 +1448,16 @@ def _is_configured_env(value: str | None) -> bool:
     return normalized not in {"", "none", "null"}
 
 
+def _purge_expired_schwab_states() -> None:
+    now = datetime.now(timezone.utc)
+    expired = [
+        state for state, payload in _schwab_oauth_states.items()
+        if payload.get("expires_at") is None or payload["expires_at"] <= now
+    ]
+    for state in expired:
+        _schwab_oauth_states.pop(state, None)
+
+
 @router.get("/provider-status", summary="Check which 2FA providers are configured (no secrets exposed)")
 def provider_status() -> dict:
     """Returns True/False for each provider based on whether required env vars are non-empty.
@@ -1479,14 +1491,21 @@ def schwab_callback(request: Request, code: str, state: str) -> RedirectResponse
 
 
 @router.get("/schwab/oauth/start", summary="Start Charles Schwab OAuth flow")
-def start_schwab_oauth() -> RedirectResponse:
+def start_schwab_oauth(request: Request, next: str = "/brokerages", user: User = CurrentUser) -> RedirectResponse:
     if not settings.schwab_client_id or not settings.schwab_redirect_uri:
         raise HTTPException(
             status_code=500,
             detail="Schwab OAuth not configured. Set SCHWAB_CLIENT_ID and SCHWAB_REDIRECT_URI.",
         )
 
+    _purge_expired_schwab_states()
     state = secrets.token_urlsafe(24)
+    next_path = next if next.startswith("/") else "/brokerages"
+    _schwab_oauth_states[state] = {
+        "user_id": str(user.id),
+        "next": next_path,
+        "expires_at": datetime.now(timezone.utc) + timedelta(seconds=_SCHWAB_STATE_TTL_SECONDS),
+    }
     query = {
         "client_id": settings.schwab_client_id,
         "redirect_uri": settings.schwab_redirect_uri,
@@ -1540,16 +1559,29 @@ def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> Redire
     except Exception as err:
         raise HTTPException(status_code=502, detail=f"Schwab token exchange failed: {err}") from err
 
-    try:
-        user = auth_service.get_current_user(request)
-    except HTTPException as err:
-        raise HTTPException(
-            status_code=401,
-            detail=(
-                "Schwab token exchange succeeded, but no authenticated session was found to bind this broker "
-                "connection. Sign in and start OAuth from the app so cookies/state are present."
-            ),
-        ) from err
+    _purge_expired_schwab_states()
+    state_payload = _schwab_oauth_states.pop(state, None)
+
+    user_id: str | None = None
+    next_path = "/brokerages"
+    if state_payload is not None:
+        user_id = str(state_payload.get("user_id") or "").strip() or None
+        next_path = str(state_payload.get("next") or "/brokerages")
+        if not next_path.startswith("/"):
+            next_path = "/brokerages"
+
+    if user_id is None:
+        try:
+            user = auth_service.get_current_user(request)
+            user_id = str(user.id)
+        except HTTPException as err:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Schwab token exchange succeeded, but no authenticated session or valid OAuth state was found "
+                    "to bind this broker connection. Start OAuth from the app again."
+                ),
+            ) from err
 
     now = datetime.now(timezone.utc)
     expires_in_raw = payload.get("expires_in")
@@ -1563,12 +1595,12 @@ def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> Redire
     with get_session() as session:
         connection = session.execute(
             select(BrokerOAuthConnection).where(
-                BrokerOAuthConnection.user_id == str(user.id),
+                BrokerOAuthConnection.user_id == user_id,
                 BrokerOAuthConnection.provider == "schwab",
             )
         ).scalar_one_or_none()
         if connection is None:
-            connection = BrokerOAuthConnection(user_id=str(user.id), provider="schwab")
+            connection = BrokerOAuthConnection(user_id=user_id, provider="schwab")
             session.add(connection)
 
         connection.connected = bool(payload.get("access_token"))
@@ -1585,5 +1617,5 @@ def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> Redire
         session.flush()
 
     redirect_base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
-    redirect_url = f"{redirect_base}/brokerages?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
+    redirect_url = f"{redirect_base}{next_path}?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
     return RedirectResponse(url=redirect_url, status_code=307)
