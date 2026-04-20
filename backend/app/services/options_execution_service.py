@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import httpx
 
 from app.core.config import settings
 from app.models.schemas import (
@@ -400,7 +401,8 @@ class OptionsExecutionService:
     def submit_tradier_option_order(self, payload: TradierOptionOrderRequest) -> dict:
         body: dict[str, str] = {
             "class": "option",
-            "symbol": payload.option_symbol,
+            # Tradier expects underlying in symbol and full OCC contract in option_symbol.
+            "symbol": payload.underlying.upper(),
             "option_symbol": payload.option_symbol,
             "side": payload.side,
             "quantity": str(payload.quantity),

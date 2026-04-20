@@ -1,3 +1,4 @@
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps.auth import HighTrustUser
@@ -54,6 +55,10 @@ def preview_options_risk(payload: OptionsExecutionRequest, user: User = HighTrus
         response = options_execution_service.preview_or_execute(payload.model_copy(update={"preview": True}))
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
+    except httpx.HTTPStatusError as err:
+        detail = err.response.text if err.response is not None else str(err)
+        status = err.response.status_code if err.response is not None else 502
+        raise HTTPException(status_code=status, detail=detail) from err
     if response.risk is None:
         raise HTTPException(status_code=422, detail="Unable to build an option strategy plan for risk preview")
     return response.risk
@@ -66,6 +71,10 @@ def execute_options_trade(payload: OptionsExecutionRequest, user: User = HighTru
         return options_execution_service.preview_or_execute(payload)
     except ValueError as err:
         raise HTTPException(status_code=422, detail=str(err)) from err
+    except httpx.HTTPStatusError as err:
+        detail = err.response.text if err.response is not None else str(err)
+        status = err.response.status_code if err.response is not None else 502
+        raise HTTPException(status_code=status, detail=detail) from err
 
 
 @router.get("/{symbol}/expirations", response_model=list[str])

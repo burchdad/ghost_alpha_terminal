@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 from app.models.schemas import OptionsExecutionRequest  # noqa: E402
-from app.models.schemas import OptionsStrategyLegRequest, TradierStrategyOrderRequest  # noqa: E402
+from app.models.schemas import OptionsStrategyLegRequest, TradierOptionOrderRequest, TradierStrategyOrderRequest  # noqa: E402
 from app.services.options_execution_service import options_execution_service  # noqa: E402
 
 
@@ -136,6 +136,36 @@ class TestOptionsStrategyExecution(unittest.TestCase):
                 self.assertTrue(any(key.startswith("option_symbol[") for key in body))
                 if expected_class == "combo":
                     self.assertTrue(any(key.startswith("symbol[") for key in body))
+
+
+    def test_tradier_single_leg_option_payload_uses_underlying_symbol(self):
+        captured: dict[str, dict] = {}
+
+        def _capture_post_form(endpoint: str, data: dict):
+            captured["endpoint"] = endpoint
+            captured["data"] = dict(data)
+            return {"order": {"id": 999, "status": "ok"}}
+
+        with patch("app.services.options_execution_service.tradier_client.post_form", side_effect=_capture_post_form):
+            options_execution_service.submit_tradier_option_order(
+                TradierOptionOrderRequest(
+                    underlying="SPY",
+                    option_symbol="SPY260619C00500000",
+                    side="buy_to_open",
+                    quantity=1,
+                    order_type="limit",
+                    duration="day",
+                    price=1.23,
+                    preview=False,
+                )
+            )
+
+        body = captured["data"]
+        self.assertEqual(body["class"], "option")
+        self.assertEqual(body["symbol"], "SPY")
+        self.assertEqual(body["option_symbol"], "SPY260619C00500000")
+        self.assertEqual(body["side"], "buy_to_open")
+        self.assertEqual(body["type"], "limit")
 
 
 if __name__ == "__main__":
