@@ -34,6 +34,7 @@ from app.api.routes.universe import router as universe_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
 from app.services.news.coinbase_ws_service import coinbase_ws_service
+from app.services.tradier_order_sync_service import tradier_order_sync_service
 
 app = FastAPI(title=settings.app_name, version=settings.app_version)
 
@@ -283,11 +284,13 @@ app.include_router(universe_router)
 def on_startup() -> None:
     initialize_database()
     coinbase_ws_service.start()
+    tradier_order_sync_service.start()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
     coinbase_ws_service.stop()
+    tradier_order_sync_service.stop()
 
 
 @app.get("/health")

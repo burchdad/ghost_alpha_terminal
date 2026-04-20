@@ -11,6 +11,12 @@ from app.services.alpaca_client import alpaca_client
 
 class LivePortfolioService:
     def snapshot(self) -> dict | None:
+        # Prefer Tradier as the source of truth when configured (it is the primary execution broker).
+        tradier_snapshot = self._tradier_primary_snapshot()
+        if tradier_snapshot is not None:
+            return tradier_snapshot
+
+        # Fall back to Alpaca when Tradier is not configured.
         account = self._safe_alpaca_account_current()
         positions = self._safe_alpaca_positions_current()
         broker_accounts = self._broker_account_snapshots()
@@ -83,6 +89,133 @@ class LivePortfolioService:
             "max_concurrent_trades": 12,
             "broker_accounts": broker_accounts,
         }
+
+    # ------------------------------------------------------------------
+    # Tradier-primary portfolio: positions + balances from broker source
+    # ------------------------------------------------------------------
+
+    def _tradier_primary_snapshot(self) -> dict | None:
+        """Return a portfolio snapshot sourced entirely from Tradier when configured.
+
+        This is the preferred data path when Tradier is the active execution
+        broker.  Falls back to None if Tradier credentials are absent, so the
+        caller can try Alpaca instead.
+        """
+        from app.core.config import settings as _s  # avoid circular at module level
+
+        if not _s.tradier_effective_api_key or not _s.tradier_effective_account_number:
+            return None
+
+        balances = self._tradier_balances()
+        if balances is None:
+            return None
+
+        positions = self._tradier_positions()
+        broker_accounts = self._broker_account_snapshots()
+
+        active_positions: list[dict] = []
+        sector_counter: Counter[str] = Counter()
+        strategy_counter: Counter[str] = Counter()
+        total_exposure = 0.0
+
+        for pos in positions:
+            symbol = str(pos.get("symbol", "")).upper()
+            qty = float(pos.get("quantity") or 0.0)
+            if not symbol or qty == 0:
+                continue
+            cost_basis = float(pos.get("cost_basis") or 0.0)
+            entry_price = round(cost_basis / abs(qty), 4) if abs(qty) > 0 else 0.0
+            # Tradier positions don't carry real-time price; use cost basis as best estimate.
+            # The sync service will enrich this with live quotes.
+            current_price = float(pos.get("current_price") or entry_price)
+            market_value = current_price * abs(qty)
+            unrealized_pnl = (current_price - entry_price) * abs(qty) if qty > 0 else (entry_price - current_price) * abs(qty)
+            unrealized_pnl_pct = (unrealized_pnl / cost_basis) if cost_basis > 0 else 0.0
+            side = "LONG" if qty > 0 else "SHORT"
+            sector = self._sector_for_symbol(symbol)
+            total_exposure += market_value
+            sector_counter[sector] += market_value
+            strategy_counter["LIVE_TRADIER"] += market_value
+            active_positions.append(
+                {
+                    "symbol": symbol,
+                    "strategy": "LIVE_TRADIER",
+                    "side": side,
+                    "entry_price": round(entry_price, 4),
+                    "current_price": round(current_price, 4),
+                    "unrealized_pnl": round(unrealized_pnl, 2),
+                    "unrealized_pnl_pct": round(unrealized_pnl_pct, 4),
+                    "units": abs(qty),
+                    "notional": round(market_value, 2),
+                    "sector": sector,
+                    "opened_at": pos.get("date_acquired") or datetime.now(tz=timezone.utc),
+                    "tradier_position_id": pos.get("id"),
+                    "source": "tradier",
+                }
+            )
+
+        balance = float(balances.get("total_equity") or balances.get("cash") or 0.0)
+        buying_power = float(
+            balances.get("margin", {}).get("stock_buying_power")
+            or balances.get("cash_available")
+            or balances.get("cash")
+            or 0.0
+        )
+
+        return {
+            "account_balance": round(balance, 2),
+            "active_positions": active_positions,
+            "total_exposure": round(total_exposure, 2),
+            "risk_exposure_pct": round((total_exposure / balance) if balance > 0 else 0.0, 4),
+            "sector_concentration": {k: round(v, 2) for k, v in sector_counter.items()},
+            "strategy_exposure": {k: round(v, 2) for k, v in strategy_counter.items()},
+            "available_buying_power": round(buying_power, 2),
+            "max_concurrent_trades": 12,
+            "broker_accounts": broker_accounts,
+            "data_source": "tradier",
+        }
+
+    def _tradier_balances(self) -> dict | None:
+        """Fetch raw Tradier account balances dict. Returns None on failure."""
+        from app.core.config import settings as _s
+        from app.services.tradier_client import tradier_client as _tc
+
+        try:
+            payload = _tc.get(f"/accounts/{_s.tradier_effective_account_number}/balances")
+            bal = payload.get("balances", {}) if isinstance(payload, dict) else {}
+            if not bal:
+                return None
+            # Normalise margin block for convenient access
+            margin = bal.get("margin", {}) or {}
+            return {
+                "total_equity": float(bal.get("total_equity") or bal.get("cash") or 0.0),
+                "cash": float(bal.get("cash") or 0.0),
+                "cash_available": float(bal.get("cash_available") or margin.get("stock_buying_power") or 0.0),
+                "margin": margin,
+                "option_buying_power": float(margin.get("option_buying_power") or 0.0),
+                "raw": bal,
+            }
+        except Exception:
+            return None
+
+    def _tradier_positions(self) -> list[dict]:
+        """Fetch live positions from Tradier. Returns empty list on failure."""
+        from app.core.config import settings as _s
+        from app.services.tradier_client import tradier_client as _tc
+
+        try:
+            payload = _tc.get(f"/accounts/{_s.tradier_effective_account_number}/positions")
+            positions_block = (payload or {}).get("positions", {})
+            if not positions_block or positions_block == "null":
+                return []
+            raw = positions_block.get("position", [])
+            if isinstance(raw, dict):
+                raw = [raw]
+            return raw if isinstance(raw, list) else []
+        except Exception:
+            return []
+
+    # ------------------------------------------------------------------
 
     def _safe_alpaca_account_current(self) -> dict | None:
         try:

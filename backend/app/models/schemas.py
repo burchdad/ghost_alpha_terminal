@@ -457,6 +457,8 @@ class PortfolioResponse(BaseModel):
     available_buying_power: float
     max_concurrent_trades: int
     broker_accounts: list[BrokerAccountSnapshot] = []
+    data_source: str = "unknown"
+    degraded: bool = False
 
 
 class RejectedTradeLog(BaseModel):

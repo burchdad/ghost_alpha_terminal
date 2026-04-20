@@ -12,6 +12,7 @@ from app.db.models import User
 from app.models.schemas import TradierOptionOrderRequest, TradierStrategyOrderRequest
 from app.services.options_execution_service import options_execution_service
 from app.services.tradier_client import tradier_client
+from app.services.tradier_order_sync_service import tradier_order_sync_service
 
 router = APIRouter(prefix="/tradier", tags=["tradier"])
 
@@ -134,3 +135,110 @@ def submit_strategy_order(payload: TradierStrategyOrderRequest, user: User = Hig
         raise HTTPException(status_code=422, detail=str(err)) from err
     except httpx.HTTPStatusError as err:
         _raise_tradier_error(err)
+
+
+# ---------------------------------------------------------------------------
+# Live account state — positions, orders, execution confirmation
+# ---------------------------------------------------------------------------
+
+@router.get("/account/positions", summary="Get live Tradier account positions")
+def get_positions(user: User = HighTrustUser) -> dict:
+    """Fetch current open positions directly from Tradier (broker source of truth)."""
+    del user
+    if not tradier_client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Tradier active credentials are not configured for current TRADIER_SANDBOX mode",
+        )
+    try:
+        return tradier_client.get(
+            f"/accounts/{settings.tradier_effective_account_number}/positions"
+        )
+    except httpx.HTTPStatusError as err:
+        _raise_tradier_error(err)
+
+
+@router.get("/account/orders", summary="Get Tradier account orders")
+def get_orders(user: User = HighTrustUser) -> dict:
+    """Fetch all orders from Tradier including status.  Includes pending, filled, canceled."""
+    del user
+    if not tradier_client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Tradier active credentials are not configured for current TRADIER_SANDBOX mode",
+        )
+    try:
+        return tradier_client.get(
+            f"/accounts/{settings.tradier_effective_account_number}/orders",
+            params={"includeTags": "true"},
+        )
+    except httpx.HTTPStatusError as err:
+        _raise_tradier_error(err)
+
+
+@router.get("/account/orders/{order_id}", summary="Get Tradier order status by ID")
+def get_order_status(order_id: str, user: User = HighTrustUser) -> dict:
+    """Fetch a single Tradier order by ID — used for execution confirmation polling."""
+    del user
+    if not tradier_client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Tradier active credentials are not configured for current TRADIER_SANDBOX mode",
+        )
+    try:
+        return tradier_client.get(
+            f"/accounts/{settings.tradier_effective_account_number}/orders/{order_id}"
+        )
+    except httpx.HTTPStatusError as err:
+        _raise_tradier_error(err)
+
+
+# ---------------------------------------------------------------------------
+# Real-time sync service state (from the background poller)
+# ---------------------------------------------------------------------------
+
+@router.get("/sync/health", summary="TradierOrderSyncService health and last-sync times")
+def sync_health() -> dict:
+    """Return the health of the real-time Tradier order sync background loop."""
+    return tradier_order_sync_service.health()
+
+
+@router.get("/sync/orders", summary="Cached live order state from sync service")
+def sync_orders(user: User = HighTrustUser) -> dict:
+    """Return all orders tracked by the real-time sync service, including transition history."""
+    del user
+    return {"orders": tradier_order_sync_service.all_orders()}
+
+
+@router.get("/sync/orders/open", summary="Open/pending orders from sync service")
+def sync_open_orders(user: User = HighTrustUser) -> dict:
+    """Return only open/pending orders currently in the sync service cache."""
+    del user
+    return {"orders": tradier_order_sync_service.open_orders()}
+
+
+@router.get("/sync/orders/{order_id}", summary="Get a single order's sync state and transition log")
+def sync_order_detail(order_id: str, user: User = HighTrustUser) -> dict:
+    """Return the sync-service state for a specific order, including all status transitions."""
+    del user
+    result = tradier_order_sync_service.get_order(order_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found in sync cache")
+    return result
+
+
+@router.get("/sync/positions", summary="Cached live positions from sync service")
+def sync_positions(user: User = HighTrustUser) -> dict:
+    """Return the latest positions snapshot maintained by the real-time sync loop."""
+    del user
+    return {"positions": tradier_order_sync_service.positions()}
+
+
+@router.post("/sync/force-refresh", summary="Force an immediate Tradier order+position poll")
+def sync_force_refresh(user: User = HighTrustUser) -> dict:
+    """Trigger a synchronous poll of Tradier orders and positions outside the normal loop."""
+    del user
+    if not tradier_client.is_configured():
+        raise HTTPException(status_code=400, detail="Tradier not configured")
+    return tradier_order_sync_service.force_refresh()
+
