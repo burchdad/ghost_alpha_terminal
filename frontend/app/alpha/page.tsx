@@ -14,6 +14,11 @@ import OrchestratorPanel, {
   type OrchestratorStatus,
 } from "../../components/OrchestratorPanel";
 import PortfolioPanel from "../../components/PortfolioPanel";
+import AlphaHeader from "../../components/alpha/AlphaHeader";
+import AlphaOpsTabs, { type AlphaOpsTab } from "../../components/alpha/AlphaOpsTabs";
+import BrokerRail from "../../components/alpha/BrokerRail";
+import BrokerStatusMiniCard from "../../components/alpha/BrokerStatusMiniCard";
+import RuntimeSummaryStrip from "../../components/alpha/RuntimeSummaryStrip";
 import { apiFetch } from "../../lib/apiClient";
 import { ensureHighTrust } from "../../lib/highTrust";
 
@@ -52,6 +57,8 @@ type PortfolioResponse = {
     currency: string;
     last_error: string | null;
   }[];
+  data_source?: string;
+  degraded?: boolean;
 };
 
 type RejectedTradeLog = {
@@ -643,9 +650,11 @@ export default function AlphaPage() {
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
-  const [activeBrokerProvider, setActiveBrokerProvider] = useState<string | null>(null);
+  const [selectedBrokerProvider, setSelectedBrokerProvider] = useState<string | null>(null);
+  const [brokerDetailsProvider, setBrokerDetailsProvider] = useState<string | null>(null);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
   const [disconnectingProvider, setDisconnectingProvider] = useState<string | null>(null);
+  const [alphaOpsTab, setAlphaOpsTab] = useState<AlphaOpsTab>("portfolio");
   const [launchMetrics, setLaunchMetrics] = useState<LightweightMetricsResponse | null>(null);
   const [runtimeReadiness, setRuntimeReadiness] = useState<RuntimeReadinessResponse | null>(null);
   const [opsSummary, setOpsSummary] = useState<OpsSummaryResponse | null>(null);
@@ -744,13 +753,13 @@ export default function AlphaPage() {
   }, []);
 
   useEffect(() => {
-    if (!activeBrokerProvider) {
+    if (!brokerDetailsProvider) {
       return;
     }
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setActiveBrokerProvider(null);
+        setBrokerDetailsProvider(null);
       }
     };
 
@@ -760,7 +769,7 @@ export default function AlphaPage() {
     return () => {
       window.removeEventListener("keydown", handleEscape);
     };
-  }, [activeBrokerProvider]);
+  }, [brokerDetailsProvider]);
 
   useEffect(() => {
     if (!pendingClearOverrideStrategy) {
@@ -1409,18 +1418,31 @@ export default function AlphaPage() {
 
 
   const connectedBrokerCount = brokerConnections.filter((broker) => broker.connected).length;
-  const activeBroker = useMemo(() => {
-    if (!activeBrokerProvider) {
+  const selectedBroker = useMemo(() => {
+    if (!selectedBrokerProvider) {
       return null;
     }
-    return brokerConnections.find((broker) => broker.provider === activeBrokerProvider) ?? null;
-  }, [activeBrokerProvider, brokerConnections]);
+    return brokerConnections.find((broker) => broker.provider === selectedBrokerProvider) ?? null;
+  }, [selectedBrokerProvider, brokerConnections]);
+
+  const activeBroker = useMemo(() => {
+    if (!brokerDetailsProvider) {
+      return null;
+    }
+    return brokerConnections.find((broker) => broker.provider === brokerDetailsProvider) ?? null;
+  }, [brokerDetailsProvider, brokerConnections]);
 
   useEffect(() => {
-    if (activeBrokerProvider && !activeBroker) {
-      setActiveBrokerProvider(null);
+    if (selectedBrokerProvider && !selectedBroker) {
+      setSelectedBrokerProvider(null);
     }
-  }, [activeBroker, activeBrokerProvider]);
+  }, [selectedBroker, selectedBrokerProvider]);
+
+  useEffect(() => {
+    if (brokerDetailsProvider && !activeBroker) {
+      setBrokerDetailsProvider(null);
+    }
+  }, [activeBroker, brokerDetailsProvider]);
 
   function handleOrchestratorRunSymbol(symbol: string) {
     setFocusSymbol(symbol);
@@ -1458,6 +1480,30 @@ export default function AlphaPage() {
     return "text-green-300";
   }, [opsSummary]);
 
+  const terminalHref = useMemo(() => {
+    const query = new URLSearchParams({ symbol: focusSymbol });
+    if (selectedBrokerProvider) {
+      query.set("broker", selectedBrokerProvider);
+    }
+    return `/terminal?${query.toString()}`;
+  }, [focusSymbol, selectedBrokerProvider]);
+
+  const scopedPortfolio = useMemo(() => {
+    if (!portfolio || !selectedBrokerProvider) {
+      return portfolio;
+    }
+    const brokerAccounts = (portfolio.broker_accounts ?? []).filter(
+      (acct) => acct.broker.toLowerCase() === selectedBrokerProvider.toLowerCase(),
+    );
+    if (brokerAccounts.length === 0) {
+      return portfolio;
+    }
+    return {
+      ...portfolio,
+      broker_accounts: brokerAccounts,
+    };
+  }, [portfolio, selectedBrokerProvider]);
+
   return (
     <main className="min-h-screen p-4 md:p-6">
       {runtimeToasts.length > 0 && (
@@ -1478,550 +1524,237 @@ export default function AlphaPage() {
           ))}
         </div>
       )}
-      <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
-        <div>
-          <h1 className="text-lg font-semibold md:text-2xl">MARKET INTELLIGENCE DASHBOARD</h1>
-          <p className="text-xs text-slate-400">Layer 1: Discovery and ranking across the full market universe</p>
-        </div>
-        <Link
-          href="/terminal"
-          className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
+
+      <AlphaHeader
+        executionMode={executionMode}
+        runtimePhase={{ label: runtimePhase.label, tone: runtimePhase.tone }}
+        focusSymbol={focusSymbol}
+        selectedBrokerLabel={selectedBroker?.label ?? null}
+        terminalHref={terminalHref}
+      />
+
+      {oauthStatus !== "idle" && (
+        <div
+          className={`mb-4 rounded border px-3 py-2 text-xs ${
+            oauthStatus === "connected"
+              ? "border-green-500/40 bg-green-500/10 text-green-300"
+              : "border-red-500/40 bg-red-500/10 text-red-300"
+          }`}
         >
-          Open Deep Terminal
-        </Link>
-      </div>
-
-      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-terminal-accent">Connection Safety Banner</h2>
-            <p className="text-xs text-slate-400">Visible broker inventory, connection readiness, and explicit account controls</p>
-          </div>
-          <div className="rounded border border-terminal-line bg-black/20 px-3 py-2 text-[11px] text-slate-300">
-            {connectedBrokerCount} broker connection{connectedBrokerCount === 1 ? "" : "s"} active
-          </div>
+          {oauthStatus === "connected"
+            ? "Alpaca OAuth connected successfully."
+            : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
         </div>
+      )}
 
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {brokerConnections.map((broker) => {
-            const statusTone = broker.connected
-              ? "border-green-500/50 bg-green-500/12 text-green-100"
-              : broker.configured
-                ? "border-cyan-500/50 bg-cyan-500/12 text-cyan-100"
-                : broker.planned
-                  ? "border-slate-500/50 bg-slate-500/10 text-slate-300"
-                  : broker.connectable
-                    ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
-                    : "border-red-500/50 bg-red-500/12 text-red-100";
-            const statusDot = broker.connected
-              ? "bg-green-400"
-              : broker.configured
-                ? "bg-cyan-400"
-                : broker.planned
-                  ? "bg-slate-400"
-                  : broker.connectable
-                    ? "bg-amber-400"
-                    : "bg-red-400";
-            const statusHint = broker.connected
-              ? "Connected"
-              : broker.configured
-                ? "Platform configured"
-                : broker.planned
-                  ? "Integration planned"
-                  : broker.connectable
-                    ? "Action needed"
-                    : "Disconnected";
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px]">
+        <aside className="space-y-3">
+          <BrokerRail
+            brokers={brokerConnections}
+            selectedBrokerProvider={selectedBrokerProvider}
+            onSelectBroker={setSelectedBrokerProvider}
+            onOpenDetails={setBrokerDetailsProvider}
+          />
 
-            return (
-              <button
-                type="button"
-                key={broker.provider}
-                onClick={() => setActiveBrokerProvider(broker.provider)}
-                className={`group rounded-lg border px-3 py-2.5 text-left text-xs transition hover:brightness-110 ${statusTone}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-semibold">{broker.label}</div>
-                  <span className={`h-2.5 w-2.5 rounded-full ${statusDot}`} />
-                </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wider text-current/85">{statusHint}</div>
-                <div className="mt-2 text-[11px] text-current/75 group-hover:text-current/90">Open details</div>
-              </button>
-            );
-          })}
-        </div>
-
-        {activeBroker && (
-          <div
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4"
-            onClick={() => setActiveBrokerProvider(null)}
-            role="presentation"
-          >
-            <div
-              className={`w-full max-w-2xl rounded-xl border p-4 text-xs shadow-2xl ${
-                activeBroker.connected
-                  ? "border-green-500/40 bg-[#092218] text-green-100"
-                  : activeBroker.configured
-                    ? "border-cyan-500/40 bg-[#071b20] text-cyan-100"
-                    : activeBroker.planned
-                      ? "border-slate-500/40 bg-slate-900 text-slate-200"
-                      : activeBroker.connectable
-                        ? "border-amber-500/40 bg-[#241f0a] text-amber-100"
-                        : "border-red-500/40 bg-[#220c0c] text-red-100"
-              }`}
-              onClick={(event) => event.stopPropagation()}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="broker-modal-title"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 id="broker-modal-title" className="text-sm font-semibold">{activeBroker.label} Connection Details</h3>
-                  <p className="mt-1 text-[11px] uppercase tracking-wider text-current/80">{activeBroker.status_label}</p>
-                </div>
+          {activeBroker && (
+            <div className="rounded-xl border border-terminal-line bg-terminal-panel/70 p-3 text-xs">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="font-semibold text-terminal-accent">{activeBroker.label} Details</h3>
                 <button
                   ref={brokerModalCloseButtonRef}
                   type="button"
-                  onClick={() => setActiveBrokerProvider(null)}
-                  className="rounded border border-current/30 bg-black/20 px-2.5 py-1 text-[11px] text-current/90 hover:bg-black/30"
+                  onClick={() => setBrokerDetailsProvider(null)}
+                  className="rounded border border-terminal-line px-2 py-1 text-[10px] text-slate-300"
                 >
                   Close
                 </button>
               </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-3 text-[11px] sm:grid-cols-2">
+              <div className="space-y-1 text-[11px] text-slate-300">
+                <div>Status: {activeBroker.status_label}</div>
                 <div>Permissions: {activeBroker.permissions}</div>
                 <div>Auth: {activeBroker.auth_type.replace("_", " ")}</div>
                 <div>Mode: {activeBroker.mode ?? "N/A"}</div>
-                <div>Updated: {activeBroker.updated_at ? new Date(activeBroker.updated_at).toLocaleString() : "Never"}</div>
               </div>
-
               <div className="mt-3 flex flex-wrap gap-2">
-                {activeBroker.capabilities.supports_equities && (
-                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Equities</span>
-                )}
-                {activeBroker.capabilities.supports_crypto && (
-                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Crypto</span>
-                )}
-                {activeBroker.capabilities.supports_options && (
-                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Options</span>
-                )}
-                {activeBroker.capabilities.supports_fractional && (
-                  <span className="rounded border border-current/30 px-2 py-1 text-[10px] uppercase tracking-wider">Fractional</span>
-                )}
-              </div>
-
-              {activeBroker.notes && <div className="mt-3 text-[11px] text-current/80">{activeBroker.notes}</div>}
-              {activeBroker.last_error && <div className="mt-2 text-[11px] text-red-300">Last error: {activeBroker.last_error}</div>}
-
-              <div className="mt-4 flex flex-wrap gap-2">
                 {activeBroker.connect_path && activeBroker.connectable && !activeBroker.connected && (
                   <button
                     type="button"
                     disabled={connectingProvider === activeBroker.provider}
                     onClick={() => void handleConnectBroker(activeBroker.provider, activeBroker.connect_path)}
-                    className="rounded border border-terminal-accent bg-terminal-accent/10 px-3 py-1.5 text-[11px] text-terminal-accent hover:bg-terminal-accent/20"
+                    className="rounded border border-terminal-accent bg-terminal-accent/10 px-2 py-1 text-[11px] text-terminal-accent"
                   >
-                    {connectingProvider === activeBroker.provider
-                      ? "Securing..."
-                      : activeBroker.auth_type === "oauth"
-                        ? `Connect ${activeBroker.label}`
-                        : `Authorize ${activeBroker.label}`}
+                    {connectingProvider === activeBroker.provider ? "Securing..." : "Connect"}
                   </button>
                 )}
-                {activeBroker.planned && activeBroker.oauth_url && (
-                  <a
-                    href={activeBroker.oauth_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded border border-slate-500/50 bg-slate-500/10 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-slate-500/20"
-                  >
-                    Apply for {activeBroker.label} Developer Access ↗
-                  </a>
-                )}
                 <button
                   type="button"
-                  disabled={
-                    !activeBroker.connected ||
-                    !activeBroker.disconnect_supported ||
-                    disconnectingProvider === activeBroker.provider ||
-                    connectingProvider === activeBroker.provider
-                  }
+                  disabled={!activeBroker.connected || !activeBroker.disconnect_supported || disconnectingProvider === activeBroker.provider}
                   onClick={() => handleDisconnectBroker(activeBroker.provider, activeBroker.disconnect_path)}
-                  className="rounded border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-[11px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 disabled:opacity-40"
                 >
-                  {disconnectingProvider === activeBroker.provider ? "Disconnecting..." : `Disconnect ${activeBroker.label}`}
+                  {disconnectingProvider === activeBroker.provider ? "Disconnecting..." : "Disconnect"}
                 </button>
               </div>
+              {activeBroker.last_error ? <div className="mt-2 text-[11px] text-red-300">Last error: {activeBroker.last_error}</div> : null}
             </div>
-          </div>
-        )}
+          )}
 
-        {oauthStatus !== "idle" && (
-          <div
-            className={`mt-3 rounded border px-3 py-2 text-xs ${
-              oauthStatus === "connected"
-                ? "border-green-500/40 bg-green-500/10 text-green-300"
-                : "border-red-500/40 bg-red-500/10 text-red-300"
-            }`}
-          >
-            {oauthStatus === "connected"
-              ? "Alpaca OAuth connected successfully."
-              : `Alpaca OAuth failed${oauthReason ? `: ${oauthReason}` : ""}`}
-          </div>
-        )}
+          {launchMetrics && (
+            <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3 text-[11px] text-slate-300">
+              Last {launchMetrics.window_days}d: {launchMetrics.scans_run} scans · {launchMetrics.trades_triggered} trades · top {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}
+            </div>
+          )}
+        </aside>
 
-        {brokerConnections.some((broker) => broker.provider === "alpaca" && broker.connected) && (
-          <div className="mt-3 rounded border border-terminal-accent/40 bg-terminal-accent/10 px-3 py-3 text-xs text-terminal-accent">
-            <div className="font-semibold">Top 3 Opportunities Right Now</div>
-            {wowTopThree.length > 0 ? (
-              <ul className="mt-2 space-y-1">
-                {wowTopThree.map((candidate) => (
-                  <li key={candidate.symbol}>
-                    {candidate.symbol} {"->"} {candidate.strategy_type.replaceAll("_", " ")} ({Math.round(candidate.composite_score * 100)}%)
-                  </li>
+        <div className="space-y-4">
+          <RuntimeSummaryStrip
+            runtimePhaseLabel={runtimePhase.label}
+            brokerConnectedCount={connectedBrokerCount}
+            executionReadyCount={(scan?.candidates ?? []).filter((c) => c.action_label === "EXECUTE").length}
+            automationOn={Boolean(status?.auto_mode || control?.autonomous_enabled)}
+            scanAgeSeconds={runtimeReadiness?.latest_scan_age_seconds ?? null}
+            selectedBrokerLabel={selectedBroker?.label ?? null}
+          />
+
+          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-terminal-accent">Discovery Workspace</h2>
+                <p className="text-xs text-slate-400">
+                  Ranked opportunities with operator actions in {selectedBroker?.label ?? "all-brokers"} context.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFocusSymbol(scan?.candidates?.[0]?.symbol ?? focusSymbol)}
+                  className="rounded border border-terminal-line px-2 py-1 text-[11px] text-slate-300"
+                >
+                  Set Focus
+                </button>
+                <Link
+                  href={terminalHref}
+                  className="rounded border border-terminal-line px-2 py-1 text-[11px] text-slate-300 hover:border-terminal-accent/60"
+                >
+                  Open in Deep Terminal
+                </Link>
+              </div>
+            </div>
+
+            <OrchestratorPanel
+              scan={scan}
+              status={status}
+              loading={loading}
+              onScan={handleScan}
+              onToggleAutoMode={handleToggleAuto}
+              onRunSymbol={handleOrchestratorRunSymbol}
+            />
+          </section>
+
+          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-terminal-accent">
+                {selectedBroker?.label ?? "All Brokers"} · Focus Symbol: {focusSymbol}
+              </h2>
+              <Link
+                href={terminalHref}
+                className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/60 hover:text-terminal-accent"
+              >
+                Prepare in Terminal
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(topSymbols.length > 0 ? topSymbols : [focusSymbol]).map((sym) => (
+                <button
+                  key={sym}
+                  onClick={() => setFocusSymbol(sym)}
+                  className={`rounded border px-3 py-1 text-xs transition ${
+                    focusSymbol === sym
+                      ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
+                      : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
+                  }`}
+                >
+                  {sym}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <AlphaOpsTabs
+            activeTab={alphaOpsTab}
+            onTabChange={setAlphaOpsTab}
+            panels={{
+              portfolio: <PortfolioPanel portfolio={scopedPortfolio} />,
+              goal: <GoalPanel goal={goal} onSetGoal={handleSetGoal} />,
+              audit: (
+                <DecisionAuditPanel
+                  entries={decisionAudit}
+                  selectedAuditId={selectedAuditId}
+                  onSelect={handleSelectAudit}
+                />
+              ),
+              replay: <DecisionReplayPanel replay={decisionReplay} />,
+            }}
+          />
+
+          <details className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-terminal-accent">Runtime and Governance Details</summary>
+            <div className="mt-3 grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
+              <div className="rounded border border-terminal-line bg-black/20 p-3 text-slate-300">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Ops Pulse</div>
+                <div className={`mt-1 font-semibold ${opsAlertTone}`}>Updated {opsSummary ? new Date(opsSummary.generated_at).toLocaleTimeString() : "-"}</div>
+                <div className="mt-1">Users {opsSummary?.growth.users_total ?? 0} · New 7d {opsSummary?.growth.users_created_7d ?? 0}</div>
+                <div>2FA {(opsSummary?.conversions.signup_to_twofa_verified_pct ?? 0).toFixed(1)}% · Broker {(opsSummary?.conversions.twofa_verified_to_broker_connected_pct ?? 0).toFixed(1)}%</div>
+                <div>Exec submit {(opsSummary?.reliability.execution_submit_rate_pct ?? 0).toFixed(1)}% · error {(opsSummary?.reliability.execution_error_rate_pct ?? 0).toFixed(1)}%</div>
+              </div>
+              <div className="rounded border border-terminal-line bg-black/20 p-3 text-slate-300">
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">Mission Governance</div>
+                <div className="mt-1">Style: {missionIntel?.mission.mission_style ?? "loading"}</div>
+                <div>System Mode: {(missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}</div>
+                <div>Confidence: {(missionIntel?.system_confidence?.score ?? 0).toFixed(2)} ({missionIntel?.system_confidence?.label ?? "LOW"})</div>
+                <div>Parity: {missionIntel?.parity_watchdog.status ?? "N/A"}</div>
+                <div>Truth 7d: Win {((truthDashboard?.win_rate ?? 0) * 100).toFixed(1)}% · PnL {(truthDashboard?.net_pnl ?? 0).toFixed(2)}</div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <aside className="space-y-4">
+          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Live Context</h3>
+            <div className="mt-2">
+              <BrokerStatusMiniCard broker={selectedBroker} />
+            </div>
+          </section>
+
+          <NewsPanel signal={newsSignal} audit={newsAudit} />
+          <ContextPanel context={contextSignal} />
+
+          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Controls</h3>
+            <ControlPanel
+              control={control}
+              executionMode={executionMode}
+              onToggleKillSwitch={handleToggleKillSwitch}
+              onToggleAutonomous={handleToggleAutonomous}
+              onRunAutonomousOnce={handleRunAutonomousOnce}
+              onSetExecutionMode={handleSetExecutionMode}
+              onUpdateLimits={handleUpdateLimits}
+              onSetOptionsSprint={handleSetOptionsSprint}
+            />
+          </section>
+
+          {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && missionIntel?.parity_watchdog.status !== "GREEN" && (
+            <div className={`rounded-xl border px-3 py-3 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+              <div className="font-semibold">Parity Watchdog ({missionIntel?.parity_watchdog.status})</div>
+              <ul className="mt-1 space-y-1">
+                {missionIntel?.parity_watchdog.issues.slice(0, 4).map((issue) => (
+                  <li key={issue}>{issue}</li>
                 ))}
               </ul>
-            ) : (
-              <div className="mt-2 text-slate-300">Run a market scan to generate your top opportunities.</div>
-            )}
-          </div>
-        )}
-
-        {launchMetrics && (
-          <div className="mt-3 rounded border border-terminal-line bg-black/20 px-3 py-2 text-[11px] text-slate-300">
-            Last {launchMetrics.window_days}d proof metrics: {launchMetrics.scans_run} scans, {launchMetrics.trades_triggered} trades, top strategy {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}.
-          </div>
-        )}
-      </section>
-
-      <section className={`mb-4 rounded-xl border p-4 ${runtimePhase.panel}`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-terminal-accent">Runtime Truth Panel</h2>
-            <p className="text-xs text-slate-300">Clear operational phase labeling for paper soak and live cutover</p>
-          </div>
-          <div className={`text-sm font-semibold ${runtimePhase.tone}`}>{runtimePhase.label}</div>
-        </div>
-
-        <div className="mt-3 rounded border border-terminal-line bg-black/20 px-3 py-3 text-xs text-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[10px] uppercase tracking-wider text-terminal-accent">Ops Pulse: Funnel + Reliability</div>
-            <div className={`text-[11px] font-semibold ${opsAlertTone}`}>
-              {opsSummary ? `Updated ${new Date(opsSummary.generated_at).toLocaleTimeString()}` : "Loading ops summary..."}
             </div>
-          </div>
-          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-            <div className="rounded border border-current/20 px-2 py-2">Users: {opsSummary?.growth.users_total ?? 0}</div>
-            <div className="rounded border border-current/20 px-2 py-2">New 7d: {opsSummary?.growth.users_created_7d ?? 0}</div>
-            <div className="rounded border border-current/20 px-2 py-2">2FA Conv: {(opsSummary?.conversions.signup_to_twofa_verified_pct ?? 0).toFixed(1)}%</div>
-            <div className="rounded border border-current/20 px-2 py-2">Broker Conv: {(opsSummary?.conversions.twofa_verified_to_broker_connected_pct ?? 0).toFixed(1)}%</div>
-            <div className="rounded border border-current/20 px-2 py-2">Active Sessions 24h: {opsSummary?.reliability.active_sessions_24h ?? 0}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Auth Failures 24h: {opsSummary?.reliability.auth_failures_24h ?? 0}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Exec Submit Rate: {(opsSummary?.reliability.execution_submit_rate_pct ?? 0).toFixed(1)}%</div>
-            <div className="rounded border border-current/20 px-2 py-2">Exec Error Rate: {(opsSummary?.reliability.execution_error_rate_pct ?? 0).toFixed(1)}%</div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-200 md:grid-cols-4">
-          <div className="rounded border border-current/20 px-2 py-2">Mode: {runtimeReadiness?.execution_mode ?? "N/A"}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Autonomous: {runtimeReadiness?.autonomous_enabled ? "ON" : "OFF"}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Scans Age: {runtimeReadiness?.latest_scan_age_seconds?.toFixed(0) ?? "-"}s</div>
-          <div className="rounded border border-current/20 px-2 py-2">Candidates: {runtimeReadiness?.latest_scan_candidates ?? 0}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Submitted 24h: {runtimeReadiness?.submitted_executions_24h ?? 0}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Rejected 24h: {runtimeReadiness?.rejected_executions_24h ?? 0}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Decision Audits 24h: {runtimeReadiness?.decision_audits_24h ?? 0}</div>
-          <div className="rounded border border-current/20 px-2 py-2">News Audits 24h: {runtimeReadiness?.news_audits_24h ?? 0}</div>
-          <div className="rounded border border-current/20 px-2 py-2">Coinbase WS: {runtimeReadiness?.coinbase_ws_connected ? "CONNECTED" : "DISCONNECTED"}</div>
-          <div className="rounded border border-current/20 px-2 py-2">WS Msg: {runtimeReadiness?.coinbase_ws_last_message_at ? new Date(runtimeReadiness.coinbase_ws_last_message_at).toLocaleTimeString() : "-"}</div>
-        </div>
-        {runtimeReadiness?.coinbase_ws_error && (
-          <div className="mt-2 text-[11px] text-red-300">Coinbase WS error: {runtimeReadiness.coinbase_ws_error}</div>
-        )}
-
-        <div className="mt-3 rounded border border-terminal-accent/30 bg-terminal-accent/5 px-3 py-3 text-xs text-slate-200">
-          <div className="text-[10px] uppercase tracking-wider text-terminal-accent">Truth Dashboard: Last 7 Days</div>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="rounded border border-current/20 px-2 py-2">Trades: {truthDashboard?.trades ?? 0}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Win Rate: {(((truthDashboard?.win_rate ?? 0) * 100)).toFixed(1)}%</div>
-            <div className="rounded border border-current/20 px-2 py-2">Net PnL: {(truthDashboard?.net_pnl ?? 0) >= 0 ? "+" : ""}{(truthDashboard?.net_pnl ?? 0).toFixed(2)}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Best: {truthDashboard?.best_strategy?.strategy ?? "N/A"}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Worst: {truthDashboard?.worst_strategy?.strategy ?? "N/A"}</div>
-            <div className="rounded border border-current/20 px-2 py-2">Settled: {truthDashboard?.settled_trades ?? 0}</div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-terminal-accent">Mission Governance Panel</h2>
-            <p className="text-xs text-slate-400">Automated policy style, bucket weighting, sprint governance, learning quality, and parity health</p>
-          </div>
-          <div className={`rounded border px-3 py-1 text-xs font-semibold ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/50 bg-red-500/10 text-red-300" : missionIntel?.parity_watchdog.status === "YELLOW" ? "border-amber-500/50 bg-amber-500/10 text-amber-300" : "border-green-500/50 bg-green-500/10 text-green-300"}`}>
-            Parity {missionIntel?.parity_watchdog.status ?? "N/A"}
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Mission Policy</div>
-            <div className="mt-1 text-sm font-semibold text-terminal-accent">{missionIntel?.mission.mission_style ?? "loading"}</div>
-            <div className="mt-1 text-slate-300">Pressure {(missionIntel?.mission.goal_pressure_multiplier ?? 1).toFixed(2)}x</div>
-            <div className="text-slate-300">Min confidence {(missionIntel?.mission.tuning.min_confidence_floor ?? 0).toFixed(2)}</div>
-            <div className="text-slate-300">Concurrency {(missionIntel?.mission.tuning.concurrency_target ?? 0)}</div>
-            <div className="text-slate-300">Posture {missionIntel?.mission.risk_posture?.mode ?? "normal"}</div>
-            <div className="mt-2 border-t border-terminal-line pt-2 text-[10px] uppercase tracking-wider text-slate-500">System Identity</div>
-            <div className={`mt-1 font-semibold ${(missionIntel?.system_mode?.mode ?? "BALANCED") === "SURVIVAL" ? "text-red-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "DEFENSIVE" ? "text-amber-300" : (missionIntel?.system_mode?.mode ?? "BALANCED") === "AGGRESSIVE_GROWTH" ? "text-cyan-300" : "text-green-300"}`}>
-              {(missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}
-            </div>
-            <div className="text-slate-400">Candidate: {(missionIntel?.system_mode?.candidate_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED").replaceAll("_", " ")}</div>
-            <div className="text-slate-400">Risk tolerance: {missionIntel?.system_mode?.controls?.risk_tolerance ?? "medium"}</div>
-            <div className="text-slate-400">Trade frequency x{(missionIntel?.system_mode?.controls?.trade_frequency_multiplier ?? 1).toFixed(2)} · Allocation x{(missionIntel?.system_mode?.controls?.allocation_multiplier ?? 1).toFixed(2)}</div>
-            <div className="text-slate-400">Experiment instability {(missionIntel?.system_mode?.experiment_instability?.score ?? 0).toFixed(2)}</div>
-            <div className="text-slate-400">Mode confidence {(missionIntel?.system_mode?.mode_confidence?.label ?? "LOW")} {(missionIntel?.system_mode?.mode_confidence?.score ?? 0).toFixed(2)}</div>
-            <div className={`text-slate-400 ${(missionIntel?.system_mode?.system_health?.label ?? "GREEN") === "RED" ? "text-red-300" : (missionIntel?.system_mode?.system_health?.label ?? "GREEN") === "YELLOW" ? "text-amber-300" : "text-green-300"}`}>
-              Health {(missionIntel?.system_mode?.system_health?.label ?? "GREEN")} {(missionIntel?.system_mode?.system_health?.score ?? 1).toFixed(2)}
-            </div>
-            <div className="text-slate-500">Risk pressure {(missionIntel?.system_mode?.mode_confidence?.risk_pressure_score ?? 0).toFixed(2)} · Growth pressure {(missionIntel?.system_mode?.mode_confidence?.growth_pressure_score ?? 0).toFixed(2)}</div>
-            <div className="text-slate-500">Decay {(missionIntel?.system_mode?.mode_confidence?.decayed_score ?? 0).toFixed(2)} x{(missionIntel?.system_mode?.mode_confidence?.decay_factor ?? 1).toFixed(2)} over {(missionIntel?.system_mode?.mode_confidence?.elapsed_minutes ?? 0).toFixed(1)}m</div>
-            <div className="text-slate-500">Time {(missionIntel?.system_mode?.mode_confidence?.time_source ?? "wall_clock")} · Drift {(missionIntel?.system_mode?.mode_confidence?.drift_severity ?? "none")} {(missionIntel?.system_mode?.mode_confidence?.drift_magnitude_seconds ?? 0).toFixed(1)}s</div>
-            <div className="mt-1 text-slate-400">
-              Hysteresis {missionIntel?.system_mode?.hysteresis?.active ? `pending ${missionIntel.system_mode.hysteresis.confirmation_count}/${missionIntel.system_mode.hysteresis.confirmation_required}` : "locked"}
-              {` · window ${missionIntel?.system_mode?.hysteresis?.window_minutes ?? 5}m`}
-              {missionIntel?.system_mode?.blend?.active ? ` · blend ${Math.round((missionIntel.system_mode.blend.to_weight ?? 0) * 100)}% ${(missionIntel.system_mode.blend.to_mode ?? missionIntel.system_mode.mode).replaceAll("_", " ")}` : ""}
-            </div>
-            <div className="text-slate-500">Writes {(missionIntel?.system_mode?.hysteresis?.write_verification_ok ?? true) ? "verified" : "degraded"} · retries {missionIntel?.system_mode?.hysteresis?.write_retry_count ?? 0} · backoff {(missionIntel?.system_mode?.hysteresis?.write_backoff_seconds ?? 0).toFixed(2)}s</div>
-            <div className="text-slate-500">Assurance {(missionIntel?.system_mode?.assurance?.forced_survival ?? false) ? "FORCED SURVIVAL" : "normal"} · conflict {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.score ?? 0).toFixed(2)} · multiplier {(missionIntel?.system_mode?.assurance?.cross_signal_conflict?.confidence_multiplier ?? 1).toFixed(2)}</div>
-            <div className={`text-slate-500 ${(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? "text-amber-300" : "text-slate-500"}`}>
-              Predictive {((missionIntel?.system_mode?.predictive_prevention?.phase ?? "CLEAR")).replaceAll("_", " ")} {(missionIntel?.system_mode?.predictive_prevention?.warning_score ?? 0).toFixed(2)}
-              {(missionIntel?.system_mode?.predictive_prevention?.early_warning ?? false) ? ` -> ${((missionIntel?.system_mode?.predictive_prevention?.preventive_mode ?? missionIntel?.system_mode?.mode ?? "BALANCED")).replaceAll("_", " ")}` : ""}
-            </div>
-            <div className="text-slate-500">
-              Trend Δ {(missionIntel?.system_mode?.predictive_prevention?.health_delta ?? 0).toFixed(2)} · drop {(missionIntel?.system_mode?.predictive_prevention?.trend_drop ?? 0).toFixed(2)}
-              {(missionIntel?.system_mode?.predictive_prevention?.preventive_shift_applied ?? false)
-                ? ` · shifted from ${((missionIntel?.system_mode?.predictive_prevention?.base_mode ?? "BALANCED")).replaceAll("_", " ")}`
-                : ""}
-            </div>
-            <div className="text-slate-500">
-              Thresholds watch {(missionIntel?.system_mode?.predictive_prevention?.tuning?.watch_threshold ?? 0).toFixed(2)} · warn {(missionIntel?.system_mode?.predictive_prevention?.tuning?.warning_threshold ?? 0).toFixed(2)} · bias {(missionIntel?.system_mode?.predictive_prevention?.tuning?.bias_aggressiveness ?? 0).toFixed(2)}
-            </div>
-            <div className="text-slate-500">
-              Tuning reliability {(missionIntel?.system_mode?.predictive_prevention?.tuning?.average_reliability ?? 0).toFixed(2)} · precision {(missionIntel?.system_mode?.predictive_prevention?.tuning?.event_precision ?? 0).toFixed(2)} · false+ {(missionIntel?.system_mode?.predictive_prevention?.tuning?.false_positive_rate ?? 0).toFixed(2)} · samples {missionIntel?.system_mode?.predictive_prevention?.tuning?.samples ?? 0}
-            </div>
-            <div className="text-slate-500">
-              Weights {Object.entries(missionIntel?.system_mode?.predictive_prevention?.tuning?.weights ?? {}).length > 0
-                ? Object.entries(missionIntel?.system_mode?.predictive_prevention?.tuning?.weights ?? {})
-                    .map(([signal, weight]) => `${signal}:${Number(weight).toFixed(2)}`)
-                    .join(" · ")
-                : "default"}
-            </div>
-            <div className="mt-2 rounded border border-terminal-line/80 bg-terminal-panel/30 p-2">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Predictive Intelligence Tuning</div>
-              <div className="mt-1 text-slate-400">
-                Avg lead {(missionIntel?.system_mode?.predictive_prevention?.tuning?.average_lead_hours ?? 0).toFixed(2)}h
-                {" · "}
-                Ranked signals {(missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).length}
-              </div>
-              <div className="mt-1 space-y-1 text-slate-400">
-                {(missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).slice(0, 5).map((ranking, index) => {
-                  const quality = missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_quality?.[ranking.signal];
-                  return (
-                    <div
-                      key={`${ranking.signal}-${index}`}
-                      className={`rounded border px-2 py-1 ${ranking.suppressed ? "border-red-500/35 bg-red-500/10 text-red-200" : "border-current/20"}`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-slate-200">#{index + 1} {ranking.signal}</span>
-                        <span className={`${ranking.suppressed ? "text-red-300" : "text-green-300"}`}>
-                          {ranking.suppressed ? "suppressed" : "active"}
-                        </span>
-                      </div>
-                      <div>
-                        w {Number(ranking.weight ?? 0).toFixed(2)} · p {Number(ranking.precision ?? 0).toFixed(2)} · fp {Number(ranking.false_positive_rate ?? 0).toFixed(2)}
-                        {" · "}
-                        lead {(Number(quality?.avg_lead_hours ?? 0)).toFixed(2)}h · lq {Number(ranking.lead_quality ?? 0).toFixed(2)}
-                        {" · "}
-                        mult {(Number(quality?.contribution_multiplier ?? 1)).toFixed(2)}
-                      </div>
-                    </div>
-                  );
-                })}
-                {((missionIntel?.system_mode?.predictive_prevention?.tuning?.signal_rankings ?? []).length === 0) && (
-                  <div className="text-slate-500">No ranked signal history yet.</div>
-                )}
-              </div>
-            </div>
-            <div className="text-slate-500">
-              Signals {((missionIntel?.system_mode?.predictive_prevention?.signals?.length ?? 0) > 0)
-                ? (missionIntel?.system_mode?.predictive_prevention?.signals ?? []).join(", ")
-                : "none"}
-            </div>
-            <div className="text-slate-500">Recovery {(missionIntel?.system_mode?.assurance?.recovery_phase?.active ?? false) ? `active ${missionIntel?.system_mode?.assurance?.recovery_phase?.cycles_remaining ?? 0} cycles · relearn ${((missionIntel?.system_mode?.assurance?.recovery_phase?.relearning_factor ?? 1)).toFixed(2)}` : "inactive"}</div>
-            <div className="text-slate-500">Rehydrate {(missionIntel?.system_mode?.assurance?.recovery_hooks?.db_reconnect_success ?? false) ? "db-reconnected" : (missionIntel?.system_mode?.assurance?.recovery_hooks?.state_rebuild_applied ?? false) ? `rebuilt -> ${(missionIntel?.system_mode?.assurance?.recovery_hooks?.rehydration_target_mode ?? "BALANCED").replaceAll("_", " ")}` : "not-needed"}</div>
-            <div className="text-slate-500">{missionIntel?.system_mode?.reason ?? "System operating in steady-state growth mode."}</div>
-            <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">Live Experiment Mode</div>
-            <div className="mt-1 text-cyan-300">{missionIntel?.live_experiment_mode?.variant ?? "evolution_on_compounding_on"}</div>
-            <div className="text-slate-400">Evolution {missionIntel?.live_experiment_mode?.enable_evolution ? "ON" : "OFF"} · Compounding {missionIntel?.live_experiment_mode?.enable_compounding ? "ON" : "OFF"}</div>
-            <div className="text-slate-500">Source: {missionIntel?.live_experiment_mode?.source ?? "default"}</div>
-            <div className="mt-2 text-[10px] uppercase tracking-wider text-slate-500">System Confidence</div>
-            <div className={`mt-1 font-semibold ${(missionIntel?.system_confidence?.label ?? "LOW") === "HIGH" ? "text-green-300" : (missionIntel?.system_confidence?.label ?? "LOW") === "MEDIUM" ? "text-amber-300" : "text-red-300"}`}>
-              {(missionIntel?.system_confidence?.label ?? "LOW")} {(missionIntel?.system_confidence?.score ?? 0).toFixed(2)}
-            </div>
-            <div className="text-slate-400">Data {(100 * (missionIntel?.system_confidence?.factors.data_sufficiency ?? 0)).toFixed(0)}% · Diversity {(100 * (missionIntel?.system_confidence?.factors.strategy_diversity ?? 0)).toFixed(0)}%</div>
-            <div className="mt-1 text-slate-400">7d {(missionIntel?.time_weighted_confidence?.short_term_7d.score ?? 0).toFixed(2)} · 30d {(missionIntel?.time_weighted_confidence?.mid_term_30d.score ?? 0).toFixed(2)} · 90d {(missionIntel?.time_weighted_confidence?.long_term_90d.score ?? 0).toFixed(2)}</div>
-          </div>
-
-          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Capital Buckets</div>
-            <div className="mt-1 space-y-1 text-slate-300">
-              {Object.entries(missionIntel?.mission.capital_buckets ?? {}).map(([bucket, weight]) => (
-                <div key={bucket}>{bucket.replaceAll("_", " ")}: {(weight * 100).toFixed(1)}%</div>
-              ))}
-            </div>
-            <div className="mt-2 border-t border-terminal-line pt-2 text-[10px] uppercase tracking-wider text-slate-500">Meta-Risk Posture</div>
-            <div className={`mt-1 font-semibold ${(missionIntel?.meta_risk_governor?.mode ?? "normal") === "critical" ? "text-red-300" : (missionIntel?.meta_risk_governor?.mode ?? "normal") === "elevated" ? "text-amber-300" : "text-green-300"}`}>
-              {(missionIntel?.meta_risk_governor?.mode ?? "normal").toUpperCase()} · Exposure x{(missionIntel?.meta_risk_governor?.global_exposure_multiplier ?? 1).toFixed(2)}
-            </div>
-            <div className="text-slate-400">Transitions 24h: {missionIntel?.meta_risk_governor?.transitions_last_24h ?? 0}</div>
-            <div className="text-slate-400">Confidence collapse: {missionIntel?.meta_risk_governor?.confidence_collapse?.collapse ? "YES" : "NO"} ({(missionIntel?.meta_risk_governor?.confidence_collapse?.recent_avg_confidence ?? 0).toFixed(2)})</div>
-            <div className="text-slate-400">Correlation spike: {missionIntel?.meta_risk_governor?.correlation_spike?.spike ? "YES" : "NO"} ({(missionIntel?.meta_risk_governor?.correlation_spike?.recent_avg_correlation ?? 0).toFixed(2)})</div>
-          </div>
-
-          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Sprint Governance</div>
-            <div className={`mt-1 font-semibold ${missionIntel?.sprint_governance.active ? "text-amber-300" : "text-slate-200"}`}>
-              {missionIntel?.sprint_governance.active ? "Sprint Active" : "Sprint Inactive"}
-            </div>
-            <div className="text-slate-300">Trigger {(missionIntel?.sprint_governance.trigger_pressure ?? 0).toFixed(2)}x</div>
-            <div className="text-slate-300">Now {(missionIntel?.sprint_governance.current_pressure ?? 0).toFixed(2)}x</div>
-            <div className="mt-1 text-slate-400">Admitted: {(missionIntel?.sprint_governance.admitted_symbols ?? []).join(", ") || "None"}</div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Execution Quality Scorecard</div>
-            <div className="mt-1 text-slate-300">Samples: {missionIntel?.execution_quality.sample_size ?? 0}</div>
-            <div className="mt-2 text-green-300">Top: {(missionIntel?.execution_quality.top_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
-            <div className="mt-1 text-red-300">Watch: {(missionIntel?.execution_quality.bottom_symbols ?? []).slice(0, 3).map((s) => `${s.symbol} ${(s.quality_score * 100).toFixed(0)}%`).join(" · ") || "N/A"}</div>
-            <div className="mt-1 text-amber-300">Disabled strategies: {(missionIntel?.execution_quality.disabled_strategies ?? []).join(", ") || "None"}</div>
-            <div className="mt-1 text-orange-300">Probation strategies: {(missionIntel?.execution_quality.probation_strategies ?? []).join(", ") || "None"}</div>
-            <div className="mt-1 text-cyan-300">Evolution experiments: {missionIntel?.strategy_evolution?.suggested_experiments ?? 0}</div>
-
-            <div className="mt-3 rounded border border-terminal-line/70 bg-black/30 p-2">
-              <div className="text-[10px] uppercase tracking-wider text-slate-500">Kill-Switch Override Controls</div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  value={overrideStrategyInput}
-                  onChange={(event) => setOverrideStrategyInput(event.target.value.toUpperCase())}
-                  placeholder="OPTIONS_PLAY"
-                  className="w-40 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
-                />
-                <button
-                  type="button"
-                  disabled={Boolean(overrideBusyStrategy)}
-                  onClick={() => void setStrategyKillSwitchOverride(overrideStrategyInput, true)}
-                  className="rounded border border-green-500/40 bg-green-500/10 px-2 py-1 text-[11px] text-green-300 hover:bg-green-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Force Enable
-                </button>
-              </div>
-              <div className="mt-2 text-[11px] text-slate-500">
-                Strategy override only. Valid values: OPTIONS_PLAY, SWING_TRADE, DAY_TRADE, SCALP, WATCH, IGNORE.
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500">
-                Current risk posture: {(missionIntel?.mission.risk_posture?.mode ?? "normal").toUpperCase()} · Sprint override: {missionIntel?.sprint_governance.manual_override ? "ON" : "OFF"} · Sprint active: {missionIntel?.sprint_governance.active ? "YES" : "NO"}
-              </div>
-
-              {(missionIntel?.execution_quality.disabled_strategies ?? []).length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(missionIntel?.execution_quality.disabled_strategies ?? []).slice(0, 6).map((strategy) => (
-                    <button
-                      key={strategy}
-                      type="button"
-                      disabled={Boolean(overrideBusyStrategy)}
-                      onClick={() => void setStrategyKillSwitchOverride(strategy, true)}
-                      className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-300 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Enable {strategy}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="mt-2 text-[11px] text-slate-400">
-                Manual force-enabled: {manualForceEnabledStrategies.join(", ") || "None"}
-              </div>
-              {manualForceEnabledStrategies.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {manualForceEnabledStrategies.map((strategy) => (
-                    <button
-                      key={`clear-${strategy}`}
-                      type="button"
-                      disabled={Boolean(overrideBusyStrategy)}
-                      onClick={() => setPendingClearOverrideStrategy(strategy)}
-                      className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Clear {strategy}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded border border-terminal-line bg-black/20 p-3 text-xs">
-            <div className="text-[10px] uppercase tracking-wider text-slate-500">Mission Scenario Simulator</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <input
-                type="number"
-                value={scenarioTarget}
-                onChange={(event) => setScenarioTarget(Number(event.target.value || 0))}
-                title="Mission target capital"
-                placeholder="Target capital"
-                className="w-36 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
-              />
-              <input
-                type="number"
-                value={scenarioDays}
-                onChange={(event) => setScenarioDays(Number(event.target.value || 1))}
-                title="Mission timeframe days"
-                placeholder="Days"
-                className="w-24 rounded border border-terminal-line bg-black/30 px-2 py-1 text-xs text-slate-200"
-              />
-              <button
-                type="button"
-                onClick={() => void runMissionScenario()}
-                className="rounded border border-terminal-accent/50 bg-terminal-accent/10 px-3 py-1 text-xs text-terminal-accent hover:bg-terminal-accent/20"
-              >
-                Simulate
-              </button>
-            </div>
-            {missionScenario && (
-              <div className="mt-2 text-slate-300">
-                <div>Required daily: {(missionScenario.required_daily_return * 100).toFixed(2)}%</div>
-                <div>Implied pressure: {missionScenario.implied_goal_pressure.toFixed(2)}x</div>
-                <div>Recommended style: {missionScenario.recommended_mission_style}</div>
-                <div className={missionScenario.refuse_activation ? "text-red-300" : missionScenario.target_unrealistic ? "text-amber-300" : "text-green-300"}>{missionScenario.message}</div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && (
-          <div className={`mt-3 rounded border px-3 py-2 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
-            <div className="font-semibold">Paper-to-Live Parity Watchdog Alerts ({missionIntel?.parity_watchdog.status})</div>
-            <ul className="mt-1 space-y-1">
-              {missionIntel?.parity_watchdog.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-            <div className="mt-2 text-[11px] text-current/90">
-              If you want true live Alpaca routing, set ALPACA_PAPER=false in backend env and redeploy. If you only want Coinbase live routing for crypto, this warning can still appear because equities route to Alpaca.
-            </div>
-          </div>
-        )}
+          )}
+        </aside>
       </section>
 
       {pendingClearOverrideStrategy && (
@@ -2063,163 +1796,6 @@ export default function AlphaPage() {
           </div>
         </div>
       )}
-
-      <section className="sticky top-2 z-20 mb-4 rounded-xl border border-terminal-line bg-[#061723e6] p-3 backdrop-blur">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-accent">NOC Strip</h2>
-          <p className="text-[11px] text-slate-400">Compact market-wide telemetry</p>
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-1">
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Ghost Alpha Engine</p>
-            <p className="mt-1 text-sm font-semibold text-terminal-accent">
-              {compactStats.executionReady} ready / {compactStats.highConviction} high conviction
-            </p>
-            <p className="text-[11px] text-slate-400">{scan?.total_scanned ?? 0} scanned</p>
-          </div>
-
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Portfolio</p>
-            <p className="mt-1 text-sm font-semibold text-cyan-300">
-              {compactStats.openPositions} open · {compactStats.exposurePct.toFixed(1)}% exposure
-            </p>
-            <p className="text-[11px] text-slate-400">Buying power {portfolio?.available_buying_power?.toFixed(0) ?? "0"}</p>
-          </div>
-
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Safety and Control</p>
-            <p className={`mt-1 text-sm font-semibold ${control?.trading_enabled ? "text-green-400" : "text-red-400"}`}>
-              {control?.trading_enabled ? "Trading Enabled" : "Kill Switch Active"}
-            </p>
-            <p className="text-[11px] text-slate-400">
-              DD {compactStats.drawdownPct.toFixed(2)}% · Loss budget left {compactStats.riskBudgetLeft.toFixed(0)}
-            </p>
-          </div>
-
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Goal Dashboard</p>
-            <p className="mt-1 text-sm font-semibold text-amber-300">
-              {compactStats.stress} stress · {compactStats.goalProb.toFixed(1)}% success
-            </p>
-            <p className="text-[11px] text-slate-400">Pressure {goal?.goal_pressure_multiplier?.toFixed(2) ?? "1.00"}x</p>
-          </div>
-
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">News and Context</p>
-            <p className="mt-1 text-sm font-semibold text-blue-300">
-              News {compactStats.newsStrength.toFixed(2)} · Ctx {compactStats.contextConfidence.toFixed(2)}x
-            </p>
-            <p className="text-[11px] text-slate-400">Focus {focusSymbol}</p>
-          </div>
-
-          <div className="min-w-[220px] rounded-lg border border-terminal-line bg-black/25 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Decision Audit</p>
-            <p className="mt-1 text-sm font-semibold text-violet-300">
-              {compactStats.accepted}/{compactStats.audits} accepted
-            </p>
-            <p className="text-[11px] text-slate-400">Latest {selectedAuditId?.slice(0, 8) ?? "none"}</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-          <div className="text-[11px] uppercase tracking-wider text-slate-500">Coverage</div>
-          <div className="mt-2 text-2xl font-semibold text-terminal-accent">{scan?.total_scanned ?? 0}</div>
-          <div className="text-xs text-slate-400">Tickers scanned per cycle</div>
-        </div>
-        <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-          <div className="text-[11px] uppercase tracking-wider text-slate-500">Execution Ready</div>
-          <div className="mt-2 text-2xl font-semibold text-green-400">
-            {(scan?.candidates ?? []).filter((c) => c.action_label === "EXECUTE").length}
-          </div>
-          <div className="text-xs text-slate-400">Candidates cleared for run</div>
-        </div>
-        <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-          <div className="text-[11px] uppercase tracking-wider text-slate-500">Automation</div>
-          <div className={`mt-2 text-2xl font-semibold ${(status?.auto_mode || control?.autonomous_enabled) ? "text-green-400" : "text-slate-300"}`}>
-            {(status?.auto_mode || control?.autonomous_enabled) ? "ON" : "OFF"}
-          </div>
-          <div className="text-xs text-slate-400">Scan auto: {status?.auto_mode ? "ON" : "OFF"} · Execution auto: {control?.autonomous_enabled ? "ON" : "OFF"}</div>
-          <div className="text-xs text-slate-400">Interval: {status?.auto_interval_seconds ?? control?.autonomous_interval_seconds ?? 300}s</div>
-        </div>
-      </section>
-
-      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <h2 className="mb-2 text-sm font-semibold text-terminal-accent">Strategy Distribution</h2>
-        <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-6">
-          <div className="rounded border border-terminal-line px-2 py-2">OPTIONS: {strategyCounts.OPTIONS_PLAY}</div>
-          <div className="rounded border border-terminal-line px-2 py-2">SWING: {strategyCounts.SWING_TRADE}</div>
-          <div className="rounded border border-terminal-line px-2 py-2">DAY: {strategyCounts.DAY_TRADE}</div>
-          <div className="rounded border border-terminal-line px-2 py-2">SCALP: {strategyCounts.SCALP}</div>
-          <div className="rounded border border-terminal-line px-2 py-2">WATCH: {strategyCounts.WATCH}</div>
-          <div className="rounded border border-terminal-line px-2 py-2">IGNORE: {strategyCounts.IGNORE}</div>
-        </div>
-      </section>
-
-      <OrchestratorPanel
-        scan={scan}
-        status={status}
-        loading={loading}
-        onScan={handleScan}
-        onToggleAutoMode={handleToggleAuto}
-        onRunSymbol={handleOrchestratorRunSymbol}
-      />
-
-      <section className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/60 p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-terminal-accent">Operational Focus Symbol</h2>
-          <Link
-            href={`/terminal?symbol=${encodeURIComponent(focusSymbol)}`}
-            className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/60 hover:text-terminal-accent"
-          >
-            Drill Into Deep Terminal ({focusSymbol})
-          </Link>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {(topSymbols.length > 0 ? topSymbols : [focusSymbol]).map((sym) => (
-            <button
-              key={sym}
-              onClick={() => setFocusSymbol(sym)}
-              className={`rounded border px-3 py-1 text-xs transition ${
-                focusSymbol === sym
-                  ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
-                  : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
-              }`}
-            >
-              {sym}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
-          <PortfolioPanel portfolio={portfolio} />
-          <GoalPanel goal={goal} onSetGoal={handleSetGoal} />
-          <DecisionAuditPanel
-            entries={decisionAudit}
-            selectedAuditId={selectedAuditId}
-            onSelect={handleSelectAudit}
-          />
-          <DecisionReplayPanel replay={decisionReplay} />
-        </div>
-
-        <aside className="space-y-4">
-          <NewsPanel signal={newsSignal} audit={newsAudit} />
-          <ContextPanel context={contextSignal} />
-          <ControlPanel
-            control={control}
-            executionMode={executionMode}
-            onToggleKillSwitch={handleToggleKillSwitch}
-            onToggleAutonomous={handleToggleAutonomous}
-            onRunAutonomousOnce={handleRunAutonomousOnce}
-            onSetExecutionMode={handleSetExecutionMode}
-            onUpdateLimits={handleUpdateLimits}
-            onSetOptionsSprint={handleSetOptionsSprint}
-          />
-        </aside>
-      </section>
     </main>
   );
 }

@@ -247,6 +247,7 @@ async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
 
 export default function TerminalPage() {
   const [symbol, setSymbol] = useState("AAPL");
+  const [selectedBroker, setSelectedBroker] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [options, setOptions] = useState<OptionsResponse | null>(null);
   const [signal, setSignal] = useState<SignalResponse | null>(null);
@@ -303,9 +304,14 @@ export default function TerminalPage() {
     if (typeof window === "undefined") {
       return;
     }
-    const qpSymbol = (new URLSearchParams(window.location.search).get("symbol") ?? "").toUpperCase();
+    const params = new URLSearchParams(window.location.search);
+    const qpSymbol = (params.get("symbol") ?? "").toUpperCase();
+    const qpBroker = (params.get("broker") ?? "").toLowerCase();
     if (qpSymbol) {
       setSymbol(qpSymbol);
+    }
+    if (qpBroker) {
+      setSelectedBroker(qpBroker);
     }
   }, []);
 
@@ -315,8 +321,13 @@ export default function TerminalPage() {
     }
     const url = new URL(window.location.href);
     url.searchParams.set("symbol", symbol);
+    if (selectedBroker) {
+      url.searchParams.set("broker", selectedBroker);
+    } else {
+      url.searchParams.delete("broker");
+    }
     window.history.replaceState({}, "", url.toString());
-  }, [symbol]);
+  }, [selectedBroker, symbol]);
 
   const fetchAll = useCallback(async () => {
     const [
@@ -365,9 +376,15 @@ export default function TerminalPage() {
       <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
         <h1 className="text-lg font-semibold md:text-2xl">DEEP TERMINAL</h1>
         <span className="text-xs text-slate-300">
-          Regime: {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
+          {selectedBroker ? `${selectedBroker.toUpperCase()} · ` : ""}{symbol} · {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
         </span>
       </div>
+
+      {selectedBroker && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          Broker-aware deep mode active: {selectedBroker.toUpperCase()}. Market/strategy panes remain full-system, while execution context follows broker selection from Alpha.
+        </div>
+      )}
 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_1fr_320px]">
         <aside className="panel rounded-xl p-4">
