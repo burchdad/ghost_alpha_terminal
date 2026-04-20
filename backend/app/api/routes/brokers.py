@@ -27,6 +27,10 @@ def broker_status(user: User = CurrentUser) -> dict:
     if alpaca_connected:
         alpaca_accounts = ["paper" if settings.alpaca_paper else "live"]
 
+    schwab_row = by_provider.get("schwab")
+    schwab_connected = bool(schwab_row and schwab_row.connected and schwab_row.access_token)
+    schwab_configured = bool(settings.schwab_client_id and settings.schwab_client_secret and settings.schwab_redirect_uri)
+
     coinbase_keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
     tradier_keys_present = bool(settings.tradier_effective_api_key and settings.tradier_effective_account_number)
 
@@ -35,6 +39,12 @@ def broker_status(user: User = CurrentUser) -> dict:
             "connected": alpaca_connected,
             "accounts": alpaca_accounts,
             "label": "Alpaca",
+        },
+        "schwab": {
+            "connected": schwab_connected,
+            "accounts": ["live"] if schwab_connected else [],
+            "configured": schwab_configured,
+            "label": "Charles Schwab",
         },
         "coinbase": {
             # Coinbase is currently configured at the platform level via API keys,

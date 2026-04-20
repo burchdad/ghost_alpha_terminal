@@ -9,17 +9,6 @@ from app.services.brokers.tradier_adapter import tradier_broker_adapter
 # Planned broker integrations — OAuth applications in-flight or not yet submitted.
 # These are surfaced in the UI as "Integration Planned" to track pipeline status.
 PLANNED_BROKERS: dict[str, dict] = {
-    "schwab": {
-        "label": "Charles Schwab",
-        "supports_equities": True,
-        "supports_crypto": False,
-        "supports_options": True,
-        "supports_fractional": True,
-        "supports_leverage": False,
-        "planned": True,
-        "oauth_url": "https://developer.schwab.com",
-        "notes": "Full-service broker with an OAuth developer API. Requires approval at developer.schwab.com.",
-    },
     "tastytrade": {
         "label": "tastytrade",
         "supports_equities": True,

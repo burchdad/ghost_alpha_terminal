@@ -1478,6 +1478,25 @@ def schwab_callback(request: Request, code: str, state: str) -> RedirectResponse
     return _complete_schwab_oauth(request=request, code=code, state=state)
 
 
+@router.get("/schwab/oauth/start", summary="Start Charles Schwab OAuth flow")
+def start_schwab_oauth() -> RedirectResponse:
+    if not settings.schwab_client_id or not settings.schwab_redirect_uri:
+        raise HTTPException(
+            status_code=500,
+            detail="Schwab OAuth not configured. Set SCHWAB_CLIENT_ID and SCHWAB_REDIRECT_URI.",
+        )
+
+    state = secrets.token_urlsafe(24)
+    query = {
+        "client_id": settings.schwab_client_id,
+        "redirect_uri": settings.schwab_redirect_uri,
+        "response_type": "code",
+        "state": state,
+    }
+    auth_url = f"{settings.schwab_authorize_url}?{urlencode(query)}"
+    return RedirectResponse(url=auth_url, status_code=307)
+
+
 @router.get("/schwab/oauth/callback", summary="Charles Schwab OAuth callback compatibility route")
 def schwab_oauth_callback(request: Request, code: str, state: str) -> RedirectResponse:
     return _complete_schwab_oauth(request=request, code=code, state=state)
@@ -1566,5 +1585,5 @@ def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> Redire
         session.flush()
 
     redirect_base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
-    redirect_url = f"{redirect_base}/alpha?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
+    redirect_url = f"{redirect_base}/brokerages?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
     return RedirectResponse(url=redirect_url, status_code=307)

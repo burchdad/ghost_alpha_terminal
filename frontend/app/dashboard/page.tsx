@@ -144,14 +144,16 @@ export default function DashboardPage() {
       return;
     }
 
-    const oauthParam = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
+    const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+    const oauthParam = params?.get("alpaca_oauth") || params?.get("schwab_oauth");
     const alpacaConnected = Boolean(brokers.alpaca?.connected);
-    if (oauthParam === "connected" && alpacaConnected) {
+    const schwabConnected = Boolean(brokers.schwab?.connected);
+    if (oauthParam === "connected" && (alpacaConnected || schwabConnected)) {
       setShowPostConnectPrompt(true);
       // Clear the query parameter so refreshes don't keep retriggering prompt logic.
       router.replace("/dashboard");
     }
-  }, [loading, brokers.alpaca?.connected, router]);
+  }, [loading, brokers.alpaca?.connected, brokers.schwab?.connected, router]);
 
   function handleConnectMoreAccounts() {
     setShowPostConnectPrompt(false);
@@ -172,7 +174,7 @@ export default function DashboardPage() {
   }
 
   async function handleConnect(provider: string) {
-    if (provider !== "alpaca") {
+    if (provider !== "alpaca" && provider !== "schwab") {
       return;
     }
     setConnecting(provider);
@@ -183,7 +185,11 @@ export default function DashboardPage() {
         setError("Security verification was cancelled.");
         return;
       }
-      window.location.href = `${API_BASE}/alpaca/oauth/start?next=/dashboard`;
+      if (provider === "alpaca") {
+        window.location.href = `${API_BASE}/alpaca/oauth/start?next=/dashboard`;
+      } else {
+        window.location.href = `${API_BASE}/auth/schwab/oauth/start`;
+      }
     } catch (err) {
       if (err instanceof Error && err.message === "Authentication required") {
         router.replace("/login?next=/dashboard");
@@ -268,7 +274,7 @@ export default function DashboardPage() {
             const planned = Boolean(card.status.planned);
             const accounts = card.status.accounts ?? [];
             const busy = connecting === card.key;
-            const oauthConnectable = card.key === "alpaca";
+            const oauthConnectable = card.key === "alpaca" || card.key === "schwab";
 
             const statusText = connected
               ? "Connected"

@@ -72,7 +72,8 @@ export default function BrokeragesPage() {
 
   useEffect(() => {
     // Refresh broker status on mount, especially after OAuth callback
-    const oauthState = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
+    const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+    const oauthState = params?.get("alpaca_oauth") || params?.get("schwab_oauth");
     if (oauthState === "connected") {
       console.log("[BrokeragesMount] OAuth callback detected, fetching fresh broker status...");
     }
@@ -102,16 +103,18 @@ export default function BrokeragesPage() {
   useEffect(() => {
     if (loading) return;
 
-    const oauthParam = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("alpaca_oauth");
+    const params = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+    const oauthParam = params?.get("alpaca_oauth") || params?.get("schwab_oauth");
     const alpacaConnected = Boolean(brokers.alpaca?.connected);
+    const schwabConnected = Boolean(brokers.schwab?.connected);
 
-    console.log("[BrokeragesOAuth]", { oauthParam, alpacaConnected, loading });
+    console.log("[BrokeragesOAuth]", { oauthParam, alpacaConnected, schwabConnected, loading });
 
-    if (oauthParam === "connected" && alpacaConnected) {
+    if (oauthParam === "connected" && (alpacaConnected || schwabConnected)) {
       console.log("[BrokeragesModal] Showing post-connect prompt");
       setShowPostConnectPrompt(true);
     }
-  }, [loading, brokers.alpaca?.connected]);
+  }, [loading, brokers.alpaca?.connected, brokers.schwab?.connected]);
 
   function handleStayOnBrokerages() {
     setShowPostConnectPrompt(false);
@@ -134,7 +137,7 @@ export default function BrokeragesPage() {
   }
 
   async function handleConnect(provider: string) {
-    if (provider !== "alpaca") {
+    if (provider !== "alpaca" && provider !== "schwab") {
       return;
     }
     setConnecting(provider);
@@ -150,7 +153,11 @@ export default function BrokeragesPage() {
       } catch {
         // Ignore storage access failures and fall back to URL-based detection.
       }
-      window.location.href = `${API_BASE}/alpaca/oauth/start?next=/brokerages`;
+      if (provider === "alpaca") {
+        window.location.href = `${API_BASE}/alpaca/oauth/start?next=/brokerages`;
+      } else {
+        window.location.href = `${API_BASE}/auth/schwab/oauth/start`;
+      }
     } catch (err) {
       if (err instanceof Error && err.message === "Authentication required") {
         router.replace("/login?next=/brokerages");
@@ -184,7 +191,7 @@ export default function BrokeragesPage() {
             const configured = Boolean(card.status.configured);
             const planned = Boolean(card.status.planned);
             const busy = connecting === card.key;
-            const oauthConnectable = card.key === "alpaca";
+            const oauthConnectable = card.key === "alpaca" || card.key === "schwab";
 
             const statusText = connected
               ? "Connected"
