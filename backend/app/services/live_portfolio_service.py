@@ -16,7 +16,12 @@ class LivePortfolioService:
         if tradier_snapshot is not None:
             return tradier_snapshot
 
-        # Fall back to Alpaca when Tradier is not configured.
+        # Try Schwab next if OAuth token is present.
+        schwab_snapshot = self._schwab_primary_snapshot()
+        if schwab_snapshot is not None:
+            return schwab_snapshot
+
+        # Fall back to Alpaca when neither Tradier nor Schwab is configured.
         account = self._safe_alpaca_account_current()
         positions = self._safe_alpaca_positions_current()
         broker_accounts = self._broker_account_snapshots()
@@ -248,6 +253,10 @@ class LivePortfolioService:
         if tradier is not None:
             rows.append(tradier)
 
+        schwab = self._schwab_account_snapshot()
+        if schwab is not None:
+            rows.append(schwab)
+
         return rows
 
     def _alpaca_snapshot_for_mode(self, *, paper: bool) -> dict:
@@ -413,6 +422,93 @@ class LivePortfolioService:
                 "currency": "USD",
                 "last_error": str(exc),
             }
+
+    # ------------------------------------------------------------------
+    # Schwab
+    # ------------------------------------------------------------------
+
+    def _schwab_primary_snapshot(self) -> dict | None:
+        """Return a full portfolio snapshot from Schwab OAuth account, or None."""
+        try:
+            from app.services.schwab_client import schwab_client
+        except ImportError:
+            return None
+
+        if not schwab_client.is_connected():
+            return None
+
+        snap = schwab_client.portfolio_snapshot()
+        if not snap:
+            return None
+
+        broker_accounts = self._broker_account_snapshots()
+        positions = snap.get("positions", [])
+        balance = snap.get("account_balance", 0.0)
+        buying_power = snap.get("buying_power", 0.0)
+        total_exposure = sum(float(p.get("notional") or 0.0) for p in positions)
+
+        sector_counter: Counter[str] = Counter()
+        strategy_counter: Counter[str] = Counter()
+        for p in positions:
+            sector_counter[p.get("sector", "OTHER")] += float(p.get("notional") or 0.0)
+            strategy_counter["LIVE_SCHWAB"] += float(p.get("notional") or 0.0)
+
+        return {
+            "account_balance": round(balance, 2),
+            "active_positions": positions,
+            "total_exposure": round(total_exposure, 2),
+            "risk_exposure_pct": round((total_exposure / balance) if balance > 0 else 0.0, 4),
+            "sector_concentration": {k: round(v, 2) for k, v in sector_counter.items()},
+            "strategy_exposure": {k: round(v, 2) for k, v in strategy_counter.items()},
+            "available_buying_power": round(buying_power, 2),
+            "max_concurrent_trades": 12,
+            "broker_accounts": broker_accounts,
+            "data_source": "schwab",
+        }
+
+    def _schwab_account_snapshot(self) -> dict | None:
+        """Return a BrokerAccountSnapshot-compatible dict for Schwab, or None."""
+        try:
+            from app.services.schwab_client import schwab_client
+        except ImportError:
+            return None
+
+        if not schwab_client.is_connected():
+            return {
+                "broker": "schwab",
+                "account_label": "Charles Schwab",
+                "account_mode": "live",
+                "connected": False,
+                "account_balance": None,
+                "buying_power": None,
+                "currency": "USD",
+                "last_error": "No active Schwab OAuth connection",
+            }
+
+        snap = schwab_client.portfolio_snapshot()
+        if not snap:
+            return {
+                "broker": "schwab",
+                "account_label": "Charles Schwab",
+                "account_mode": "live",
+                "connected": False,
+                "account_balance": None,
+                "buying_power": None,
+                "currency": "USD",
+                "last_error": "Schwab connected but account data unavailable",
+            }
+
+        label = ", ".join(snap.get("account_labels", ["Charles Schwab"])) or "Charles Schwab"
+        return {
+            "broker": "schwab",
+            "account_label": label,
+            "account_mode": "live",
+            "connected": True,
+            "account_balance": snap.get("account_balance"),
+            "buying_power": snap.get("buying_power"),
+            "currency": "USD",
+            "last_error": None,
+        }
 
     def _sector_for_symbol(self, symbol: str) -> str:
         mapping = {

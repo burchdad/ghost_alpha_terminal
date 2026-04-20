@@ -31,6 +31,7 @@ from app.api.routes.metrics import router as metrics_router
 from app.api.routes.telemetry import router as telemetry_router
 from app.api.routes.tradier import router as tradier_router
 from app.api.routes.universe import router as universe_router
+from app.api.routes.schwab import router as schwab_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
 from app.services.news.coinbase_ws_service import coinbase_ws_service
@@ -278,6 +279,7 @@ app.include_router(auth_router)
 app.include_router(brokers_router)
 app.include_router(telemetry_router)
 app.include_router(universe_router)
+app.include_router(schwab_router)
 
 
 @app.on_event("startup")
