@@ -77,6 +77,21 @@ type ControlResponse = {
   autonomous_cycles_run: number;
   autonomous_last_run_at: string | null;
   autonomous_last_error: string | null;
+  options_sprint: {
+    enabled: boolean;
+    profile: string;
+    target_amount: number | null;
+    timeframe_days: number | null;
+    objective_summary: string | null;
+    activation_source: string;
+    acknowledged_high_risk: boolean;
+    allow_live_execution: boolean;
+    live_execution_ready: boolean;
+    live_execution_blockers: string[];
+    recommended_execution_mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+    strategy_bias: Record<string, number>;
+    updated_at: string | null;
+  };
 };
 
 type ExecutionModeResponse = {
@@ -1229,6 +1244,33 @@ export default function AlphaPage() {
     pushRuntimeToast("Risk limits updated.", "success");
   }
 
+  async function handleSetOptionsSprint(enabled: boolean) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
+    if (enabled) {
+      await fetch(`${API_BASE}/control/options-sprint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          activation_source: "manual_ui",
+          acknowledged_high_risk: true,
+          allow_live_execution: false,
+          objective_summary: "Manual activation from control panel",
+        }),
+      });
+    } else {
+      await fetch(`${API_BASE}/control/options-sprint`, { method: "DELETE" });
+    }
+    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
+    setControl(controlData);
+    pushRuntimeToast(enabled ? "Options sprint profile activated." : "Options sprint profile disabled.", enabled ? "warning" : "success");
+  }
+
   async function handleSelectAudit(auditId: string) {
     setSelectedAuditId(auditId);
 
@@ -2078,6 +2120,7 @@ export default function AlphaPage() {
             onRunAutonomousOnce={handleRunAutonomousOnce}
             onSetExecutionMode={handleSetExecutionMode}
             onUpdateLimits={handleUpdateLimits}
+            onSetOptionsSprint={handleSetOptionsSprint}
           />
         </aside>
       </section>

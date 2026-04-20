@@ -1,15 +1,11 @@
 """
-Execution Bridge — connects the swarm consensus to Alpaca paper trading.
+Execution Bridge — connects swarm consensus to routed broker execution.
 
 Responsibilities:
   - Gate on the existing control_engine kill switch + guardrails
-  - Convert swarm action (BUY/SELL/HOLD) into an Alpaca market order
+    - Convert swarm action (BUY/SELL/HOLD) into a broker-routed market order
   - Return a dict capturing the result (order ID, error, or skipped)
-  - All trades are paper-only until credentials are populated in config
-
-Alpaca market order endpoint:
-  POST /v2/orders
-  {symbol, qty, side, type, time_in_force}
+    - Enforce broker-specific mode and configuration guards
 """
 from __future__ import annotations
 
@@ -29,7 +25,7 @@ ExecutionMode = Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"]
 
 
 class ExecutionBridge:
-    """Translates swarm BUY/SELL/HOLD into Alpaca paper orders."""
+    """Translates swarm BUY/SELL/HOLD into routed broker orders."""
 
     def __init__(self) -> None:
         self._mode: ExecutionMode = "SIMULATION"
@@ -182,6 +178,21 @@ class ExecutionBridge:
                 "reason": "Coinbase execution requires LIVE_TRADING mode.",
                 "explainability": build_explainability(
                     reasoning="Coinbase routes are blocked outside live mode to avoid ambiguous paper behavior.",
+                    confidence=confidence,
+                    risk_level="HIGH",
+                    expected_value=0.0,
+                    accepted=False,
+                    safeguards=["mode_config_guard"],
+                    inputs={"symbol": symbol, "mode": self._mode, "broker": routed_broker},
+                ),
+            }
+
+        if routed_broker == "tradier" and self._mode != "LIVE_TRADING":
+            return {
+                **base,
+                "reason": "Tradier execution requires LIVE_TRADING mode.",
+                "explainability": build_explainability(
+                    reasoning="Tradier routes are blocked outside live mode.",
                     confidence=confidence,
                     risk_level="HIGH",
                     expected_value=0.0,

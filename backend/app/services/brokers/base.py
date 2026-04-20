@@ -28,6 +28,9 @@ class BrokerOrderRequest:
     symbol: str
     side: Literal["buy", "sell"]
     qty: float
+    asset_class: Literal["equity", "crypto", "option"] = "equity"
+    option_symbol: str | None = None
+    option_side: Literal["buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"] | None = None
     order_type: Literal["market", "limit"] = "market"
     time_in_force: Literal["day", "gtc"] = "day"
     limit_price: float | None = None

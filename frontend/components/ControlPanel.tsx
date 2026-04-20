@@ -30,6 +30,21 @@ type ControlStatus = {
   autonomous_cycles_run: number;
   autonomous_last_run_at: string | null;
   autonomous_last_error: string | null;
+  options_sprint: {
+    enabled: boolean;
+    profile: string;
+    target_amount: number | null;
+    timeframe_days: number | null;
+    objective_summary: string | null;
+    activation_source: string;
+    acknowledged_high_risk: boolean;
+    allow_live_execution: boolean;
+    live_execution_ready: boolean;
+    live_execution_blockers: string[];
+    recommended_execution_mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING";
+    strategy_bias: Record<string, number>;
+    updated_at: string | null;
+  };
 };
 
 type Props = {
@@ -40,6 +55,7 @@ type Props = {
   onRunAutonomousOnce: () => void;
   onSetExecutionMode: (mode: "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING") => void;
   onUpdateLimits?: (data: { daily_loss_limit_pct: number; max_drawdown_limit_pct: number }) => Promise<void>;
+  onSetOptionsSprint?: (enabled: boolean) => Promise<void>;
 };
 
 export default function ControlPanel({
@@ -50,6 +66,7 @@ export default function ControlPanel({
   onRunAutonomousOnce,
   onSetExecutionMode,
   onUpdateLimits,
+  onSetOptionsSprint,
 }: Props) {
   const [pendingMode, setPendingMode] = useState<"SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING" | null>(null);
   const [editLimits, setEditLimits] = useState(false);
@@ -230,6 +247,42 @@ export default function ControlPanel({
               ⚡ LIVE TRADING ACTIVE — real orders are being submitted.
             </p>
           )}
+        </div>
+
+        <div className="mb-3 border-b border-terminal-line pb-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="font-semibold text-slate-400">Options Sprint Profile</p>
+            <span className={control.options_sprint.enabled ? "text-amber-300" : "text-slate-500"}>
+              {control.options_sprint.enabled ? "ARMED" : "OFF"}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            High-risk directional options profile intended for short-term expense-driven objectives.
+          </p>
+          {control.options_sprint.enabled ? (
+            <div className="mt-2 space-y-1 text-[11px] text-slate-300">
+              <p>Live readiness: {control.options_sprint.live_execution_ready ? "READY" : "BLOCKED"}</p>
+              {control.options_sprint.target_amount ? <p>Target: ${control.options_sprint.target_amount.toLocaleString()}</p> : null}
+              {control.options_sprint.timeframe_days ? <p>Window: {control.options_sprint.timeframe_days} days</p> : null}
+              {control.options_sprint.live_execution_blockers[0] ? (
+                <p className="text-terminal-bear">{control.options_sprint.live_execution_blockers[0]}</p>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => void onSetOptionsSprint?.(true)}
+              className="rounded border border-amber-500 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-300 transition hover:bg-amber-500/15"
+            >
+              Arm Options Sprint
+            </button>
+            <button
+              onClick={() => void onSetOptionsSprint?.(false)}
+              className="rounded border border-terminal-line bg-black/20 px-3 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-slate-500"
+            >
+              Disable
+            </button>
+          </div>
         </div>
 
         <div className="mb-2 flex items-center justify-between">

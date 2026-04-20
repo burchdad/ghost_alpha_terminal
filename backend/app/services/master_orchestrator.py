@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.services.control_engine import control_engine
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
+from app.services.options_sprint_service import options_sprint_service
 from app.services.opportunity_scanner import opportunity_scanner
 from app.services.portfolio_manager import portfolio_manager
 
@@ -99,9 +100,19 @@ class MasterOrchestrator:
         momentum_score: float,
         asset_class: str,
         composite_score: float,
+        options_sprint_active: bool,
     ) -> StrategyType:
         if composite_score < 0.18:
             return "IGNORE"
+
+        if (
+            options_sprint_active
+            and asset_class in {"equity", "etf"}
+            and consensus_bias != "NEUTRAL"
+            and confidence >= 0.55
+            and (volatility >= 0.025 or news_strength >= 0.20 or momentum_score > 0.004)
+        ):
+            return "OPTIONS_PLAY"
 
         # High volatility + news catalyst → options structure is most efficient
         if regime == "HIGH_VOLATILITY" and (news_strength > 0.40 or volatility > 0.07):
@@ -137,9 +148,12 @@ class MasterOrchestrator:
         *,
         asset_class: str,
         symbol: str,
+        options_sprint_live_ready: bool,
     ) -> ActionLabel:
         if strategy == "IGNORE":
             return "SKIP"
+        if strategy == "OPTIONS_PLAY" and not options_sprint_live_ready:
+            return "SIMULATE" if composite_score >= self.SCORE_THRESHOLD_SIMULATE else "MONITOR"
         if tradable and composite_score >= self.SCORE_THRESHOLD_EXECUTE:
             return "EXECUTE"
 
@@ -250,6 +264,7 @@ class MasterOrchestrator:
             current_exposure_pct=float(portfolio["risk_exposure_pct"]),
             goal_pressure_multiplier=float(goal["goal_pressure_multiplier"]),
         )
+        options_sprint = options_sprint_service.status()
 
         candidates: list[OrchestratorCandidate] = []
         regime_summary: dict[str, int] = {}
@@ -281,6 +296,7 @@ class MasterOrchestrator:
                 momentum_score=momentum_score,
                 asset_class=opp.get("asset_class", "equity"),
                 composite_score=norm_score,
+                options_sprint_active=bool(options_sprint.get("enabled", False)),
             )
             action = self._select_action(
                 strategy,
@@ -288,6 +304,7 @@ class MasterOrchestrator:
                 norm_score,
                 asset_class=opp.get("asset_class", "equity"),
                 symbol=opp["symbol"],
+                options_sprint_live_ready=bool(options_sprint.get("live_execution_ready", False)),
             )
 
             reasoning_parts: list[str] = [
@@ -299,6 +316,8 @@ class MasterOrchestrator:
                 reasoning_parts.append(f"News: {news_strength:.2f}")
             if strategy == "OPTIONS_PLAY":
                 reasoning_parts.append("elevated vol + catalyst favors options structure")
+                if bool(options_sprint.get("enabled", False)):
+                    reasoning_parts.append("options sprint profile active")
             elif strategy == "SWING_TRADE":
                 reasoning_parts.append("trend alignment supports multi-day hold")
             elif strategy == "DAY_TRADE":

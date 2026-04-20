@@ -6,6 +6,35 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+OptionsStrategyType = Literal[
+    "LONG_CALL",
+    "LONG_PUT",
+    "VERTICAL_CALL",
+    "VERTICAL_PUT",
+    "CALENDAR_CALL",
+    "CALENDAR_PUT",
+    "DIAGONAL_CALL",
+    "DIAGONAL_PUT",
+    "RATIO_CALL",
+    "RATIO_PUT",
+    "BUTTERFLY_CALL",
+    "BUTTERFLY_PUT",
+    "CONDOR_CALL",
+    "CONDOR_PUT",
+    "IRON_CONDOR",
+    "STRADDLE",
+    "STRANGLE",
+    "COVERED_CALL",
+    "COVERED_PUT",
+    "PROTECTIVE_CALL",
+    "PROTECTIVE_PUT",
+    "CUSTOM_2_LEG",
+    "CUSTOM_3_LEG",
+    "CUSTOM_4_LEG",
+    "CUSTOM_STOCK_OPTION",
+]
+
+
 class Candle(BaseModel):
     timestamp: datetime
     open: float
@@ -28,6 +57,7 @@ class ForecastResponse(BaseModel):
 
 class OptionContract(BaseModel):
     symbol: str
+    option_symbol: str | None = None
     strike: float
     expiration: str
     option_type: Literal["CALL", "PUT"]
@@ -38,6 +68,12 @@ class OptionContract(BaseModel):
     gamma: float
     theta: float
     vega: float
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    mid: float | None = None
+    underlying: str | None = None
+    source: Literal["tradier", "synthetic"] = "synthetic"
 
 
 class OptionsChainResponse(BaseModel):
@@ -45,6 +81,9 @@ class OptionsChainResponse(BaseModel):
     underlying_price: float
     contracts: list[OptionContract]
     avg_iv: float
+    source: Literal["tradier", "synthetic"] = "synthetic"
+    selected_expiration: str | None = None
+    available_expirations: list[str] = []
     generated_at: datetime
 
 
@@ -256,6 +295,133 @@ class ExecuteTradeResponse(BaseModel):
     explainability: dict | None = None
 
 
+class OptionsRiskAssessmentResponse(BaseModel):
+    approved: bool
+    risk_level: Literal["LOW", "MEDIUM", "HIGH"]
+    risk_reward_ratio: float
+    expected_value: float
+    max_loss_amount: float
+    max_profit_amount: float | None = None
+    max_loss_pct_of_balance: float
+    spread_pct: float
+    contracts: int
+    contract_cost: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    reason: str = ""
+    warnings: list[str] = Field(default_factory=list)
+
+
+class TradierOptionOrderRequest(BaseModel):
+    underlying: str = Field(min_length=1, max_length=32)
+    option_symbol: str = Field(min_length=8, max_length=64)
+    side: Literal["buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"]
+    quantity: int = Field(gt=0, le=1000)
+    order_type: Literal["market", "limit", "stop", "stop_limit"] = "limit"
+    duration: Literal["day", "gtc"] = "day"
+    price: float | None = Field(default=None, gt=0)
+    stop: float | None = Field(default=None, gt=0)
+    preview: bool = False
+    tag: str | None = Field(default=None, max_length=64)
+
+
+class OptionsStrategyLegRequest(BaseModel):
+    instrument: Literal["option", "equity"] = "option"
+    option_symbol: str | None = Field(default=None, min_length=8, max_length=64)
+    option_type: Literal["CALL", "PUT"] | None = None
+    action: Literal[
+        "buy",
+        "sell",
+        "buy_to_open",
+        "buy_to_close",
+        "sell_to_open",
+        "sell_to_close",
+    ]
+    strike: float | None = Field(default=None, gt=0)
+    expiration: str | None = None
+    quantity_ratio: int = Field(default=1, ge=1, le=10)
+    shares: int | None = Field(default=None, gt=0, le=100000)
+
+
+class OptionsStrategyLegResponse(BaseModel):
+    instrument: Literal["option", "equity"]
+    action: str
+    ratio: int
+    quantity: int
+    shares: int | None = None
+    option_symbol: str | None = None
+    option_type: Literal["CALL", "PUT"] | None = None
+    strike: float | None = None
+    expiration: str | None = None
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    mid: float | None = None
+    estimated_leg_value: float | None = None
+    source: Literal["tradier", "synthetic", "manual"] = "manual"
+
+
+class TradierStrategyOrderRequest(BaseModel):
+    underlying: str = Field(min_length=1, max_length=32)
+    strategy: OptionsStrategyType
+    order_class: Literal["option", "multileg", "combo"]
+    order_type: Literal["market", "limit", "stop", "stop_limit", "debit", "credit", "even"]
+    duration: Literal["day", "gtc"] = "day"
+    quantity: int = Field(gt=0, le=1000)
+    price: float | None = Field(default=None, gt=0)
+    stop: float | None = Field(default=None, gt=0)
+    preview: bool = True
+    tag: str | None = Field(default=None, max_length=64)
+    legs: list[OptionsStrategyLegRequest] = Field(default_factory=list, min_length=1, max_length=4)
+
+
+class OptionsExecutionRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    strategy: OptionsStrategyType | None = None
+    bias: Literal["BULLISH", "BEARISH", "NEUTRAL"] = "BULLISH"
+    quantity: int = Field(default=1, gt=0, le=100)
+    expiration: str | None = None
+    secondary_expiration: str | None = None
+    width: float | None = Field(default=None, gt=0)
+    wing_width: float | None = Field(default=None, gt=0)
+    target_delta: float | None = Field(default=None, gt=0, le=1)
+    target_otm_pct: float | None = Field(default=0.03, gt=0, le=0.25)
+    max_contract_cost: float | None = Field(default=None, gt=0)
+    min_open_interest: int = Field(default=100, ge=0)
+    min_volume: int = Field(default=10, ge=0)
+    max_spread_pct: float = Field(default=0.20, gt=0, le=1)
+    preview: bool = True
+    account_balance: float = Field(default=100000, gt=1000)
+    confidence: float = Field(default=0.6, ge=0, le=1)
+    custom_legs: list[OptionsStrategyLegRequest] = Field(default_factory=list, max_length=4)
+
+
+class OptionsExecutionResponse(BaseModel):
+    approved: bool
+    provider: str = "tradier"
+    symbol: str
+    strategy: OptionsStrategyType | None = None
+    order_class: Literal["option", "multileg", "combo"] | None = None
+    option_symbol: str | None = None
+    side: str | None = None
+    quantity: int = 0
+    expiration: str | None = None
+    secondary_expiration: str | None = None
+    bid: float | None = None
+    ask: float | None = None
+    last: float | None = None
+    mid: float | None = None
+    estimated_cost: float | None = None
+    estimated_net_debit: float | None = None
+    estimated_net_credit: float | None = None
+    order_preview: bool = True
+    order_response: dict | None = None
+    risk: OptionsRiskAssessmentResponse | None = None
+    legs: list[OptionsStrategyLegResponse] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
 class ActivePosition(BaseModel):
     symbol: str
     strategy: str
@@ -299,6 +465,22 @@ class RejectedTradeLog(BaseModel):
     reason: str
 
 
+class OptionsSprintStatusResponse(BaseModel):
+    enabled: bool = False
+    profile: str = "high_volume_directional"
+    target_amount: float | None = None
+    timeframe_days: int | None = None
+    objective_summary: str | None = None
+    activation_source: str = "manual"
+    acknowledged_high_risk: bool = False
+    allow_live_execution: bool = False
+    live_execution_ready: bool = False
+    live_execution_blockers: list[str] = []
+    recommended_execution_mode: Literal["SIMULATION", "PAPER_TRADING", "LIVE_TRADING"] = "SIMULATION"
+    strategy_bias: dict[str, float] = {}
+    updated_at: datetime | None = None
+
+
 class ControlStatusResponse(BaseModel):
     trading_enabled: bool
     system_status: Literal["ACTIVE", "PAUSED"]
@@ -317,6 +499,7 @@ class ControlStatusResponse(BaseModel):
     autonomous_cycles_run: int = 0
     autonomous_last_run_at: datetime | None = None
     autonomous_last_error: str | None = None
+    options_sprint: OptionsSprintStatusResponse = Field(default_factory=OptionsSprintStatusResponse)
 
 
 class KillSwitchUpdateRequest(BaseModel):
@@ -337,6 +520,16 @@ class RiskLimitUpdateResponse(BaseModel):
     daily_loss_limit_pct: float
     max_drawdown_limit_pct: float
     daily_loss_limit: float
+
+
+class OptionsSprintUpdateRequest(BaseModel):
+    enabled: bool = True
+    target_amount: float | None = Field(default=None, gt=0)
+    timeframe_days: int | None = Field(default=None, ge=1, le=3650)
+    objective_summary: str | None = Field(default=None, max_length=500)
+    activation_source: str = Field(default="manual", min_length=1, max_length=64)
+    acknowledged_high_risk: bool = False
+    allow_live_execution: bool = False
 
 
 class PriceBar(BaseModel):

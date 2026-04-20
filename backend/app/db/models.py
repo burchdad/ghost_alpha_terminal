@@ -301,6 +301,24 @@ class SystemModeState(Base):
     )
 
 
+class OptionsSprintState(Base):
+    __tablename__ = "options_sprint_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    profile: Mapped[str] = mapped_column(String(64), default="high_volume_directional")
+    target_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timeframe_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    objective_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activation_source: Mapped[str] = mapped_column(String(64), default="manual")
+    acknowledged_high_risk: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_live_execution: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
 class LandingTelemetryEvent(Base):
     __tablename__ = "landing_telemetry_events"
 

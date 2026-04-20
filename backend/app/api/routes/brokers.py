@@ -28,6 +28,7 @@ def broker_status(user: User = CurrentUser) -> dict:
         alpaca_accounts = ["paper" if settings.alpaca_paper else "live"]
 
     coinbase_keys_present = bool(settings.coinbase_api_key_name and settings.coinbase_api_private_key)
+    tradier_keys_present = bool(settings.tradier_effective_api_key and settings.tradier_effective_account_number)
 
     result: dict[str, dict] = {
         "alpaca": {
@@ -42,6 +43,13 @@ def broker_status(user: User = CurrentUser) -> dict:
             "accounts": [],
             "configured": coinbase_keys_present,
             "label": "Coinbase",
+        },
+        "tradier": {
+            # Tradier is currently configured at the platform level via API key mode.
+            "connected": False,
+            "accounts": ["sandbox" if settings.tradier_sandbox else "live"] if tradier_keys_present else [],
+            "configured": tradier_keys_present,
+            "label": "Tradier",
         },
     }
 

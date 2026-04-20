@@ -186,6 +186,7 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Frontend (Vercel): set `NEXT_PUBLIC_API_BASE` to your backend URL (for example, Railway service URL).
 - Backend (Railway): ensure all required env values are configured in Railway project variables.
 - Coinbase key-mode broker visibility uses backend vars `COINBASE_API_KEY_NAME` and `COINBASE_API_PRIVATE_KEY`.
+- Tradier key-mode broker visibility and routing use backend vars `TRADIER_SANDBOX_API_KEY`, `TRADIER_SANDBOX_ACCOUNT_NUMBER`, `TRADIER_LIVE_API_KEY`, `TRADIER_LIVE_ACCOUNT_NUMBER`, plus `TRADIER_SANDBOX` and `TRADIER_LIVE_TRADING_ENABLED`.
 - CORS is controlled via backend settings in `backend/app/core/config.py`.
 
 ## Service Behavior

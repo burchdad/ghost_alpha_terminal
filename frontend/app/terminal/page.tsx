@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import AgentPanel from "../../components/AgentPanel";
 import BacktestPanel from "../../components/BacktestPanel";
@@ -301,47 +301,47 @@ export default function TerminalPage() {
     window.history.replaceState({}, "", url.toString());
   }, [symbol]);
 
+  const fetchAll = useCallback(async () => {
+    const [
+      fRes,
+      oRes,
+      sRes,
+      swarmRes,
+      perfRes,
+      oppRes,
+      historyRes,
+    ] = await Promise.all([
+      fetch(`${API_BASE}/forecast/${symbol}`),
+      fetch(`${API_BASE}/options/${symbol}`),
+      fetch(`${API_BASE}/signal/${symbol}`),
+      fetch(`${API_BASE}/swarm/${symbol}`),
+      fetch(`${API_BASE}/performance/${symbol}`),
+      fetch(`${API_BASE}/agents/opportunities?limit=10`),
+      fetch(`${API_BASE}/agents/execution-history?limit=25`),
+    ]);
+
+    const fData = await parseJsonOrNull<ForecastResponse>(fRes);
+    const oData = await parseJsonOrNull<OptionsResponse>(oRes);
+    const sData = await parseJsonOrNull<SignalResponse>(sRes);
+    const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
+    const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
+    const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+    const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+
+    setForecast(fData);
+    setOptions(oData);
+    setSignal(sData);
+    setSwarm(swarmData);
+    setPerformance(perfData);
+    setOpportunities(oppData);
+    setExecutionHistory(historyData?.executions ?? []);
+  }, [symbol]);
+
   useEffect(() => {
-    async function fetchAll() {
-      const [
-        fRes,
-        oRes,
-        sRes,
-        swarmRes,
-        perfRes,
-        oppRes,
-        historyRes,
-      ] = await Promise.all([
-        fetch(`${API_BASE}/forecast/${symbol}`),
-        fetch(`${API_BASE}/options/${symbol}`),
-        fetch(`${API_BASE}/signal/${symbol}`),
-        fetch(`${API_BASE}/swarm/${symbol}`),
-        fetch(`${API_BASE}/performance/${symbol}`),
-        fetch(`${API_BASE}/agents/opportunities?limit=10`),
-        fetch(`${API_BASE}/agents/execution-history?limit=25`),
-      ]);
-
-      const fData = await parseJsonOrNull<ForecastResponse>(fRes);
-      const oData = await parseJsonOrNull<OptionsResponse>(oRes);
-      const sData = await parseJsonOrNull<SignalResponse>(sRes);
-      const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
-      const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
-      const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
-      const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
-
-      setForecast(fData);
-      setOptions(oData);
-      setSignal(sData);
-      setSwarm(swarmData);
-      setPerformance(perfData);
-      setOpportunities(oppData);
-      setExecutionHistory(historyData?.executions ?? []);
-    }
-
     fetchAll().catch((error: unknown) => {
       console.error("Failed to fetch terminal data", error);
     });
-  }, [symbol]);
+  }, [fetchAll]);
 
   return (
     <main className="min-h-screen p-4 md:p-6">
@@ -377,7 +377,13 @@ export default function TerminalPage() {
             symbol={symbol}
             forecastPrices={forecast?.forecast_prices ?? []}
           />
-          <OptionsPanel options={options} />
+          <OptionsPanel
+            options={options}
+            symbol={symbol}
+            onStrategyExecuted={() => {
+              void fetchAll();
+            }}
+          />
           <AgentPanel swarm={swarm} />
           <SwarmVisualizationPanel
             symbol={symbol}

@@ -18,6 +18,10 @@ type CopilotState = {
   goal_enabled: boolean;
   goal_target_capital: number | null;
   goal_timeframe_days: number | null;
+  options_sprint_active: boolean;
+  options_sprint_live_ready: boolean;
+  options_sprint_target_amount: number | null;
+  options_sprint_timeframe_days: number | null;
   live_only_during_market_hours: boolean;
   market_timezone: string;
   market_open_hhmm: string;
@@ -245,6 +249,8 @@ export default function DashboardCopilot() {
                 </div>
                 <div className="rounded border border-slate-800 px-2 py-1">Daily risk: {(state.daily_loss_limit_pct * 100).toFixed(1)}%</div>
                 <div className="rounded border border-slate-800 px-2 py-1">Max DD: {(state.max_drawdown_limit_pct * 100).toFixed(1)}%</div>
+                <div className="rounded border border-slate-800 px-2 py-1">Options sprint: {state.options_sprint_active ? "ARMED" : "OFF"}</div>
+                <div className="rounded border border-slate-800 px-2 py-1">Options live: {state.options_sprint_live_ready ? "READY" : "BLOCKED"}</div>
                 <div className="col-span-2 rounded border border-slate-800 px-2 py-1">
                   Live-hours policy: {state.live_only_during_market_hours ? `ON (${state.market_open_hhmm}-${state.market_close_hhmm} ${state.market_timezone})` : "OFF"}
                 </div>
@@ -257,6 +263,10 @@ export default function DashboardCopilot() {
                 "Set daily risk to 2% and max drawdown to 10%",
                 "Only run live during market hours",
                 "I need an additional $5000 in 30 days",
+                "I need to cover a large expense this month",
+                "Activate options sprint",
+                "Preview iron condor on SPY",
+                "Execute covered call on AAPL",
                 "$250 weekly for 12 weeks",
               ].map((prompt) => (
                 <button

@@ -216,6 +216,59 @@ def get_broker_connections(user: User = CurrentUser) -> BrokerConnectionsRespons
             )
             continue
 
+        if provider == "tradier":
+            tradier_keys_present = bool(settings.tradier_effective_api_key and settings.tradier_effective_account_number)
+            tradier_live_enabled = bool(settings.tradier_live_trading_enabled)
+            brokers.append(
+                BrokerConnectionEntryResponse(
+                    provider=provider,
+                    label="Tradier",
+                    connected=False,
+                    configured=tradier_keys_present,
+                    connectable=False,
+                    disconnect_supported=False,
+                    auth_type="api_key",
+                    permissions=(
+                        "Platform API Key Configured"
+                        if tradier_keys_present
+                        else "API Key Not Configured"
+                    ),
+                    mode=(
+                        "Sandbox Trading"
+                        if settings.tradier_sandbox and tradier_live_enabled
+                        else "Live Trading"
+                        if tradier_live_enabled
+                        else "Configured but Disabled"
+                    ),
+                    status_label=(
+                        "Platform Configured"
+                        if tradier_keys_present and tradier_live_enabled
+                        else "Configured (Disabled by Env)"
+                        if tradier_keys_present
+                        else "Not Configured"
+                    ),
+                    connect_path=None,
+                    disconnect_path=None,
+                    updated_at=connection.updated_at if connection else None,
+                    last_error=connection.last_error if connection else None,
+                    notes=(
+                        "Tradier is configured at the platform level via backend API key mode for equities/options routing."
+                        if tradier_keys_present and tradier_live_enabled
+                        else "Tradier keys are configured, but TRADIER_LIVE_TRADING_ENABLED is false."
+                        if tradier_keys_present
+                        else "Add TRADIER_SANDBOX_API_KEY/TRADIER_SANDBOX_ACCOUNT_NUMBER and TRADIER_LIVE_API_KEY/TRADIER_LIVE_ACCOUNT_NUMBER in backend environment variables."
+                    ),
+                    capabilities={
+                        "supports_equities": bool(capability.get("supports_equities")),
+                        "supports_crypto": bool(capability.get("supports_crypto")),
+                        "supports_options": bool(capability.get("supports_options")),
+                        "supports_fractional": bool(capability.get("supports_fractional")),
+                        "supports_leverage": bool(capability.get("supports_leverage")),
+                    },
+                )
+            )
+            continue
+
         if capability.get("planned"):
             brokers.append(
                 BrokerConnectionEntryResponse(

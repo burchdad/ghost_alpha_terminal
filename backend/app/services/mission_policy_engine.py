@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from app.services.options_sprint_service import options_sprint_service
+
 
 MissionStyle = Literal["capital_preservation", "balanced_growth", "sprint", "recovery"]
 
@@ -193,6 +195,7 @@ class MissionPolicyEngine:
             "drawdown_pct": round(drawdown_pct, 4),
             "tuning": tuning,
             "capital_buckets": buckets,
+            "options_sprint": options_sprint_service.status(),
             "system_mode": system_mode or {},
         }
 

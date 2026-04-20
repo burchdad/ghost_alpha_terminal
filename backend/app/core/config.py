@@ -140,6 +140,21 @@ class Settings(BaseSettings):
     coinbase_ws_url: str = "wss://advanced-trade-ws.coinbase.com"
 
     # ---------------------------------------------------------------------------
+    # Tradier API credentials (platform key mode)
+    # ---------------------------------------------------------------------------
+    tradier_sandbox_api_key: str = ""
+    tradier_sandbox_account_number: str = ""
+    tradier_live_api_key: str = ""
+    tradier_live_account_number: str = ""
+
+    # Legacy single-credential vars (kept for backward compatibility)
+    tradier_api_key: str = ""
+    tradier_account_number: str = ""
+    tradier_sandbox: bool = True
+    tradier_live_trading_enabled: bool = True
+    tradier_base_url: str = ""
+
+    # ---------------------------------------------------------------------------
     # High-risk sprint mode — opt-in low-priced equity universe for paper sprints
     # ---------------------------------------------------------------------------
     high_risk_sprint_mode_enabled: bool = False
@@ -160,6 +175,18 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def tradier_effective_api_key(self) -> str:
+        if self.tradier_sandbox:
+            return self.tradier_sandbox_api_key or self.tradier_api_key
+        return self.tradier_live_api_key or self.tradier_api_key
+
+    @property
+    def tradier_effective_account_number(self) -> str:
+        if self.tradier_sandbox:
+            return self.tradier_sandbox_account_number or self.tradier_account_number
+        return self.tradier_live_account_number or self.tradier_account_number
 
     @property
     def cors_origins(self) -> list[str]:

@@ -23,6 +23,7 @@ from app.api.routes.swarm import router as swarm_router
 from app.api.routes.trade import router as trade_router
 from app.api.routes.metrics import router as metrics_router
 from app.api.routes.telemetry import router as telemetry_router
+from app.api.routes.tradier import router as tradier_router
 from app.core.config import settings
 from app.db.init_db import initialize_database
 from app.services.news.coinbase_ws_service import coinbase_ws_service
@@ -63,6 +64,7 @@ app.include_router(portfolio_router)
 app.include_router(control_router)
 app.include_router(copilot_agent_router)
 app.include_router(alpaca_router)
+app.include_router(tradier_router)
 app.include_router(agents_router)
 app.include_router(orchestrator_router)
 app.include_router(metrics_router)

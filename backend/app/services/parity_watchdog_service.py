@@ -23,6 +23,9 @@ class ParityWatchdogService:
         if mode == "LIVE_TRADING" and (not settings.coinbase_api_key_name or not settings.coinbase_api_private_key):
             issues.append("LIVE_TRADING enabled but Coinbase credentials are missing.")
 
+        if mode == "LIVE_TRADING" and (not settings.tradier_effective_api_key or not settings.tradier_effective_account_number):
+            issues.append("LIVE_TRADING enabled but Tradier credentials are missing for equity routing.")
+
         allowlist = [item.strip().upper() for item in settings.coinbase_trade_products.split(",") if item.strip()]
         if not allowlist:
             issues.append("Coinbase allowlist is empty.")
@@ -44,8 +47,14 @@ class ParityWatchdogService:
             item.get("broker") == "coinbase" and bool(item.get("connected"))
             for item in broker_accounts
         )
+        tradier_connected = any(
+            item.get("broker") == "tradier" and bool(item.get("connected"))
+            for item in broker_accounts
+        )
         if mode == "LIVE_TRADING" and not coinbase_connected:
-            issues.append("LIVE_TRADING expects Coinbase route, but Coinbase account is not connected.")
+            issues.append("LIVE_TRADING expects Coinbase route for crypto, but Coinbase account is not connected.")
+        if mode == "LIVE_TRADING" and not tradier_connected:
+            issues.append("LIVE_TRADING expects Tradier route for equities, but Tradier account is not connected.")
 
         if len(issues) >= 3:
             level = "RED"

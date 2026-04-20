@@ -13,6 +13,8 @@ from app.models.schemas import (
     GoalMissionRequest,
     GoalMissionResponse,
     GoalStatusResponse,
+    OptionsSprintStatusResponse,
+    OptionsSprintUpdateRequest,
     GoalTargetRequest,
     KillSwitchUpdateRequest,
     KillSwitchUpdateResponse,
@@ -29,6 +31,7 @@ from app.services.live_portfolio_service import live_portfolio_service
 from app.services.mission_intelligence_service import mission_intelligence_service
 from app.services.live_experiment_promotion_service import live_experiment_promotion_service
 from app.services.meta_risk_governor import meta_risk_governor
+from app.services.options_sprint_service import options_sprint_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.strategy_kill_switch_service import strategy_kill_switch_service
 from app.services.strategy_lifecycle_transition_store import strategy_lifecycle_transition_store
@@ -135,6 +138,7 @@ def get_control_status(user: User = CurrentUser) -> ControlStatusResponse:
             autonomous_cycles_run=int(auto.get("cycles_run", 0)),
             autonomous_last_run_at=_coerce_timestamp(auto.get("last_run_at")),
             autonomous_last_error=auto.get("last_error"),
+            options_sprint=OptionsSprintStatusResponse(**options_sprint_service.status()),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("control_status_failed: %s", exc)
@@ -156,6 +160,7 @@ def get_control_status(user: User = CurrentUser) -> ControlStatusResponse:
             autonomous_cycles_run=0,
             autonomous_last_run_at=None,
             autonomous_last_error="Control status temporarily unavailable; using fallback.",
+            options_sprint=OptionsSprintStatusResponse(**options_sprint_service.status()),
         )
 
 
@@ -222,6 +227,30 @@ def set_goal(payload: GoalTargetRequest, user: User = HighTrustUser) -> GoalStat
 def clear_goal(user: User = HighTrustUser) -> GoalStatusResponse:
     goal_engine.clear()
     return GoalStatusResponse(**goal_engine.status(current_capital=_current_capital()))
+
+
+@router.get("/options-sprint", response_model=OptionsSprintStatusResponse)
+def get_options_sprint_status(user: User = CurrentUser) -> OptionsSprintStatusResponse:
+    return OptionsSprintStatusResponse(**options_sprint_service.status())
+
+
+@router.post("/options-sprint", response_model=OptionsSprintStatusResponse)
+def set_options_sprint(payload: OptionsSprintUpdateRequest, user: User = HighTrustUser) -> OptionsSprintStatusResponse:
+    status = options_sprint_service.configure(
+        enabled=payload.enabled,
+        target_amount=payload.target_amount,
+        timeframe_days=payload.timeframe_days,
+        objective_summary=payload.objective_summary,
+        activation_source=payload.activation_source,
+        acknowledged_high_risk=payload.acknowledged_high_risk,
+        allow_live_execution=payload.allow_live_execution,
+    )
+    return OptionsSprintStatusResponse(**status)
+
+
+@router.delete("/options-sprint", response_model=OptionsSprintStatusResponse)
+def clear_options_sprint(user: User = HighTrustUser) -> OptionsSprintStatusResponse:
+    return OptionsSprintStatusResponse(**options_sprint_service.clear())
 
 
 @router.post("/mission", response_model=GoalMissionResponse)

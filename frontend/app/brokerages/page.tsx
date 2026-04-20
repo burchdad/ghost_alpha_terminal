@@ -134,7 +134,7 @@ export default function BrokeragesPage() {
             const configured = Boolean(card.status.configured);
             const planned = Boolean(card.status.planned);
             const busy = connecting === card.key;
-            const canConnect = card.key === "alpaca";
+            const oauthConnectable = card.key === "alpaca";
 
             const statusText = connected
               ? "Connected"
@@ -160,11 +160,11 @@ export default function BrokeragesPage() {
                 >
                   {statusText}
                 </p>
-                {!planned && (
+                {!planned && oauthConnectable && (
                   <div className="mt-4 flex gap-2">
                     <button
                       type="button"
-                      disabled={!canConnect || busy}
+                      disabled={busy}
                       onClick={() => handleConnect(card.key)}
                       className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
                     >

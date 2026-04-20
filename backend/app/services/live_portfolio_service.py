@@ -111,6 +111,10 @@ class LivePortfolioService:
         if coinbase is not None:
             rows.append(coinbase)
 
+        tradier = self._tradier_snapshot()
+        if tradier is not None:
+            rows.append(tradier)
+
         return rows
 
     def _alpaca_snapshot_for_mode(self, *, paper: bool) -> dict:
@@ -214,6 +218,62 @@ class LivePortfolioService:
                 "broker": "coinbase",
                 "account_label": "Coinbase Live",
                 "account_mode": "live",
+                "connected": False,
+                "account_balance": None,
+                "buying_power": None,
+                "currency": "USD",
+                "last_error": str(exc),
+            }
+
+    def _tradier_snapshot(self) -> dict | None:
+        base_url = settings.tradier_base_url.rstrip("/") if settings.tradier_base_url else (
+            "https://sandbox.tradier.com/v1" if settings.tradier_sandbox else "https://api.tradier.com/v1"
+        )
+        mode = "sandbox" if settings.tradier_sandbox else "live"
+
+        if not settings.tradier_effective_api_key or not settings.tradier_effective_account_number:
+            return {
+                "broker": "tradier",
+                "account_label": f"Tradier {mode.title()}",
+                "account_mode": mode,
+                "connected": False,
+                "account_balance": None,
+                "buying_power": None,
+                "currency": "USD",
+                "last_error": "Missing active Tradier key/account for current TRADIER_SANDBOX mode",
+            }
+
+        headers = {
+            "Authorization": f"Bearer {settings.tradier_effective_api_key}",
+            "Accept": "application/json",
+        }
+        endpoint = f"{base_url}/accounts/{settings.tradier_effective_account_number}/balances"
+        try:
+            with httpx.Client(timeout=8) as client:
+                resp = client.get(endpoint, headers=headers)
+            resp.raise_for_status()
+            payload = resp.json() if resp.content else {}
+            balances = payload.get("balances", {}) if isinstance(payload, dict) else {}
+            margin_block = balances.get("margin") if isinstance(balances, dict) else {}
+            if not isinstance(margin_block, dict):
+                margin_block = {}
+            total_equity = float(balances.get("total_equity") or balances.get("cash") or 0.0)
+            buying_power = float(margin_block.get("stock_buying_power") or balances.get("cash_available") or 0.0)
+            return {
+                "broker": "tradier",
+                "account_label": f"Tradier {mode.title()}",
+                "account_mode": mode,
+                "connected": True,
+                "account_balance": total_equity,
+                "buying_power": buying_power,
+                "currency": "USD",
+                "last_error": None,
+            }
+        except Exception as exc:
+            return {
+                "broker": "tradier",
+                "account_label": f"Tradier {mode.title()}",
+                "account_mode": mode,
                 "connected": False,
                 "account_balance": None,
                 "buying_power": None,

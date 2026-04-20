@@ -13,6 +13,7 @@ from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.core.config import settings
 from app.db.models import CopilotConversationMessage, CopilotTelemetryEvent, User
 from app.db.session import get_session
+from app.models.schemas import OptionsExecutionRequest
 from app.services.autonomous_runner import autonomous_runner
 from app.services.control_engine import control_engine
 from app.services.copilot_llm_service import copilot_llm_service
@@ -21,6 +22,8 @@ from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.master_orchestrator import master_orchestrator
 from app.services.mission_intelligence_service import mission_intelligence_service
+from app.services.options_execution_service import options_execution_service
+from app.services.options_sprint_service import options_sprint_service
 from app.services.portfolio_manager import portfolio_manager
 from app.services.swarm.execution_bridge import execution_bridge
 
@@ -98,6 +101,7 @@ def _state_snapshot() -> dict:
     capital = _current_capital()
     goal = goal_engine.status(current_capital=capital)
     policy = execution_policy_service.status()
+    options_sprint = options_sprint_service.status()
 
     return {
         "execution_mode": mode,
@@ -115,6 +119,10 @@ def _state_snapshot() -> dict:
         "goal_timeframe_days": goal.get("timeframe_days"),
         "goal_pressure_multiplier": goal.get("goal_pressure_multiplier"),
         "goal_success_probability": goal.get("success_probability"),
+        "options_sprint_active": bool(options_sprint.get("enabled", False)),
+        "options_sprint_live_ready": bool(options_sprint.get("live_execution_ready", False)),
+        "options_sprint_target_amount": options_sprint.get("target_amount"),
+        "options_sprint_timeframe_days": options_sprint.get("timeframe_days"),
         "live_only_during_market_hours": bool(policy.get("live_only_during_market_hours", False)),
         "market_timezone": str(policy.get("market_timezone") or "America/New_York"),
         "market_open_hhmm": str(policy.get("market_open_hhmm") or "09:30"),
@@ -262,6 +270,55 @@ def _extract_market_window(text: str) -> tuple[str | None, str | None]:
     return m.group(1), m.group(2)
 
 
+def _extract_symbol(text: str) -> str | None:
+    on_match = re.search(r"\bon\s+([A-Za-z]{1,6})\b", text)
+    if on_match:
+        token = on_match.group(1).upper()
+        if token not in {"THE", "THIS", "THAT", "MONTH", "WEEK", "DAYS", "LIVE", "MODE"}:
+            return token
+
+    symbol_match = re.search(r"\b([A-Z]{1,6})\b", text)
+    if symbol_match:
+        token = symbol_match.group(1).upper()
+        if token not in {"I", "A", "AN", "THE", "LIVE", "PAPER", "SIM"}:
+            return token
+    return None
+
+
+def _extract_options_strategy(text: str) -> str | None:
+    mapping: list[tuple[str, str]] = [
+        ("vertical call", "VERTICAL_CALL"),
+        ("vertical put", "VERTICAL_PUT"),
+        ("calendar call", "CALENDAR_CALL"),
+        ("calendar put", "CALENDAR_PUT"),
+        ("diagonal call", "DIAGONAL_CALL"),
+        ("diagonal put", "DIAGONAL_PUT"),
+        ("ratio call", "RATIO_CALL"),
+        ("ratio put", "RATIO_PUT"),
+        ("butterfly call", "BUTTERFLY_CALL"),
+        ("butterfly put", "BUTTERFLY_PUT"),
+        ("iron condor", "IRON_CONDOR"),
+        ("condor call", "CONDOR_CALL"),
+        ("condor put", "CONDOR_PUT"),
+        ("straddle", "STRADDLE"),
+        ("strangle", "STRANGLE"),
+        ("covered call", "COVERED_CALL"),
+        ("covered put", "COVERED_PUT"),
+        ("protective call", "PROTECTIVE_CALL"),
+        ("protective put", "PROTECTIVE_PUT"),
+        ("long call", "LONG_CALL"),
+        ("long put", "LONG_PUT"),
+    ]
+    lowered = text.lower()
+    for key, strategy in mapping:
+        if key in lowered:
+            return strategy
+
+    if "vertical" in lowered:
+        return "VERTICAL_CALL" if any(token in lowered for token in ["bull", "up", "call"]) else "VERTICAL_PUT"
+    return None
+
+
 def _build_simulation_summary(sim: dict) -> str:
     required_daily = float(sim.get("required_daily_return", 0.0) or 0.0) * 100.0
     pressure = float(sim.get("implied_goal_pressure", 1.0) or 1.0)
@@ -275,6 +332,53 @@ def _build_simulation_summary(sim: dict) -> str:
 
 def _rule_parse_action(message: str, state: dict) -> ParsedAction | None:
     text = message.lower()
+
+    strategy = _extract_options_strategy(message)
+    if strategy:
+        execute_requested = any(token in text for token in ["execute", "place", "submit", "send order", "trade now", "go live"])
+        bias = "NEUTRAL"
+        if any(token in text for token in ["bull", "up", "long"]):
+            bias = "BULLISH"
+        elif any(token in text for token in ["bear", "down", "short"]):
+            bias = "BEARISH"
+
+        symbol = _extract_symbol(message) or "SPY"
+        qty_match = re.search(r"\b(\d+)\s*(?:contract|contracts|lot|lots)?\b", text)
+        qty = int(qty_match.group(1)) if qty_match else 1
+
+        return ParsedAction(
+            action="run_option_strategy",
+            params={
+                "symbol": symbol,
+                "strategy": strategy,
+                "bias": bias,
+                "quantity": max(1, min(qty, 20)),
+                "preview": not execute_requested,
+            },
+            requires_confirmation=execute_requested,
+        )
+
+    if ("options sprint" in text or "high risk options" in text) and any(token in text for token in ["off", "disable", "stop"]):
+        return ParsedAction(action="set_options_sprint", params={"enabled": False}, requires_confirmation=False)
+
+    if (
+        "options sprint" in text
+        or "high risk options" in text
+        or "high-volume options" in text
+        or "high volume options" in text
+        or (("expense" in text or "bill" in text or "cover" in text) and any(token in text for token in ["month", "30 days", "this month"]))
+    ):
+        amount, days = _extract_target_and_days(text)
+        params: dict = {
+            "enabled": True,
+            "target_amount": amount,
+            "timeframe_days": days or 30,
+            "objective_summary": message[:500],
+            "activation_source": "copilot",
+            "acknowledged_high_risk": True,
+            "allow_live_execution": any(token in text for token in ["live", "real money", "execute live"]),
+        }
+        return ParsedAction(action="set_options_sprint", params=params, requires_confirmation=True)
 
     if "run once" in text or "run now" in text:
         return ParsedAction(action="run_autonomous_once", params={}, requires_confirmation=False)
@@ -371,6 +475,12 @@ def _apply_confirmation_contract(parsed: ParsedAction, state_before: dict) -> Pa
     if parsed.action == "set_goal":
         parsed.requires_confirmation = True
 
+    if parsed.action == "set_options_sprint":
+        parsed.requires_confirmation = True if bool(parsed.params.get("enabled", False)) else False
+
+    if parsed.action == "run_option_strategy":
+        parsed.requires_confirmation = not bool(parsed.params.get("preview", True))
+
     if parsed.action == "simulate_mission":
         parsed.requires_confirmation = False
 
@@ -415,6 +525,43 @@ def _parse_action(message: str, state: dict, *, mode_assigned: str, user_id: str
 
 def _apply_action(parsed: ParsedAction) -> list[str]:
     actions: list[str] = []
+
+    if parsed.action == "run_option_strategy":
+        try:
+            strategy = str(parsed.params.get("strategy", "LONG_CALL"))
+            symbol = str(parsed.params.get("symbol", "SPY")).upper()
+            bias = str(parsed.params.get("bias", "NEUTRAL"))
+            preview = bool(parsed.params.get("preview", True))
+            quantity = int(parsed.params.get("quantity", 1))
+
+            result = options_execution_service.preview_or_execute(
+                OptionsExecutionRequest(
+                    symbol=symbol,
+                    strategy=strategy,  # type: ignore[arg-type]
+                    bias=bias,  # type: ignore[arg-type]
+                    quantity=max(1, min(quantity, 100)),
+                    preview=preview,
+                    account_balance=max(_current_capital(), 1000.0),
+                    confidence=0.66,
+                )
+            )
+            verb = "Previewed" if preview else "Executed"
+            actions.append(f"{verb} {strategy} on {symbol}: {'approved' if result.approved else 'blocked'}")
+            if result.risk is not None:
+                actions.append(
+                    f"Risk: {result.risk.risk_level} | max loss ${result.risk.max_loss_amount:,.2f} | spread {result.risk.spread_pct * 100:.1f}%"
+                )
+            if result.estimated_net_debit is not None:
+                actions.append(f"Estimated net debit: ${result.estimated_net_debit:,.2f}")
+            if result.estimated_net_credit is not None:
+                actions.append(f"Estimated net credit: ${result.estimated_net_credit:,.2f}")
+            actions.append(f"Legs planned: {len(result.legs)} | order class: {result.order_class or 'option'}")
+            if result.reason:
+                actions.append(result.reason)
+            return actions
+        except Exception as exc:  # noqa: BLE001
+            actions.append(f"Options strategy request failed: {exc}")
+            return actions
 
     if parsed.action == "set_autonomous":
         enabled = bool(parsed.params.get("enabled", False))
@@ -464,6 +611,36 @@ def _apply_action(parsed: ParsedAction) -> list[str]:
         )
         if parsed.params.get("plan_note"):
             actions.append(str(parsed.params.get("plan_note")))
+        return actions
+
+    if parsed.action == "set_options_sprint":
+        enabled = bool(parsed.params.get("enabled", False))
+        status = options_sprint_service.configure(
+            enabled=enabled,
+            target_amount=float(parsed.params["target_amount"]) if parsed.params.get("target_amount") is not None else None,
+            timeframe_days=int(parsed.params["timeframe_days"]) if parsed.params.get("timeframe_days") is not None else None,
+            objective_summary=str(parsed.params.get("objective_summary") or "") or None,
+            activation_source=str(parsed.params.get("activation_source") or "copilot"),
+            acknowledged_high_risk=bool(parsed.params.get("acknowledged_high_risk", False)),
+            allow_live_execution=bool(parsed.params.get("allow_live_execution", False)),
+        )
+        if enabled and status.get("target_amount") is not None and status.get("timeframe_days") is not None:
+            capital = _current_capital()
+            goal_engine.configure(
+                start_capital=capital,
+                target_capital=round(capital + float(status["target_amount"]), 2),
+                timeframe_days=int(status["timeframe_days"]),
+            )
+            actions.append(
+                f"Goal aligned to add ${float(status['target_amount']):,.2f} in {int(status['timeframe_days'])} days"
+            )
+        if enabled:
+            actions.append("Options sprint profile activated")
+            if not bool(status.get("live_execution_ready", False)):
+                blockers = status.get("live_execution_blockers") or []
+                actions.append("Live options execution is not ready: " + (str(blockers[0]) if blockers else "execution blockers remain"))
+        else:
+            actions.append("Options sprint profile disabled")
         return actions
 
     if parsed.action == "set_risk_limits":
@@ -549,7 +726,10 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
             "running mission simulations like 'simulate additional $5,000 in 30 days', "
             "setting goals like 'need an additional $5,000 in 30 days', contribution plans like "
             "'$300 weekly for 12 weeks', risk limits like 'set daily risk to 2% and max drawdown to 10%', "
-            "and policy controls like 'only run live during market hours'."
+            "policy controls like 'only run live during market hours', options strategy previews like "
+            "'preview iron condor on AAPL' or execution requests like 'execute covered call on SPY', "
+            "and arming the high-risk options sprint profile "
+            "for short-term expense-driven objectives."
         )
         _log_message(str(user.id), "assistant", reply)
         _log_telemetry(
@@ -576,6 +756,11 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
     if parsed.requires_confirmation and not payload.confirm:
         if parsed.action == "set_execution_mode" and parsed.params.get("mode") == "LIVE_TRADING":
             prompt = "This will switch to LIVE_TRADING. Confirm you want real-money execution mode."
+        elif parsed.action == "run_option_strategy" and not bool(parsed.params.get("preview", True)):
+            prompt = (
+                "This will submit a live options strategy order through Tradier using your current settings. "
+                "Confirm execution."
+            )
         elif parsed.action == "set_autonomous" and parsed.params.get("enabled"):
             prompt = "This enables autonomous execution and scan auto mode. Confirm to proceed."
         elif parsed.action == "set_goal":
@@ -583,6 +768,14 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
                 "This updates your goal to "
                 f"${float(parsed.params['target_capital']):,.2f} in {int(parsed.params['timeframe_days'])} days. "
                 "Confirm this target."
+            )
+        elif parsed.action == "set_options_sprint" and parsed.params.get("enabled"):
+            amount = parsed.params.get("target_amount")
+            days = parsed.params.get("timeframe_days")
+            prompt = (
+                "This arms the high-risk options sprint profile"
+                + (f" for ${float(amount):,.2f} over {int(days)} days" if amount is not None and days is not None else "")
+                + ". It is explicitly high risk and live options execution is still subject to readiness blockers. Confirm activation."
             )
         elif parsed.action == "set_execution_policy" and parsed.params.get("live_only_during_market_hours"):
             prompt = "This restricts LIVE_TRADING orders to configured market hours. Confirm policy update."

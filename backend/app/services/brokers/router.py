@@ -4,21 +4,11 @@ from app.core.config import settings
 from app.services.brokers.alpaca_adapter import alpaca_broker_adapter
 from app.services.brokers.base import BrokerAdapter, BrokerOrderRequest, BrokerOrderResult
 from app.services.brokers.coinbase_adapter import coinbase_broker_adapter
+from app.services.brokers.tradier_adapter import tradier_broker_adapter
 
 # Planned broker integrations — OAuth applications in-flight or not yet submitted.
 # These are surfaced in the UI as "Integration Planned" to track pipeline status.
 PLANNED_BROKERS: dict[str, dict] = {
-    "tradier": {
-        "label": "Tradier",
-        "supports_equities": True,
-        "supports_crypto": False,
-        "supports_options": True,
-        "supports_fractional": False,
-        "supports_leverage": False,
-        "planned": True,
-        "oauth_url": "https://developer.tradier.com",
-        "notes": "Equities and options broker with a public OAuth API. Apply for developer access at developer.tradier.com.",
-    },
     "schwab": {
         "label": "Charles Schwab",
         "supports_equities": True,
@@ -71,6 +61,7 @@ class BrokerRouter:
         self._adapters: dict[str, BrokerAdapter] = {
             "alpaca": alpaca_broker_adapter,
             "coinbase": coinbase_broker_adapter,
+            "tradier": tradier_broker_adapter,
         }
 
     def capabilities_map(self) -> dict[str, dict]:
@@ -106,6 +97,15 @@ class BrokerRouter:
             if normalized in allowlist:
                 return "coinbase"
             return "alpaca"
+
+        if (
+            mode == "LIVE_TRADING"
+            and settings.tradier_live_trading_enabled
+            and settings.tradier_effective_api_key
+            and settings.tradier_effective_account_number
+        ):
+            return "tradier"
+
         return "alpaca"
 
     def submit(self, *, request: BrokerOrderRequest, liquidity_score: float = 1.0) -> BrokerOrderResult:

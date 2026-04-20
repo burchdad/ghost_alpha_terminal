@@ -543,6 +543,21 @@ class OpportunityScanner:
 
             return broker, True, None
 
+        if broker == "tradier":
+            if asset_class != "equity":
+                return broker, False, "Tradier route currently supports equities in this engine."
+
+            if not settings.tradier_effective_api_key or not settings.tradier_effective_account_number:
+                return broker, False, "Tradier credentials are missing."
+
+            if not settings.tradier_live_trading_enabled:
+                return broker, False, "Tradier live trading is disabled."
+
+            if mode != "LIVE_TRADING":
+                return broker, False, "Tradier execution requires LIVE_TRADING mode."
+
+            return broker, True, None
+
         # Alpaca route
         if not settings.alpaca_api_key or not settings.alpaca_secret_key:
             return broker, False, "Alpaca credentials are missing."

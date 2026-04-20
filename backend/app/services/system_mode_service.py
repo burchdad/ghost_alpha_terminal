@@ -1533,11 +1533,16 @@ class SystemModeService:
             preventive_shift_applied = False
             preventive_base_mode = effective_mode
             scenario_prediction_confidence = float(scenario_simulation.get("prediction_confidence", 0.5) or 0.5)
+            early_warning_active = bool(predictive.get("early_warning", False))
+            scenario_shift_favored = str(scenario_simulation.get("recommended_action", "STAY_CURRENT")) == "SHIFT_DEFENSIVE"
+            predictive_shift_weight = float(predictive.get("preventive_shift_weight", 0.0) or 0.0)
+            allow_balanced_fallback_shift = effective_mode == "BALANCED" and predictive_shift_weight >= 0.22
+
             if (
-                bool(predictive.get("early_warning", False))
+                early_warning_active
                 and effective_mode in {"AGGRESSIVE_GROWTH", "BALANCED"}
                 and not assurance_forced_survival
-                and str(scenario_simulation.get("recommended_action", "STAY_CURRENT")) == "SHIFT_DEFENSIVE"
+                and (scenario_shift_favored or allow_balanced_fallback_shift)
             ):
                 preventive_shift_applied = True
                 effective_mode = "DEFENSIVE"
@@ -1546,7 +1551,7 @@ class SystemModeService:
                     from_mode=preventive_base_mode,
                     to_mode="DEFENSIVE",
                     to_weight=self._clamp(
-                        float(predictive.get("preventive_shift_weight", 0.45) or 0.45)
+                        predictive_shift_weight or 0.45
                         * scenario_prediction_confidence,
                         minimum=0.12,
                         maximum=0.92,
