@@ -429,7 +429,7 @@ class OptionsExecutionService:
             "type": payload.order_type,
             "duration": payload.duration,
             "quantity": str(payload.quantity),
-            "tag": payload.tag or f"{payload.underlying.upper()}-{payload.strategy.lower()}",
+            "tag": payload.tag or f"{payload.underlying.upper()}-{payload.strategy.lower().replace('_', '-')}",
         }
         if payload.price is not None:
             body["price"] = str(payload.price)
