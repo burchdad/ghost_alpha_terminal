@@ -319,6 +319,23 @@ class OptionsSprintState(Base):
     )
 
 
+class DiscordInboundEvent(Base):
+    __tablename__ = "discord_inbound_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    application_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    guild_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    channel_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    author_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_symbols: Mapped[str] = mapped_column(Text, default="[]")
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
 class LandingTelemetryEvent(Base):
     __tablename__ = "landing_telemetry_events"
 

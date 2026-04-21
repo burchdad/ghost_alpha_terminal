@@ -11,6 +11,7 @@ from typing import Literal
 
 from app.db.models import SystemModeState
 from app.db.session import get_session
+from app.services.discord_notifier import discord_notifier
 from app.services.global_signal_intelligence import global_signal_intelligence
 
 
@@ -343,6 +344,17 @@ class SystemModeService:
             self._confirmed_mode,
             self._pending_mode,
             self._last_write_retry_count,
+        )
+        discord_notifier.send_message(
+            title="Meta Risk Alert",
+            message="System mode persistence failed and recovery hooks were triggered.",
+            severity="critical",
+            context={
+                "reason": reason,
+                "confirmed_mode": self._confirmed_mode,
+                "pending_mode": self._pending_mode,
+                "retry_count": self._last_write_retry_count,
+            },
         )
 
     def _attempt_recovery_hooks(self, *, previous_updated_at: datetime | None) -> None:

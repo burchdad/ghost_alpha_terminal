@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func
 
+from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.db.session import get_session
 from app.db.models import (
     AuthAuditLog,
@@ -16,6 +17,7 @@ from app.db.models import (
     UserSession,
 )
 from app.core.config import settings
+from app.services.discord_notifier import discord_notifier
 
 router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
@@ -31,6 +33,11 @@ class CTAClickEvent(BaseModel):
     cta_label: str
     event_type: str
     timestamp: str
+
+
+class DiscordTestRequest(BaseModel):
+    message: str = "Discord integration test from Ghost Alpha Terminal"
+    severity: str = "info"
 
 
 @router.post("/landing-variant")
@@ -137,6 +144,30 @@ async def get_landing_summary():
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),
         )
+
+
+@router.get("/discord/status", summary="Discord webhook integration status")
+async def discord_status(user: User = CurrentUser) -> dict:
+    _ = user
+    return discord_notifier.status()
+
+
+@router.post("/discord/test", summary="Send a test Discord alert")
+async def discord_test(payload: DiscordTestRequest, user: User = HighTrustUser) -> dict:
+    delivered = discord_notifier.send_message(
+        title="Ghost Alpha Discord Test",
+        message=payload.message,
+        severity=payload.severity,
+        context={
+            "triggered_by": str(user.email),
+            "environment": str(settings.app_env),
+        },
+    )
+    return {
+        "ok": True,
+        "delivered": delivered,
+        "status": discord_notifier.status(),
+    }
 
 
 @router.get("/ops-summary", summary="Launch operations summary (funnel + reliability)")

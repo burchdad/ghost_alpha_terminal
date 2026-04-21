@@ -142,6 +142,17 @@ class Settings(BaseSettings):
     # Legacy Twilio Messages API (fallback if Verify SID not set)
     twilio_phone_number: str = ""
 
+    # Discord webhook alerts
+    discord_alerts_enabled: bool = False
+    discord_webhook_url: str = ""
+    discord_username: str = "Ghost Alpha Ops"
+    discord_timeout_seconds: float = 5.0
+
+    # Discord inbound event webhooks (Developer Portal -> Webhooks -> Endpoint URL)
+    discord_inbound_enabled: bool = False
+    discord_public_key: str = ""
+    discord_inbound_max_body_kb: int = 64
+
     # SendGrid (preferred when API key is set)
     sendgrid_api_key: str = ""
     sendgrid_from: str = ""
@@ -309,6 +320,9 @@ class Settings(BaseSettings):
 
             if self.effective_copilot_llm_rollout_pct < 0 or self.effective_copilot_llm_rollout_pct > 100:
                 errors.append("Copilot LLM rollout percentage must be between 0 and 100")
+
+            if self.discord_inbound_enabled and not self.discord_public_key:
+                errors.append("DISCORD_PUBLIC_KEY must be set when DISCORD_INBOUND_ENABLED is true")
         
         if errors:
             raise ValueError(
