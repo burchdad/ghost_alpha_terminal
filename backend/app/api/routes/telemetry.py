@@ -274,6 +274,8 @@ async def get_ops_summary() -> dict:
 
             return {
                 "generated_at": now.isoformat(),
+                "source": "live_db",
+                "window_label": "rolling_24h",
                 "window": {
                     "last_24h_start": day_ago.isoformat(),
                     "last_7d_start": week_ago.isoformat(),

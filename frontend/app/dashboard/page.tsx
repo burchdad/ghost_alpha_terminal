@@ -29,6 +29,8 @@ type AuthMeResponse = {
 
 type OpsSummaryResponse = {
   generated_at: string;
+  source?: string;
+  window_label?: string;
   growth: {
     users_total: number;
     users_created_7d: number;
@@ -248,7 +250,13 @@ export default function DashboardPage() {
 
         <section className="mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Ops Pulse</h2>
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Ops Pulse</h2>
+              <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-500">
+                {opsSummary?.source === "live_db" ? "Live backend telemetry" : "Telemetry"}
+                {opsSummary?.window_label ? ` · ${opsSummary.window_label.replaceAll("_", " ")}` : " · rolling 24h"}
+              </p>
+            </div>
             <span className="text-[11px] text-slate-400">
               {opsSummary ? `Updated ${new Date(opsSummary.generated_at).toLocaleTimeString()}` : "Loading..."}
             </span>
