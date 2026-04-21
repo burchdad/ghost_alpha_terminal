@@ -197,7 +197,7 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Backend (Railway): ensure all required env values are configured in Railway project variables.
 - Coinbase key-mode broker visibility uses backend vars `COINBASE_API_KEY_NAME` and `COINBASE_API_PRIVATE_KEY`.
 - Tradier key-mode broker visibility and routing use backend vars `TRADIER_SANDBOX_API_KEY`, `TRADIER_SANDBOX_ACCOUNT_NUMBER`, `TRADIER_LIVE_API_KEY`, `TRADIER_LIVE_ACCOUNT_NUMBER`, plus `TRADIER_SANDBOX` and `TRADIER_LIVE_TRADING_ENABLED`.
-- Discord alerts use backend vars `DISCORD_ALERTS_ENABLED`, `DISCORD_WEBHOOK_URL`, optional `DISCORD_USERNAME`, optional `DISCORD_TIMEOUT_SECONDS`, and optional `DISCORD_MIN_INTERVAL_SECONDS` (default 600s).
+- Discord alerts use backend vars `DISCORD_ALERTS_ENABLED`, `DISCORD_WEBHOOK_URL`, optional `DISCORD_USERNAME`, optional `DISCORD_TIMEOUT_SECONDS`, optional `DISCORD_MIN_INTERVAL_SECONDS` (default 600s), optional `DISCORD_CRITICAL_MIN_INTERVAL_SECONDS` (default 30s), and optional `DISCORD_DEDUPE_WINDOW_SECONDS` (default 120s).
 - Discord inbound event webhooks use `DISCORD_INBOUND_ENABLED=true` and `DISCORD_PUBLIC_KEY=<app public key>`, with endpoint URL: `<backend-base-url>/discord/inbound/events`.
 - CORS is controlled via backend settings in `backend/app/core/config.py`.
 

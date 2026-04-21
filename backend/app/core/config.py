@@ -148,6 +148,8 @@ class Settings(BaseSettings):
     discord_username: str = "Ghost Alpha Ops"
     discord_timeout_seconds: float = 5.0
     discord_min_interval_seconds: int = 600
+    discord_critical_min_interval_seconds: int = 30
+    discord_dedupe_window_seconds: int = 120
 
     # Discord inbound event webhooks (Developer Portal -> Webhooks -> Endpoint URL)
     discord_inbound_enabled: bool = False
