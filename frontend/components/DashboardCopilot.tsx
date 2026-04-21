@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { apiFetch } from "../lib/apiClient";
 import { ensureHighTrust } from "../lib/highTrust";
 
@@ -81,6 +82,7 @@ function shortMode(mode: CopilotState["execution_mode"]) {
 }
 
 export default function DashboardCopilot() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -88,6 +90,8 @@ export default function DashboardCopilot() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [state, setState] = useState<CopilotState | null>(null);
   const [pendingAction, setPendingAction] = useState<{ action: string; params: Record<string, unknown> } | null>(null);
+
+  const onboardingMode = pathname === "/dashboard" || pathname === "/brokerages";
 
   useEffect(() => {
     async function boot() {
@@ -126,6 +130,7 @@ export default function DashboardCopilot() {
   }, []);
 
   const badge = useMemo(() => {
+    if (onboardingMode) return "SETUP MODE";
     if (!state) return "Loading";
     const bits = [shortMode(state.execution_mode)];
     if (state.copilot_mode_assigned) {
@@ -134,10 +139,24 @@ export default function DashboardCopilot() {
     bits.push(state.autonomous_enabled ? "AUTO-EXEC ON" : "AUTO-EXEC OFF");
     bits.push(state.scan_auto_mode ? "AUTO-SCAN ON" : "AUTO-SCAN OFF");
     return bits.join(" · ");
-  }, [state]);
+  }, [onboardingMode, state]);
 
   async function sendMessage(confirm = false, overrideText?: string) {
     const text = (overrideText ?? input).trim();
+
+        if (onboardingMode && !confirm) {
+          setMessages((prev) => [
+            ...prev,
+            { id: `u-${Date.now()}`, role: "user", text },
+            {
+              id: `a-${Date.now() + 1}`,
+              role: "assistant",
+              text: "Setup mode is active on this page. I can help explain brokerage setup, but I won't run operational controls here. Open /alpha when you're ready to manage execution and risk settings.",
+            },
+          ]);
+          setInput("");
+          return;
+        }
     if (!text && !confirm) return;
 
     if (!confirm) {
@@ -282,7 +301,13 @@ export default function DashboardCopilot() {
               </div>
             )}
 
-            {state && (
+            {onboardingMode && (
+              <div className="mt-3 rounded border border-cyan-700/30 bg-cyan-900/20 px-3 py-2 text-[11px] text-cyan-100">
+                Onboarding safety mode: operational stats and execution controls are hidden on setup pages until you continue to the trading workspace.
+              </div>
+            )}
+
+            {!onboardingMode && state && (
               <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-400">
                 <div className="rounded border border-slate-800 px-2 py-1">Balance: ${state.account_balance.toLocaleString()}</div>
                 <div className="rounded border border-slate-800 px-2 py-1">Cycles: {state.autonomous_cycles_run}</div>
@@ -300,7 +325,7 @@ export default function DashboardCopilot() {
               </div>
             )}
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            {!onboardingMode && <div className="mt-3 flex flex-wrap gap-2">
               {[
                 "Enable autonomous execution",
                 "Set daily risk to 2% and max drawdown to 10%",
@@ -321,7 +346,7 @@ export default function DashboardCopilot() {
                   {prompt}
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
         )}
       </div>
