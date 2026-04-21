@@ -6,7 +6,6 @@ import AgentPanel from "../../components/AgentPanel";
 import BacktestPanel from "../../components/BacktestPanel";
 import CandlestickChart from "../../components/CandlestickChart";
 import Chart from "../../components/Chart";
-import DashboardCopilot from "../../components/DashboardCopilot";
 import ExecutionHistoryPanel from "../../components/ExecutionHistoryPanel";
 import ForecastPanel from "../../components/ForecastPanel";
 import OpportunityFeedPanel from "../../components/OpportunityFeedPanel";
@@ -446,10 +445,6 @@ export default function TerminalPage() {
           </div>
           <ExecutionHistoryPanel history={executionHistory} />
         </aside>
-      </section>
-
-      <section className="mt-6 rounded-xl border border-terminal-line bg-terminal-panel/70 p-4">
-        <DashboardCopilot />
       </section>
     </main>
   );

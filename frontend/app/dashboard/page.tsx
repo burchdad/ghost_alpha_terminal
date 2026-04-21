@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { ensureHighTrust } from "../../lib/highTrust";
 import { apiFetch } from "../../lib/apiClient";
 
-import DashboardCopilot from "../../components/DashboardCopilot";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 // Display order: active/configured brokers first, planned integrations last.
@@ -371,7 +369,6 @@ export default function DashboardPage() {
           </div>
         </div>
       ) : null}
-      <DashboardCopilot />
     </main>
   );
 }

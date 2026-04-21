@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ensureHighTrust } from "../../lib/highTrust";
 import { apiFetch } from "../../lib/apiClient";
-import DashboardCopilot from "../../components/DashboardCopilot";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 const POST_CONNECT_PROMPT_KEY = "alpaca-post-connect-prompt";
@@ -281,7 +280,6 @@ export default function BrokeragesPage() {
           </div>
         </div>
       ) : null}
-      <DashboardCopilot />
     </main>
   );
 }

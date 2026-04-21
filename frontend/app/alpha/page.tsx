@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import ControlPanel from "../../components/ControlPanel";
 import ContextPanel from "../../components/ContextPanel";
-import DashboardCopilot from "../../components/DashboardCopilot";
 import DecisionAuditPanel from "../../components/DecisionAuditPanel";
 import DecisionReplayPanel from "../../components/DecisionReplayPanel";
 import GoalPanel from "../../components/GoalPanel";
@@ -1797,8 +1796,6 @@ export default function AlphaPage() {
           </div>
         </div>
       )}
-
-      <DashboardCopilot />
     </main>
   );
 }

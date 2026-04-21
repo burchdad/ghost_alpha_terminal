@@ -1,5 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import AuthenticatedCopilotMount from "../components/AuthenticatedCopilotMount";
 
 export const metadata: Metadata = {
   title: "GHOST ALPHA TERMINAL",
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <AuthenticatedCopilotMount />
+      </body>
     </html>
   );
 }

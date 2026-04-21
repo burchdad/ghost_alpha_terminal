@@ -705,7 +705,6 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
     assistant_hint: str | None = None
     latency_ms: int | None = None
 
-    if payload.confirm and payload.pending_action:
     # ── Intent classification guardrail (skip on confirm flow) ──────────────
     if not payload.confirm:
         intent = classify_intent(payload.message, state_before)
