@@ -27,6 +27,7 @@ export type DiscordSignalStatus = {
   source_counts: Record<string, number>;
   generated_at: string;
   config: {
+    signal_guild_ids: string[];
     signal_channels: string[];
     confidence_boost: number;
     max_inject: number;
@@ -112,7 +113,11 @@ export default function DiscordSignalPanel({ status, watchlist, onPin, onUnpin, 
       </div>
 
       {/* Config summary */}
-      <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-500">
+      <div className="grid grid-cols-4 gap-2 text-[10px] text-slate-500">
+        <div>
+          <span className="block text-slate-400 font-medium">Server</span>
+          {status.config.signal_guild_ids.length === 0 ? "Any" : status.config.signal_guild_ids.length}
+        </div>
         <div>
           <span className="block text-slate-400 font-medium">Window</span>
           {status.window_hours}h

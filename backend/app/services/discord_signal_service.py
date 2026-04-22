@@ -228,10 +228,17 @@ class DiscordSignalService:
             return set()
         return {c.strip() for c in raw.split(",") if c.strip()}
 
+    def _allowed_guilds(self) -> set[str]:
+        raw = str(settings.discord_signal_guild_ids or "").strip()
+        if not raw:
+            return set()
+        return {g.strip() for g in raw.split(",") if g.strip()}
+
     def _build_snapshot(self) -> DiscordSignalSnapshot:
         now = datetime.now(tz=timezone.utc)
         window_hours = self._window_hours()
         since = now - timedelta(hours=window_hours)
+        allowed_guilds = self._allowed_guilds()
         allowed_channels = self._allowed_channels()
 
         raw_events: list[dict[str, Any]] = []
@@ -240,6 +247,10 @@ class DiscordSignalService:
                 select(DiscordInboundEvent).where(DiscordInboundEvent.created_at >= since)
             ).scalars().all()
             for row in rows:
+                # Primary filter: server/guild ID (if configured)
+                if allowed_guilds and row.guild_id not in allowed_guilds:
+                    continue
+                # Secondary filter: specific channel IDs (if configured)
                 if allowed_channels and row.channel_id not in allowed_channels:
                     continue
                 try:

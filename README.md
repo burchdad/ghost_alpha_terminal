@@ -203,7 +203,7 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Tradier key-mode broker visibility and routing use backend vars `TRADIER_SANDBOX_API_KEY`, `TRADIER_SANDBOX_ACCOUNT_NUMBER`, `TRADIER_LIVE_API_KEY`, `TRADIER_LIVE_ACCOUNT_NUMBER`, plus `TRADIER_SANDBOX` and `TRADIER_LIVE_TRADING_ENABLED`.
 - Discord alerts use backend vars `DISCORD_ALERTS_ENABLED`, `DISCORD_WEBHOOK_URL`, optional `DISCORD_USERNAME`, optional `DISCORD_TIMEOUT_SECONDS`, optional `DISCORD_MIN_INTERVAL_SECONDS` (default 600s), optional `DISCORD_CRITICAL_MIN_INTERVAL_SECONDS` (default 30s), and optional `DISCORD_DEDUPE_WINDOW_SECONDS` (default 120s).
 - Discord inbound event webhooks use `DISCORD_INBOUND_ENABLED=true` and `DISCORD_PUBLIC_KEY=<app public key>`, with endpoint URL: `<backend-base-url>/discord/inbound/events`.
-- Discord signal pipeline (scanner injection) uses `DISCORD_SIGNAL_CHANNELS=<comma-separated-channel-ids>` (empty = all), `DISCORD_SIGNAL_WINDOW_HOURS=24`, `DISCORD_SIGNAL_CONFIDENCE_BOOST=1.15`, `DISCORD_SIGNAL_MAX_INJECT=20`, optional `DISCORD_BOT_TOKEN` for future bot-mode polling.
+- Discord signal pipeline (scanner injection): set `DISCORD_SIGNAL_GUILD_IDS=<server-id>` (primary filter — restrict to your Discord server; empty = any), optional `DISCORD_SIGNAL_CHANNELS=<comma-separated-channel-ids>` (secondary filter; empty = all channels on allowed servers), `DISCORD_SIGNAL_WINDOW_HOURS=24`, `DISCORD_SIGNAL_CONFIDENCE_BOOST=1.15`, `DISCORD_SIGNAL_MAX_INJECT=20`, optional `DISCORD_BOT_TOKEN` for future bot-mode polling.
 - CORS is controlled via backend settings in `backend/app/core/config.py`.
 
 ## Service Behavior

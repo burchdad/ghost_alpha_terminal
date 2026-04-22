@@ -140,6 +140,7 @@ def get_signal_status(user: User = CurrentUser) -> dict:
         "source_counts": snapshot.source_counts,
         "generated_at": snapshot.generated_at.isoformat(),
         "config": {
+            "signal_guild_ids": [g for g in (settings.discord_signal_guild_ids or "").split(",") if g.strip()],
             "signal_channels": [c for c in (settings.discord_signal_channels or "").split(",") if c.strip()],
             "confidence_boost": settings.discord_signal_confidence_boost,
             "max_inject": settings.discord_signal_max_inject,

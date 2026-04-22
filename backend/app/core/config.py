@@ -174,6 +174,10 @@ class Settings(BaseSettings):
     # Comma-separated list of channel IDs whose messages count as trading signals.
     # Empty string = ALL inbound channels are treated as signal sources.
     discord_signal_channels: str = ""
+    # Comma-separated list of server (guild) IDs to accept signals from.
+    # This is the primary filter — set to your server ID to restrict ingestion
+    # to only your server.  Empty = any guild (or no guild if DM-based).
+    discord_signal_guild_ids: str = ""
     # How many hours back to look for Discord-mentioned symbols (0 = disabled)
     discord_signal_window_hours: int = 24
     # Boost confidence multiplier applied to Discord-priority symbols in the scanner
