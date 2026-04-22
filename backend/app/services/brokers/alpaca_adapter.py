@@ -75,7 +75,8 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 error=str(exc),
             )
 
-    def get_quote(self, symbol: str) -> BrokerQuote | None:
+    def get_quote(self, symbol: str, *, user_id: str | None = None) -> BrokerQuote | None:
+        del user_id
         try:
             latest = alpaca_client.get(f"/v2/stocks/{symbol}/quotes/latest", symbol=symbol)
             quote = latest.get("quote", {})

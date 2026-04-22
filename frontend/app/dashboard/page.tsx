@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ensureHighTrust } from "../../lib/highTrust";
@@ -236,13 +237,21 @@ export default function DashboardPage() {
             <p className="mt-2 text-sm text-slate-400">Connect your brokerage accounts to begin.</p>
             {userEmail ? <p className="mt-1 text-xs text-slate-500">Signed in as {userEmail}</p> : null}
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:border-slate-500"
-          >
-            Logout
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/news"
+              className="rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:border-slate-500"
+            >
+              News Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:border-slate-500"
+            >
+              Logout
+            </button>
+          </div>
         </header>
 
         {loading ? <p className="text-sm text-slate-400">Loading dashboard...</p> : null}

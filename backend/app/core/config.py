@@ -58,6 +58,16 @@ class Settings(BaseSettings):
     dynamic_universe_sources: str = "finnhub,fmp,massive,static"
     dynamic_universe_max_symbols: int = 180
     dynamic_universe_refresh_seconds: int = 3600
+    news_public_feed_sources: str = (
+        "cnbc_top_news,marketwatch_top_stories,marketwatch_market_pulse,yahoo_finance_public,"
+        "cnn_business,nbc_business,cspan_congress,sec_press_releases,sec_litigation,fed_releases,nasdaq_markets,nyse_markets"
+    )
+    news_source_weights: str = (
+        "alpaca_news=4,cnbc_top_news=3,marketwatch_top_stories=3,marketwatch_market_pulse=2,"
+        "yahoo_finance_public=2,cnn_business=2,nbc_business=2,cspan_congress=1,sec_press_releases=3,"
+        "sec_litigation=3,fed_releases=3,nasdaq_markets=2,nyse_markets=2,coinbase_ws_public=2"
+    )
+    news_feed_refresh_seconds: int = 90
 
     # ---------------------------------------------------------------------------
     # Alpaca credentials — set via Railway environment variables, never committed
@@ -151,10 +161,28 @@ class Settings(BaseSettings):
     discord_critical_min_interval_seconds: int = 30
     discord_dedupe_window_seconds: int = 120
 
+    # Public market-news feed aggregation
+    news_feed_refresh_seconds: int = 45
+    news_feed_timeout_seconds: float = 3.5
+
     # Discord inbound event webhooks (Developer Portal -> Webhooks -> Endpoint URL)
     discord_inbound_enabled: bool = False
     discord_public_key: str = ""
     discord_inbound_max_body_kb: int = 64
+
+    # Discord signal channel filtering & scanning integration
+    # Comma-separated list of channel IDs whose messages count as trading signals.
+    # Empty string = ALL inbound channels are treated as signal sources.
+    discord_signal_channels: str = ""
+    # How many hours back to look for Discord-mentioned symbols (0 = disabled)
+    discord_signal_window_hours: int = 24
+    # Boost confidence multiplier applied to Discord-priority symbols in the scanner
+    discord_signal_confidence_boost: float = 1.15
+    # Max symbols to inject from Discord signals per scan cycle
+    discord_signal_max_inject: int = 20
+    # Discord Bot Token for reading channel history (optional – only needed for
+    # bot-mode polling; the webhook path does not require this)
+    discord_bot_token: str = ""
 
     # SendGrid (preferred when API key is set)
     sendgrid_api_key: str = ""
@@ -179,6 +207,10 @@ class Settings(BaseSettings):
     coinbase_ws_enabled: bool = True
     coinbase_ws_products: str = "BTC-USD,ETH-USD,SOL-USD,LINK-USD,AVAX-USD,LTC-USD,ADA-USD,XRP-USD,DOGE-USD,BCH-USD"
     coinbase_ws_url: str = "wss://advanced-trade-ws.coinbase.com"
+    broker_equity_live_policy: str = "balanced"
+    broker_equity_live_weights: str = "tradier=1,alpaca=1,schwab=1"
+    broker_option_live_weights: str = "tradier=2,schwab=1"
+    broker_crypto_live_weights: str = "coinbase=2,alpaca=1"
 
     # ---------------------------------------------------------------------------
     # Tradier API credentials (platform key mode)

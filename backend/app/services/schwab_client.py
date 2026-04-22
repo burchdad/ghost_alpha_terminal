@@ -147,6 +147,41 @@ class SchwabClient:
         resp.raise_for_status()
         return resp.json()
 
+    def post(
+        self,
+        endpoint: str,
+        *,
+        body: dict[str, Any],
+        user_id: str | None = None,
+    ) -> dict:
+        token = self._access_token(user_id=user_id)
+        if not token:
+            raise RuntimeError("No connected Schwab account; token unavailable.")
+
+        url = f"{_TRADER_BASE}{endpoint}"
+        with httpx.Client(timeout=12) as client:
+            resp = client.post(url, headers={**self._headers(token), "Content-Type": "application/json"}, json=body)
+
+        if resp.status_code == 401:
+            new_token = self._try_refresh(user_id=user_id)
+            if new_token:
+                with httpx.Client(timeout=12) as client:
+                    resp = client.post(url, headers={**self._headers(new_token), "Content-Type": "application/json"}, json=body)
+
+        resp.raise_for_status()
+        payload: dict[str, Any] = {}
+        if resp.content:
+            try:
+                parsed = resp.json()
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except Exception:
+                payload = {}
+        if "location" in resp.headers:
+            payload["location"] = resp.headers["location"]
+        payload["status_code"] = resp.status_code
+        return payload
+
     # ------------------------------------------------------------------
     # Account helpers
     # ------------------------------------------------------------------
@@ -200,6 +235,78 @@ class SchwabClient:
         except Exception as exc:
             logger.warning("Schwab get_orders failed for %s: %s", account_hash, exc)
             return []
+
+    def default_account_hash(self, *, user_id: str | None = None) -> str | None:
+        accounts = self.list_accounts(user_id=user_id)
+        for acct in accounts:
+            sec_acct = acct.get("securitiesAccount", {})
+            account_hash = str(sec_acct.get("accountNumber", "") or "")
+            if account_hash:
+                return account_hash
+        return None
+
+    def submit_order(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        quantity: int,
+        asset_class: str = "equity",
+        account_hash: str | None = None,
+        order_type: str = "market",
+        duration: str = "day",
+        limit_price: float | None = None,
+        session: str = "NORMAL",
+        client_order_id: str | None = None,
+        user_id: str | None = None,
+    ) -> dict:
+        target_account_hash = account_hash or self.default_account_hash(user_id=user_id)
+        if not target_account_hash:
+            raise RuntimeError("No connected Schwab account available for order submission.")
+
+        instruction = side.upper()
+        if instruction in {"BUY_TO_OPEN", "BUY_TO_CLOSE", "SELL_TO_OPEN", "SELL_TO_CLOSE"}:
+            asset_type = "OPTION"
+        else:
+            asset_type = "EQUITY" if asset_class != "option" else "OPTION"
+
+        body: dict[str, Any] = {
+            "session": session,
+            "duration": duration.upper(),
+            "orderType": order_type.upper(),
+            "orderStrategyType": "SINGLE",
+            "orderLegCollection": [
+                {
+                    "instruction": instruction,
+                    "quantity": quantity,
+                    "instrument": {
+                        "assetType": asset_type,
+                        "symbol": symbol.upper(),
+                    },
+                }
+            ],
+        }
+        if client_order_id:
+            body["clientOrderId"] = client_order_id
+        if order_type.lower() == "limit":
+            if limit_price is None:
+                raise ValueError("limit_price is required for limit orders")
+            body["price"] = round(float(limit_price), 4)
+
+        return self.post(
+            f"/accounts/{target_account_hash}/orders",
+            body=body,
+            user_id=user_id,
+        )
+
+    def get_quote(self, symbol: str, *, user_id: str | None = None) -> dict:
+        upper_symbol = symbol.strip().upper()
+        if not upper_symbol:
+            raise ValueError("symbol is required")
+        payload = self.get(f"/quotes/{upper_symbol}", user_id=user_id)
+        if isinstance(payload, dict):
+            return payload.get(upper_symbol) if isinstance(payload.get(upper_symbol), dict) else payload
+        raise RuntimeError("Unexpected Schwab quote response.")
 
     # ------------------------------------------------------------------
     # Portfolio snapshot helper (used by live_portfolio_service)

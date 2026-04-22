@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Path, Request, status
 from pydantic import BaseModel, Field
 
 from app.api.deps.auth import CurrentUser, HighTrustUser
@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.db.models import User
 from app.services.discord_inbound_service import discord_inbound_service
 from app.services.discord_notifier import discord_notifier
+from app.services.discord_signal_service import discord_signal_service
 
 
 router = APIRouter(prefix="/discord", tags=["discord"])
@@ -16,6 +17,11 @@ router = APIRouter(prefix="/discord", tags=["discord"])
 class DiscordOutboundRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     severity: str = Field(default="info", min_length=1, max_length=32)
+
+
+class PinSymbolRequest(BaseModel):
+    asset_class: str = Field(default="equity", min_length=1, max_length=16)
+    note: str | None = Field(default=None, max_length=256)
 
 
 @router.get("/outbound/status", summary="Discord outbound webhook status")
@@ -107,3 +113,92 @@ async def discord_inbound_events(
         "stored_id": result.stored_id,
         "symbols": result.extracted_symbols,
     }
+
+
+# ---------------------------------------------------------------------------
+# Signal watchlist management
+# ---------------------------------------------------------------------------
+
+@router.get("/signals/status", summary="Discord signal service status and active snapshot")
+def get_signal_status(user: User = CurrentUser) -> dict:
+    _ = user
+    snapshot = discord_signal_service.active_snapshot()
+    return {
+        "enabled": discord_signal_service.is_enabled(),
+        "window_hours": snapshot.window_hours,
+        "active_symbols": snapshot.symbols,
+        "pinned_symbols": snapshot.pinned_symbols,
+        "options_signals": [
+            {
+                "symbol": sig.symbol,
+                "direction": sig.direction,
+                "strike": sig.strike,
+                "expiry_raw": sig.expiry_raw,
+            }
+            for sig in snapshot.options_signals
+        ],
+        "source_counts": snapshot.source_counts,
+        "generated_at": snapshot.generated_at.isoformat(),
+        "config": {
+            "signal_channels": [c for c in (settings.discord_signal_channels or "").split(",") if c.strip()],
+            "confidence_boost": settings.discord_signal_confidence_boost,
+            "max_inject": settings.discord_signal_max_inject,
+        },
+    }
+
+
+@router.get("/signals/watchlist", summary="Operator-pinned Discord signal watchlist")
+def get_signal_watchlist(user: User = CurrentUser) -> dict:
+    _ = user
+    entries = discord_signal_service.pinned_entries()
+    return {
+        "entries": [
+            {
+                "symbol": e.symbol,
+                "asset_class": e.asset_class,
+                "source": e.source,
+                "note": e.note,
+                "pinned_by": e.pinned_by,
+                "pinned_at": e.pinned_at.isoformat(),
+            }
+            for e in entries
+        ],
+        "count": len(entries),
+    }
+
+
+@router.post("/signals/watchlist/{symbol}", summary="Pin a symbol to Discord signal watchlist")
+def pin_signal_symbol(
+    payload: PinSymbolRequest,
+    symbol: str = Path(min_length=1, max_length=6),
+    user: User = HighTrustUser,
+) -> dict:
+    upper = symbol.strip().upper()
+    if not upper or not upper.replace("USD", "").isalpha():
+        raise HTTPException(status_code=400, detail="Invalid symbol format")
+    entry = discord_signal_service.pin_symbol(
+        upper,
+        asset_class=payload.asset_class,
+        source="manual",
+        note=payload.note,
+        pinned_by=str(user.email),
+    )
+    return {
+        "ok": True,
+        "symbol": entry.symbol,
+        "asset_class": entry.asset_class,
+        "pinned_at": entry.pinned_at.isoformat(),
+    }
+
+
+@router.delete("/signals/watchlist/{symbol}", summary="Unpin a symbol from Discord signal watchlist")
+def unpin_signal_symbol(
+    symbol: str = Path(min_length=1, max_length=6),
+    user: User = HighTrustUser,
+) -> dict:
+    _ = user
+    upper = symbol.strip().upper()
+    deleted = discord_signal_service.unpin_symbol(upper)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Symbol {upper} not in watchlist")
+    return {"ok": True, "symbol": upper, "removed": True}

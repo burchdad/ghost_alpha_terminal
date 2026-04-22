@@ -169,7 +169,8 @@ class CoinbaseBrokerAdapter(BrokerAdapter):
             raw=payload,
         )
 
-    def get_quote(self, symbol: str) -> BrokerQuote | None:
+    def get_quote(self, symbol: str, *, user_id: str | None = None) -> BrokerQuote | None:
+        del user_id
         client = self._new_client()
         if client is None:
             return None

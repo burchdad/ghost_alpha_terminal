@@ -28,6 +28,7 @@ class AutonomousRunner:
         self._last_run_at: datetime | None = None
         self._last_error: str | None = None
         self._cycles_run = 0
+        self._user_id: str | None = None
 
     def status(self) -> dict:
         with self._lock:
@@ -40,30 +41,41 @@ class AutonomousRunner:
                 "cycles_run": self._cycles_run,
             }
 
-    def trigger_run_once(self) -> dict:
+    def trigger_run_once(self, *, user_id: str | None = None) -> dict:
         should_start = False
         with self._lock:
+            if user_id:
+                self._user_id = user_id
             if not self._run_once_active:
                 self._run_once_active = True
                 should_start = True
 
         if should_start:
-            thread = threading.Thread(target=self._run_once_wrapper, daemon=True)
+            thread = threading.Thread(target=self._run_once_wrapper, kwargs={"user_id": user_id}, daemon=True)
             with self._lock:
                 self._run_once_thread = thread
             thread.start()
 
         return self.status()
 
-    def _run_once_wrapper(self) -> None:
+    def _run_once_wrapper(self, user_id: str | None = None) -> None:
         try:
-            self.run_once()
+            self.run_once(user_id=user_id)
         finally:
             with self._lock:
                 self._run_once_active = False
 
-    def configure(self, *, enabled: bool | None = None, interval_seconds: int | None = None, symbols: list[str] | None = None) -> dict:
+    def configure(
+        self,
+        *,
+        enabled: bool | None = None,
+        interval_seconds: int | None = None,
+        symbols: list[str] | None = None,
+        user_id: str | None = None,
+    ) -> dict:
         with self._lock:
+            if user_id:
+                self._user_id = user_id
             if interval_seconds is not None:
                 self._interval_seconds = max(60, min(interval_seconds, 3600))
             if symbols:
@@ -100,11 +112,18 @@ class AutonomousRunner:
 
         return max(1, min(open_slots, capital_capacity))
 
-    def run_once(self) -> dict:
+    def run_once(self, *, user_id: str | None = None) -> dict:
         if execution_bridge.get_mode() == "SIMULATION":
             with self._lock:
                 self._last_error = "Autonomous mode requires PAPER_TRADING or LIVE_TRADING execution mode."
             return self.status()
+
+        active_user_id = user_id
+        with self._lock:
+            if active_user_id is None:
+                active_user_id = self._user_id
+            elif active_user_id:
+                self._user_id = active_user_id
 
         try:
             portfolio = live_portfolio_service.snapshot() or portfolio_manager.snapshot()
@@ -171,6 +190,7 @@ class AutonomousRunner:
                     regime=regime,
                     regime_confidence=0.68,
                     default_qty=1.0,
+                    user_id=active_user_id,
                 )
             with self._lock:
                 self._last_run_at = datetime.now(tz=timezone.utc)

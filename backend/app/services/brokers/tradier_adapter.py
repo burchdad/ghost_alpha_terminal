@@ -103,7 +103,8 @@ class TradierBrokerAdapter(BrokerAdapter):
             raw=payload if isinstance(payload, dict) else None,
         )
 
-    def get_quote(self, symbol: str) -> BrokerQuote | None:
+    def get_quote(self, symbol: str, *, user_id: str | None = None) -> BrokerQuote | None:
+        del user_id
         try:
             payload = tradier_client.get(
                 "/markets/quotes",

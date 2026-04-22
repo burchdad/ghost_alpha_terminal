@@ -29,6 +29,8 @@ class BrokerOrderRequest:
     side: Literal["buy", "sell"]
     qty: float
     asset_class: Literal["equity", "crypto", "option"] = "equity"
+    user_id: str | None = None
+    account_id: str | None = None
     option_symbol: str | None = None
     option_side: Literal["buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"] | None = None
     order_type: Literal["market", "limit"] = "market"
@@ -54,4 +56,4 @@ class BrokerAdapter(Protocol):
 
     def submit_order(self, request: BrokerOrderRequest) -> BrokerOrderResult: ...
 
-    def get_quote(self, symbol: str) -> BrokerQuote | None: ...
+    def get_quote(self, symbol: str, *, user_id: str | None = None) -> BrokerQuote | None: ...

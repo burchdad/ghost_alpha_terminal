@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.db.models import User
@@ -18,6 +18,8 @@ from app.models.schemas import (
     GoalTargetRequest,
     KillSwitchUpdateRequest,
     KillSwitchUpdateResponse,
+    NewsFeedSettingsResponse,
+    NewsFeedSettingsUpdateRequest,
     RiskLimitUpdateRequest,
     RiskLimitUpdateResponse,
 )
@@ -29,6 +31,8 @@ from app.services.execution_journal import execution_journal
 from app.services.goal_engine import goal_engine
 from app.services.live_portfolio_service import live_portfolio_service
 from app.services.mission_intelligence_service import mission_intelligence_service
+from app.services.news.news_intelligence import news_intelligence
+from app.services.news_feed_settings_service import news_feed_settings_service
 from app.services.live_experiment_promotion_service import live_experiment_promotion_service
 from app.services.meta_risk_governor import meta_risk_governor
 from app.services.options_sprint_service import options_sprint_service
@@ -194,13 +198,64 @@ def update_autonomous(payload: AutonomousModeUpdateRequest, user: User = HighTru
             enabled=payload.enabled,
             interval_seconds=payload.interval_seconds,
             symbols=payload.symbols,
+            user_id=str(user.id),
         )
     )
 
 
 @router.post("/autonomous/run-once", response_model=AutonomousModeStatusResponse)
 def run_autonomous_once(user: User = HighTrustUser) -> AutonomousModeStatusResponse:
-    return AutonomousModeStatusResponse(**autonomous_runner.trigger_run_once())
+    return AutonomousModeStatusResponse(**autonomous_runner.trigger_run_once(user_id=str(user.id)))
+
+
+def _news_feed_settings_payload() -> dict:
+    catalog = news_intelligence.public_feed_catalog()
+    runtime = news_feed_settings_service.status()
+    enabled = {item.strip().upper() for item in runtime.get("enabled_sources", []) if str(item).strip()}
+    weights = {
+        str(source).strip().upper(): float(weight)
+        for source, weight in runtime.get("source_weights", {}).items()
+        if str(source).strip()
+    }
+    return {
+        "sources": [
+            {
+                "source": item["source"],
+                "url": item["url"],
+                "enabled": item["source"] in enabled,
+                "weight": float(weights.get(item["source"], 1.0)),
+            }
+            for item in catalog
+        ],
+        "refresh_seconds": int(runtime.get("refresh_seconds", 45)),
+        "updated_at": runtime.get("updated_at"),
+    }
+
+
+@router.get("/news-feeds", response_model=NewsFeedSettingsResponse)
+def get_news_feed_settings(user: User = CurrentUser) -> NewsFeedSettingsResponse:
+    return NewsFeedSettingsResponse(**_news_feed_settings_payload())
+
+
+@router.post("/news-feeds", response_model=NewsFeedSettingsResponse)
+def update_news_feed_settings(payload: NewsFeedSettingsUpdateRequest, user: User = HighTrustUser) -> NewsFeedSettingsResponse:
+    valid_sources = {item["source"] for item in news_intelligence.public_feed_catalog()}
+    requested_sources = [item.strip().upper() for item in payload.enabled_sources if item.strip()]
+    invalid_sources = sorted({item for item in requested_sources if item not in valid_sources})
+    if invalid_sources:
+        raise HTTPException(status_code=400, detail=f"Unsupported news sources: {', '.join(invalid_sources)}")
+
+    requested_weights = {key.strip().upper(): float(value) for key, value in payload.source_weights.items() if key.strip()}
+    invalid_weight_sources = sorted({key for key in requested_weights if key not in valid_sources and key not in {"ALPACA_NEWS", "COINBASE_WS_PUBLIC"}})
+    if invalid_weight_sources:
+        raise HTTPException(status_code=400, detail=f"Unsupported source weights: {', '.join(invalid_weight_sources)}")
+
+    news_feed_settings_service.configure(
+        enabled_sources=requested_sources,
+        source_weights=requested_weights,
+    )
+    news_intelligence.invalidate_cached_feeds()
+    return NewsFeedSettingsResponse(**_news_feed_settings_payload())
 
 
 def _current_capital() -> float:
@@ -275,9 +330,10 @@ def start_goal_mission(payload: GoalMissionRequest, user: User = HighTrustUser) 
         enabled=payload.autonomous_enabled,
         interval_seconds=payload.interval_seconds,
         symbols=payload.symbols,
+        user_id=str(user.id),
     )
     if payload.autonomous_enabled and payload.trigger_initial_cycle:
-        autonomous_status = autonomous_runner.trigger_run_once()
+        autonomous_status = autonomous_runner.trigger_run_once(user_id=str(user.id))
 
     return GoalMissionResponse(
         message=(

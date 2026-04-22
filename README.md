@@ -1,15 +1,19 @@
 # GHOST ALPHA TERMINAL
 
-Production-oriented MVP for an AI-powered trading intelligence platform that combines:
+Production-ready AI-powered trading intelligence platform. Multi-agent swarm consensus, options intelligence, dynamic ticker universe, Discord signal feed integration, multi-broker execution routing (Alpaca/Coinbase/Tradier/Schwab), and a full operator control surface.
 
-- Kronos-style time-series forecasting service with live-data-first fallback behavior
-- Options market intelligence (IV, OI, volume, Greeks)
-- Rule-based strategy signal engine
-- Multi-agent swarm consensus engine
-- Persistent learning and feedback loop
-- Risk management and position sizing engine
-- Safety and execution control layer
-- Real-time terminal-style dashboard UI
+Key capabilities at a glance:
+
+- AI swarm consensus engine with adaptive agent weighting
+- Options signal parsing from Discord channel messages
+- Dynamic ticker universe (Finnhub / FMP / Massive Finance + Discord injection)
+- Multi-broker execution routing with per-broker policy controls
+- Tradier options strategies (spreads, straddles, iron condors)
+- Schwab OAuth 2.0 (PKCE) integration
+- Kill switch, autonomous mode, system mode governance
+- Runtime news feed source controls (enable/weight without redeploy)
+- Decision audit trail with full lineage replay
+- Launch ops telemetry dashboard
 
 ## Current Status
 
@@ -199,6 +203,7 @@ Open `http://localhost:3000` and go to `/dashboard`.
 - Tradier key-mode broker visibility and routing use backend vars `TRADIER_SANDBOX_API_KEY`, `TRADIER_SANDBOX_ACCOUNT_NUMBER`, `TRADIER_LIVE_API_KEY`, `TRADIER_LIVE_ACCOUNT_NUMBER`, plus `TRADIER_SANDBOX` and `TRADIER_LIVE_TRADING_ENABLED`.
 - Discord alerts use backend vars `DISCORD_ALERTS_ENABLED`, `DISCORD_WEBHOOK_URL`, optional `DISCORD_USERNAME`, optional `DISCORD_TIMEOUT_SECONDS`, optional `DISCORD_MIN_INTERVAL_SECONDS` (default 600s), optional `DISCORD_CRITICAL_MIN_INTERVAL_SECONDS` (default 30s), and optional `DISCORD_DEDUPE_WINDOW_SECONDS` (default 120s).
 - Discord inbound event webhooks use `DISCORD_INBOUND_ENABLED=true` and `DISCORD_PUBLIC_KEY=<app public key>`, with endpoint URL: `<backend-base-url>/discord/inbound/events`.
+- Discord signal pipeline (scanner injection) uses `DISCORD_SIGNAL_CHANNELS=<comma-separated-channel-ids>` (empty = all), `DISCORD_SIGNAL_WINDOW_HOURS=24`, `DISCORD_SIGNAL_CONFIDENCE_BOOST=1.15`, `DISCORD_SIGNAL_MAX_INJECT=20`, optional `DISCORD_BOT_TOKEN` for future bot-mode polling.
 - CORS is controlled via backend settings in `backend/app/core/config.py`.
 
 ## Service Behavior

@@ -526,7 +526,7 @@ def _parse_action(message: str, state: dict, *, mode_assigned: str, user_id: str
     return parsed, parser_used, assistant_hint, latency_ms
 
 
-def _apply_action(parsed: ParsedAction) -> list[str]:
+def _apply_action(parsed: ParsedAction, *, user_id: str | None = None) -> list[str]:
     actions: list[str] = []
 
     if parsed.action == "run_option_strategy":
@@ -568,7 +568,7 @@ def _apply_action(parsed: ParsedAction) -> list[str]:
 
     if parsed.action == "set_autonomous":
         enabled = bool(parsed.params.get("enabled", False))
-        autonomous_runner.configure(enabled=enabled)
+        autonomous_runner.configure(enabled=enabled, user_id=user_id)
         master_orchestrator.set_auto_mode(enabled=enabled)
         actions.append(f"Autonomous execution {'enabled' if enabled else 'disabled'}")
         actions.append(f"Scan auto mode {'enabled' if enabled else 'disabled'}")
@@ -587,7 +587,7 @@ def _apply_action(parsed: ParsedAction) -> list[str]:
         return actions
 
     if parsed.action == "run_autonomous_once":
-        autonomous_runner.trigger_run_once()
+        autonomous_runner.trigger_run_once(user_id=user_id)
         actions.append("Triggered one autonomous cycle")
         return actions
 
@@ -843,7 +843,7 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
             parser_used=parser_used,
         )
 
-    actions = _apply_action(parsed)
+    actions = _apply_action(parsed, user_id=str(user.id))
     state_after = _state_snapshot()
     state_after["copilot_mode_assigned"] = mode_assigned
 

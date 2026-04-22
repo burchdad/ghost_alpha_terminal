@@ -47,6 +47,7 @@ class ExecutionBridge:
         action: Literal["BUY", "SELL", "HOLD"],
         qty: float,
         confidence: float,
+        user_id: str | None = None,
         client_order_id: str | None = None,
         liquidity_score: float = 1.0,
     ) -> dict:
@@ -119,7 +120,12 @@ class ExecutionBridge:
                 ),
             }
 
-        routed_broker = broker_router.route_broker(symbol=symbol, liquidity_score=liquidity_score, mode=self._mode)
+        routed_broker = broker_router.route_broker(
+            symbol=symbol,
+            liquidity_score=liquidity_score,
+            mode=self._mode,
+            user_id=user_id,
+        )
 
         # Gate 3 — credentials not configured for Alpaca routes
         if routed_broker == "alpaca" and (not settings.alpaca_api_key or not settings.alpaca_secret_key):
@@ -224,11 +230,13 @@ class ExecutionBridge:
                 symbol=symbol,
                 side=side,
                 qty=max(qty, 0.0001),
+                user_id=user_id,
                 order_type="market",
                 time_in_force="day",
                 client_order_id=client_order_id,
             ),
             liquidity_score=liquidity_score,
+            mode=self._mode,
         )
 
         logger.info(

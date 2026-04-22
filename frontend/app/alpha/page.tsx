@@ -8,7 +8,6 @@ import ContextPanel from "../../components/ContextPanel";
 import DecisionAuditPanel from "../../components/DecisionAuditPanel";
 import DecisionReplayPanel from "../../components/DecisionReplayPanel";
 import GoalPanel from "../../components/GoalPanel";
-import NewsPanel from "../../components/NewsPanel";
 import OrchestratorPanel, {
   type OrchestratorScan,
   type OrchestratorStatus,
@@ -16,7 +15,10 @@ import OrchestratorPanel, {
 import PortfolioPanel from "../../components/PortfolioPanel";
 import AlphaHeader from "../../components/alpha/AlphaHeader";
 import AlphaOpsTabs, { type AlphaOpsTab } from "../../components/alpha/AlphaOpsTabs";
+import BrokerPolicyPanel from "../../components/alpha/BrokerPolicyPanel";
 import BrokerRail from "../../components/alpha/BrokerRail";
+import NewsFeedSettingsPanel from "../../components/alpha/NewsFeedSettingsPanel";
+import DiscordSignalPanel, { type DiscordSignalStatus } from "../../components/alpha/DiscordSignalPanel";
 import BrokerStatusMiniCard from "../../components/alpha/BrokerStatusMiniCard";
 import RuntimeSummaryStrip from "../../components/alpha/RuntimeSummaryStrip";
 import { apiFetch } from "../../lib/apiClient";
@@ -263,6 +265,44 @@ type BrokerConnectionEntry = {
 
 type BrokerConnectionsResponse = {
   brokers: BrokerConnectionEntry[];
+};
+
+type BrokerPolicySummary = {
+  policy: {
+    equity_live: string;
+    equity_live_weights: Record<string, number>;
+    option_live_weights: Record<string, number>;
+    crypto_live_weights: Record<string, number>;
+  };
+  brokers: Record<
+    string,
+    {
+      execution_ready?: boolean;
+      configured?: boolean;
+      strengths?: string[];
+      preferred_for?: string[];
+      constraint?: string;
+    }
+  >;
+  strategy_routing: Record<
+    string,
+    {
+      active_candidates?: string[];
+      selection_method?: string;
+      constraint?: string;
+    }
+  >;
+};
+
+type NewsFeedSettingsResponse = {
+  sources: Array<{
+    source: string;
+    url: string;
+    enabled: boolean;
+    weight: number;
+  }>;
+  refresh_seconds: number;
+  updated_at: string | null;
 };
 
 type LightweightMetricsResponse = {
@@ -643,13 +683,16 @@ export default function AlphaPage() {
   const [goal, setGoal] = useState<GoalStatusResponse | null>(null);
   const [contextSignal, setContextSignal] = useState<ContextSignalResponse | null>(null);
   const [newsSignal, setNewsSignal] = useState<NewsSignalResponse | null>(null);
-  const [newsAudit, setNewsAudit] = useState<NewsAuditEntry[] | null>(null);
   const [decisionAudit, setDecisionAudit] = useState<DecisionAuditSummary[] | null>(null);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [decisionReplay, setDecisionReplay] = useState<DecisionReplayResponse | null>(null);
   const [oauthStatus, setOauthStatus] = useState<"idle" | "connected" | "error">("idle");
   const [oauthReason, setOauthReason] = useState<string>("");
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnectionEntry[]>([]);
+  const [brokerPolicy, setBrokerPolicy] = useState<BrokerPolicySummary | null>(null);
+  const [newsFeedSettings, setNewsFeedSettings] = useState<NewsFeedSettingsResponse | null>(null);
+  const [discordSignalStatus, setDiscordSignalStatus] = useState<DiscordSignalStatus | null>(null);
+  const [discordWatchlist, setDiscordWatchlist] = useState<Array<{ symbol: string; asset_class: string; source: string; note: string | null; pinned_by: string | null; pinned_at: string }>>([]);
   const [selectedBrokerProvider, setSelectedBrokerProvider] = useState<string | null>(null);
   const [brokerDetailsProvider, setBrokerDetailsProvider] = useState<string | null>(null);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
@@ -791,9 +834,14 @@ export default function AlphaPage() {
   }, [pendingClearOverrideStrategy]);
 
   async function refreshBrokerConnections() {
-    const brokerRes = await fetch(`${API_BASE}/agents/brokers/connections`);
+    const [brokerRes, policyRes] = await Promise.all([
+      fetch(`${API_BASE}/agents/brokers/connections`),
+      fetch(`${API_BASE}/agents/brokers/policy`),
+    ]);
     const brokerData = await parseJsonOrNull<BrokerConnectionsResponse>(brokerRes);
+    const policyData = await parseJsonOrNull<BrokerPolicySummary>(policyRes);
     setBrokerConnections(brokerData?.brokers ?? []);
+    setBrokerPolicy(policyData);
   }
 
   async function refreshLaunchMetrics() {
@@ -1035,22 +1083,60 @@ export default function AlphaPage() {
     }
   }
 
+  async function refreshNewsFeedSettings() {
+    const response = await fetch(`${API_BASE}/control/news-feeds`);
+    const data = await parseJsonOrNull<NewsFeedSettingsResponse>(response);
+    setNewsFeedSettings(data);
+  }
+
+  async function refreshDiscordSignals() {
+    const [statusRes, watchRes] = await Promise.all([
+      fetch(`${API_BASE}/discord/signals/status`),
+      fetch(`${API_BASE}/discord/signals/watchlist`),
+    ]);
+    const statusData = await parseJsonOrNull<DiscordSignalStatus>(statusRes);
+    const watchData = await parseJsonOrNull<{ entries: typeof discordWatchlist }>(watchRes);
+    setDiscordSignalStatus(statusData);
+    setDiscordWatchlist(watchData?.entries ?? []);
+  }
+
+  async function handlePinDiscordSymbol(symbol: string, assetClass: string, note: string) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) { pushRuntimeToast("Security verification was cancelled.", "warning"); return; }
+    await apiFetch(`${API_BASE}/discord/signals/watchlist/${symbol}`, {
+      apiBase: API_BASE,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset_class: assetClass, note: note || null }),
+    });
+    await refreshDiscordSignals();
+    pushRuntimeToast(`${symbol} pinned to Discord signal watchlist.`, "success");
+  }
+
+  async function handleUnpinDiscordSymbol(symbol: string) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) { pushRuntimeToast("Security verification was cancelled.", "warning"); return; }
+    await apiFetch(`${API_BASE}/discord/signals/watchlist/${symbol}`, {
+      apiBase: API_BASE,
+      method: "DELETE",
+    });
+    await refreshDiscordSignals();
+    pushRuntimeToast(`${symbol} removed from Discord signal watchlist.`, "success");
+  }
+
   async function refreshSymbolIntel(currentFocusSymbol: string, preferredAuditId: string | null = selectedAuditId) {
-    const [contextRes, newsRes, newsAuditRes, auditRes] = await Promise.all([
+    const [contextRes, newsRes, auditRes] = await Promise.all([
       fetch(`${API_BASE}/agents/context/${currentFocusSymbol}`),
       fetch(`${API_BASE}/agents/news/${currentFocusSymbol}`),
-      fetch(`${API_BASE}/agents/news/audit?limit=25`),
       fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
     ]);
 
     const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
     const newsData = await parseJsonOrNull<NewsSignalResponse>(newsRes);
-    const newsAuditData = await parseJsonOrNull<NewsAuditResponse>(newsAuditRes);
     const auditData = await parseJsonOrNull<DecisionAuditSummaryListResponse>(auditRes);
 
     setContextSignal(contextData);
     setNewsSignal(newsData);
-    setNewsAudit(newsAuditData?.entries ?? []);
 
     const liveAudits = auditData?.entries ?? [];
     const fallbackAudits: DecisionAuditSummary[] =
@@ -1124,6 +1210,13 @@ export default function AlphaPage() {
 
     refreshBrokerConnections().catch((err: unknown) => {
       console.error("Failed to fetch broker connection inventory", err);
+    });
+
+    refreshDiscordSignals().catch((err: unknown) => {
+      void err;
+    });
+    refreshNewsFeedSettings().catch((err: unknown) => {
+      console.error("Failed to fetch news feed settings", err);
     });
 
     refreshLaunchMetrics().catch((err: unknown) => {
@@ -1335,6 +1428,22 @@ export default function AlphaPage() {
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
     pushRuntimeToast(enabled ? "Options sprint profile activated." : "Options sprint profile disabled.", enabled ? "warning" : "success");
+  }
+
+  async function handleSaveNewsFeedSettings(payload: { enabled_sources: string[]; source_weights: Record<string, number> }) {
+    const ok = await ensureHighTrustOrNotify();
+    if (!ok) {
+      pushRuntimeToast("Security verification was cancelled.", "warning");
+      return;
+    }
+    await apiFetch(`${API_BASE}/control/news-feeds`, {
+      apiBase: API_BASE,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshNewsFeedSettings();
+    pushRuntimeToast("News feed settings updated.", "success");
   }
 
   async function handleSelectAudit(auditId: string) {
@@ -1556,6 +1665,17 @@ export default function AlphaPage() {
             onOpenDetails={setBrokerDetailsProvider}
           />
 
+          <BrokerPolicyPanel policy={brokerPolicy} selectedBrokerProvider={selectedBrokerProvider} />
+
+          <NewsFeedSettingsPanel settings={newsFeedSettings} onSave={handleSaveNewsFeedSettings} />
+          <DiscordSignalPanel
+            status={discordSignalStatus}
+            watchlist={discordWatchlist}
+            onPin={handlePinDiscordSymbol}
+            onUnpin={handleUnpinDiscordSymbol}
+            onRefresh={refreshDiscordSignals}
+          />
+
           {activeBroker && (
             <div className="rounded-xl border border-terminal-line bg-terminal-panel/70 p-3 text-xs">
               <div className="mb-2 flex items-center justify-between">
@@ -1727,7 +1847,6 @@ export default function AlphaPage() {
             </div>
           </section>
 
-          <NewsPanel signal={newsSignal} audit={newsAudit} />
           <ContextPanel context={contextSignal} />
 
           <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">

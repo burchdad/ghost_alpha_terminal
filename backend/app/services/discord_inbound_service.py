@@ -63,6 +63,7 @@ class DiscordInboundService:
         event_type = str(payload.get("type") or payload.get("event", {}).get("type") or "unknown")
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         content = str(data.get("content") or payload.get("content") or "")
+        channel_id = str(payload.get("channel_id") or data.get("channel_id") or "") or None
 
         symbols = self._extract_symbols(content)
 
@@ -71,7 +72,7 @@ class DiscordInboundService:
                 event_type=event_type,
                 application_id=str(payload.get("application_id") or "") or None,
                 guild_id=str(payload.get("guild_id") or data.get("guild_id") or "") or None,
-                channel_id=str(payload.get("channel_id") or data.get("channel_id") or "") or None,
+                channel_id=channel_id,
                 author_id=str((data.get("author") or {}).get("id") if isinstance(data.get("author"), dict) else "") or None,
                 content=content or None,
                 extracted_symbols=json.dumps(symbols),
@@ -82,12 +83,27 @@ class DiscordInboundService:
             session.flush()
             stored_id = int(row.id)
 
+        self._auto_inject_to_signal_service(symbols, channel_id)
+
         return DiscordEventIngestResult(
             accepted=True,
             event_type=event_type,
             stored_id=stored_id,
             extracted_symbols=symbols,
         )
+
+    def _auto_inject_to_signal_service(self, symbols: list[str], channel_id: str | None) -> None:
+        """Push extracted symbols into the live signal watchlist cache."""
+        try:
+            from app.services.discord_signal_service import discord_signal_service  # noqa: PLC0415 (lazy import)
+            if not discord_signal_service.is_enabled():
+                return
+            allowed = discord_signal_service._allowed_channels()
+            if allowed and (channel_id or "") not in allowed:
+                return
+            discord_signal_service.invalidate_cache()
+        except Exception:
+            pass
 
 
 # Singleton

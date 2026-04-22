@@ -72,6 +72,7 @@ class AgentSwarmManager:
         regime: Literal["TRENDING", "RANGE_BOUND", "HIGH_VOLATILITY"] = "RANGE_BOUND",
         regime_confidence: float = 0.5,
         default_qty: float = 1.0,
+        user_id: str | None = None,
     ) -> AgentCycleRecord:
         """Run a full swarm decision cycle and return the audit record."""
         if not close_prices:
@@ -241,6 +242,7 @@ class AgentSwarmManager:
                 action=final_action,
                 qty=allocation["recommended_qty"] if allocation["accepted"] else default_qty,
                 confidence=final_confidence,
+                user_id=user_id,
                 client_order_id=f"swarm-{symbol.upper()}-{uuid.uuid4().hex[:12]}",
                 liquidity_score=self._liquidity_score(snapshot.volumes),
             )

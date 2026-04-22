@@ -51,6 +51,12 @@ export default function AlphaHeader({
             </span>
           )}
           <Link
+            href={`/news?symbol=${encodeURIComponent(focusSymbol)}`}
+            className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
+          >
+            Open News Dashboard
+          </Link>
+          <Link
             href={terminalHref}
             className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
           >

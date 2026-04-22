@@ -195,6 +195,18 @@ class ExecutionPolicyState(Base):
     )
 
 
+class NewsFeedSettingsState(Base):
+    __tablename__ = "news_feed_settings_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    scope: Mapped[str] = mapped_column(String(32), unique=True, index=True, default="global")
+    enabled_sources_csv: Mapped[str] = mapped_column(Text, default="")
+    source_weights_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, index=True
+    )
+
+
 class BrokerOAuthConnection(Base):
     __tablename__ = "broker_oauth_connections"
     __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_broker_oauth_user_provider"),)
@@ -332,6 +344,22 @@ class DiscordInboundEvent(Base):
     extracted_symbols: Mapped[str] = mapped_column(Text, default="[]")
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
+    )
+
+
+class DiscordSignalWatchlist(Base):
+    """Operator-pinned symbols surfaced from Discord signals or manually added."""
+
+    __tablename__ = "discord_signal_watchlist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    asset_class: Mapped[str] = mapped_column(String(16), default="equity")
+    source: Mapped[str] = mapped_column(String(32), default="manual")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pinned_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pinned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(tz=timezone.utc), index=True
     )
 

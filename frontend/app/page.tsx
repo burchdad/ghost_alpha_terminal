@@ -115,6 +115,9 @@ export default function HomePage() {
             <Link href="/features" className="transition hover:text-terminal-accent">
               Features
             </Link>
+            <Link href="/news" className="transition hover:text-terminal-accent">
+              News
+            </Link>
             <Link href="/terms-of-use" className="transition hover:text-terminal-accent">
               Terms
             </Link>

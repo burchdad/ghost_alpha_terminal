@@ -28,6 +28,7 @@ from app.services.meta_risk_governor import meta_risk_governor
 from app.services.system_mode_service import system_mode_service
 from app.services.strategy_evolution_service import strategy_evolution_service
 from app.services.dynamic_universe_service import dynamic_universe_service
+from app.services.discord_signal_service import discord_signal_service
 
 
 @dataclass
@@ -452,13 +453,36 @@ class OpportunityScanner:
         )
         return combined
 
+    def _discord_priority_symbols(self) -> set[str]:
+        """Return symbols currently active in Discord signal watchlist."""
+        try:
+            if not discord_signal_service.is_enabled():
+                return set()
+            snapshot = discord_signal_service.active_snapshot()
+            combined = set(snapshot.symbols) | set(snapshot.pinned_symbols)
+            return {s for s in combined if s and len(s) <= 6}
+        except Exception:
+            return set()
+
     def _scan_universe(self, *, goal_pressure_multiplier: float) -> list[tuple[UniverseTicker, bool]]:
         base_universe = self._base_scan_universe()
         scan_universe: list[tuple[UniverseTicker, bool]] = [(ticker, False) for ticker in base_universe]
+
+        # Inject Discord-priority symbols that aren't already in the base universe.
+        discord_symbols = self._discord_priority_symbols()
+        if discord_symbols:
+            existing_symbols = {ticker.symbol for ticker in base_universe}
+            for sym in discord_symbols:
+                if sym in existing_symbols:
+                    continue
+                asset_class = "crypto" if any(sym.endswith(s) for s in ("USD", "BTC", "ETH")) else "equity"
+                scan_universe.append((UniverseTicker(sym, asset_class, "US"), False))
+            logger.info("discord_signals_injected count=%s symbols=%s", len(discord_symbols - {t.symbol for t in base_universe}), sorted(discord_symbols))
+
         if not self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier):
             return scan_universe
 
-        existing_symbols = {ticker.symbol for ticker in base_universe}
+        existing_symbols = {ticker.symbol for ticker, _ in scan_universe}
         for ticker in self._high_risk_sprint_universe():
             if ticker.symbol in existing_symbols:
                 continue
@@ -785,6 +809,7 @@ class OpportunityScanner:
         prefiltered: list[dict] = []
         sprint_active = self._high_risk_sprint_active(goal_pressure_multiplier=goal_pressure_multiplier)
         scan_universe = self._scan_universe(goal_pressure_multiplier=goal_pressure_multiplier)
+        discord_priority = self._discord_priority_symbols()
         for ticker, sprint_mode in scan_universe:
             try:
                 result = self._prefilter(ticker, sprint_mode=sprint_mode)
@@ -805,6 +830,14 @@ class OpportunityScanner:
             if item["symbol"] in priority_symbols and item["symbol"] not in existing_symbols:
                 candidates.append(item)
                 existing_symbols.add(item["symbol"])
+
+        # Ensure Discord-signal symbols are always evaluated.
+        discord_priority = self._discord_priority_symbols()
+        if discord_priority:
+            for item in prefiltered:
+                if item["symbol"] in discord_priority and item["symbol"] not in existing_symbols:
+                    candidates.append(item)
+                    existing_symbols.add(item["symbol"])
 
         # Add a small crypto tail so crypto ideas are not drowned out by equities/ETFs.
         crypto_tail = [item for item in prefiltered if item["asset_class"] == "crypto"][:8]
@@ -1031,6 +1064,16 @@ class OpportunityScanner:
                     volume_spike=float(candidate.get("avg_dollar_volume", 0.0)),
                 )
 
+                # Discord signal boost: symbols active in Discord watchlist receive a
+                # configurable confidence boost capped to avoid over-riding risk controls.
+                discord_signal_boost = 0.0
+                try:
+                    if discord_priority and symbol in discord_priority:
+                        raw_boost = max(1.0, float(settings.discord_signal_confidence_boost or 1.15)) - 1.0
+                        discord_signal_boost = round(min(raw_boost, 0.25) * swarm.consensus.confidence, 4)
+                except Exception:
+                    pass
+
                 risk_adjusted_score = (
                     (swarm.consensus.confidence * float(context["modifiers"]["confidence_modifier"])) * 0.45
                     + max(0.0, risk["expected_value"]) * 8.0 * 0.2
@@ -1042,6 +1085,7 @@ class OpportunityScanner:
                     + execution_quality_adjustment
                     + confidence_band_adjustment
                     + float(persistence.get("total_bonus", 0.0))
+                    + discord_signal_boost
                     - (0.03 if strategy_forced_retest else 0.0)
                     - (0.06 if strategy_probation else 0.0)
                 )

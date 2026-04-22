@@ -140,14 +140,20 @@ This document is a quick reference for what the platform can currently do.
   - momentum
   - realized volatility
 - Detailed ranking combines consensus confidence, expected value, and allocation quality.
+- **Dynamic universe** resolves live tradeable symbols from up to three external providers (Finnhub, Financial Modeling Prep, Massive Finance API) when `DYNAMIC_UNIVERSE_ENABLED=true`, with a 400+ ticker static fallback.
+- **Discord signal injection**: symbols extracted from Discord channel messages are injected as a fourth priority tier in each scan cycle, with configurable confidence boost and per-cycle cap.
 
 ## Broker Abstraction and Routing
 
 - Broker abstraction interface supports plug-and-play adapters.
 - Active adapters:
-  - Alpaca adapter (order submission)
-  - Coinbase adapter (stub for staged rollout)
+  - **Alpaca** — equity/crypto order submission via API key; OAuth 2.0 flow supported for multi-tenant account linking.
+  - **Coinbase** — crypto execution via CDP API key mode.
+  - **Tradier** — equity and options order routing; sandbox and live account modes; options strategies (buy/sell single-leg; spreads, straddles, iron condors via multi-leg endpoints).
+  - **Schwab** — OAuth 2.0 authorization code + PKCE flow; token storage in DB; equity order submission.
 - Execution router chooses broker by asset class and liquidity-aware route rules.
+- Per-broker policy controls (enabled flag, max position size, allowed asset classes) enforced at route time.
+- Operator dashboard (`/alpha`) shows per-broker connection status, capability matrix, and policy configuration.
 
 ## Swarm Expansion
 
@@ -173,6 +179,7 @@ This document is a quick reference for what the platform can currently do.
   - news momentum score
   - event strength
   - event flags
+- **Runtime source controls**: operator can enable/disable individual sources and adjust per-source weights at runtime via `POST /control/news-feeds` without a redeploy.
 - Compliance guardrails:
   - source whitelist endpoint (`GET /agents/news/sources`)
   - explicit data classification tags (`PUBLIC`, `DERIVED`, `RESTRICTED`, `UNKNOWN`)
@@ -202,7 +209,52 @@ This document is a quick reference for what the platform can currently do.
   - `GET /agents/audit/decisions/{audit_id}`
 - Stores normalized snapshots of goal, context, allocation, governor, execution, and explainability.
 
-## Safety and Risk Controls
+## Discord Integration
+
+### Inbound Signal Feed
+
+- Discord interactions webhook receiver at `POST /discord/inbound/events`.
+- Ed25519 signature verification (`DISCORD_PUBLIC_KEY`) — unsigned requests are rejected.
+- Inbound messages are stored as `DiscordInboundEvent` rows and immediately parsed for trade signals.
+- Symbol extraction with noise-word filter (~120 blocked abbreviations like "AT", "FOR", "ON").
+- **Options signal parsing**: regex extracts `SYMBOL $strike expiry CALL/PUT` patterns from natural language (e.g., "AAPL $200 call 5/16").
+- Channel filtering: restrict signal ingestion to specific channel IDs via `DISCORD_SIGNAL_CHANNELS`.
+
+### Signal-to-Scanner Pipeline
+
+- `DiscordSignalService` bridges inbound events to the opportunity scanner with a 30-second TTL cache.
+- Extracted symbols are injected as a fourth priority tier in each scan cycle (after Coinbase hot assets).
+- Injected symbols receive a configurable confidence score boost (`DISCORD_SIGNAL_CONFIDENCE_BOOST`, default ×1.15).
+- Per-cycle injection cap enforced via `DISCORD_SIGNAL_MAX_INJECT` (default 20).
+- Operator-pinned symbols (`DiscordSignalWatchlist` DB table) persist across restarts and always appear in the priority set.
+
+### Signal Management Endpoints
+
+- `GET /discord/signals/status` — full snapshot: active symbols, options signals, source counts, config summary.
+- `GET /discord/signals/watchlist` — operator-pinned watchlist entries.
+- `POST /discord/signals/watchlist/{symbol}` — pin a symbol (high-trust required).
+- `DELETE /discord/signals/watchlist/{symbol}` — unpin a symbol (high-trust required).
+
+### Alpha Dashboard Panel
+
+- `DiscordSignalPanel` on the Alpha operator dashboard shows:
+  - Live/disabled status indicator.
+  - Active symbols color-coded: purple = options signals, teal = pinned + active, blue = pinned-only, grey = event-only.
+  - Options signals detail (direction, strike, expiry).
+  - Pinned watchlist with Unpin buttons.
+  - Pin-new-symbol form with asset class selector and optional note field.
+
+### Outbound Alerts
+
+- `DISCORD_ALERTS_ENABLED=true` + `DISCORD_WEBHOOK_URL` enables outbound runtime alerts.
+- Rate limiting, deduplication, and critical-alert fast-path are all configurable.
+
+## System Mode and Governance
+
+- Three execution modes: `SIMULATION`, `PAPER_TRADING`, `LIVE_TRADING`.
+- Predictive prevention layer assesses risk and can downgrade mode before a trade cycle.
+- Operator kill switch (`POST /control/kill-switch`) halts execution globally.
+- Autonomous mode controlled separately from execution mode (can run paper-trade cycles autonomously).
 
 - Guardrails reject low-quality or over-risk trades.
 - Daily loss and drawdown limits enforced by control engine.

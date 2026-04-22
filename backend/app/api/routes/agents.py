@@ -40,8 +40,12 @@ from app.models.schemas import (
     GoalTargetRequest,
     NewsAuditEntryResponse,
     NewsAuditResponse,
+    NewsDashboardResponse,
+    NewsHeadlineResponse,
+    NewsHeadlinesResponse,
     NewsSignalResponse,
     NewsSourceWhitelistResponse,
+    NewsSourceStatusResponse,
     OpportunitiesResponse,
     OpportunityRecommendation,
     SwarmAgentSignal,
@@ -59,6 +63,7 @@ from app.services.context_intelligence import context_intelligence
 from app.services.decision_audit_store import decision_audit_store
 from app.services.swarm.decision_store import swarm_decision_store
 from app.services.execution_journal import execution_journal
+from app.services.brokers.router import broker_router
 from app.services.goal_engine import goal_engine
 from app.services.news.coinbase_ws_service import coinbase_ws_service
 from app.services.news.news_intelligence import news_intelligence
@@ -356,6 +361,47 @@ def get_news_stream_status() -> dict:
 def get_news_audit(limit: int = Query(default=50, ge=1, le=500)) -> NewsAuditResponse:
     entries = news_intelligence.recent_audit(limit=limit)
     return NewsAuditResponse(entries=[NewsAuditEntryResponse(**item) for item in entries])
+
+
+@router.get(
+    "/news/headlines",
+    response_model=NewsHeadlinesResponse,
+    summary="Recent public market headlines across the aggregated source set",
+)
+def get_news_headlines(
+    symbol: str | None = Query(default=None),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> NewsHeadlinesResponse:
+    data = news_intelligence.headlines(symbol=symbol, limit=limit)
+    return NewsHeadlinesResponse(headlines=[NewsHeadlineResponse(**item) for item in data["headlines"]])
+
+
+@router.get(
+    "/news/dashboard",
+    response_model=NewsDashboardResponse,
+    summary="Dashboard payload for the standalone news intelligence workspace",
+)
+def get_news_dashboard(
+    symbol: str = Query(default="SPY"),
+    limit: int = Query(default=25, ge=5, le=100),
+) -> NewsDashboardResponse:
+    data = news_intelligence.dashboard(symbol=symbol, limit=limit)
+    return NewsDashboardResponse(
+        signal=NewsSignalResponse(**data["signal"]),
+        headlines=[NewsHeadlineResponse(**item) for item in data["headlines"]],
+        audit=[NewsAuditEntryResponse(**item) for item in data["audit"]],
+        sources=data["sources"],
+        source_status=[NewsSourceStatusResponse(**item) for item in data["source_status"]],
+        stream_status=data["stream_status"],
+    )
+
+
+@router.get(
+    "/brokers/policy",
+    summary="Strength-aware broker routing policy summary for execution planning",
+)
+def get_broker_policy(user: User = CurrentUser) -> dict:
+    return broker_router.routing_policy_summary(user_id=str(user.id))
 
 
 @router.get(
@@ -657,6 +703,7 @@ def run_cycle(payload: SwarmCycleRequest, request: Request, user: User = HighTru
         regime=payload.regime,
         regime_confidence=payload.regime_confidence,
         default_qty=payload.qty,
+        user_id=str(user.id),
     )
     record.request_id = getattr(request.state, "request_id", "") or request.headers.get("x-request-id", "")
     return _to_response(record)

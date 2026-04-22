@@ -592,6 +592,19 @@ class AlpacaOrderRequest(BaseModel):
     extended_hours: bool | None = None
 
 
+class SchwabOrderRequest(BaseModel):
+    account_hash: str | None = Field(default=None, min_length=1, max_length=64)
+    symbol: str = Field(min_length=1, max_length=64)
+    asset_class: Literal["equity", "option"] = "equity"
+    side: Literal["buy", "sell", "buy_to_open", "buy_to_close", "sell_to_open", "sell_to_close"]
+    quantity: int = Field(gt=0, le=100000)
+    order_type: Literal["market", "limit"] = "market"
+    duration: Literal["day", "gtc"] = "day"
+    limit_price: float | None = Field(default=None, gt=0)
+    session: Literal["NORMAL", "AM", "PM", "SEAMLESS"] = "NORMAL"
+    client_order_id: str | None = Field(default=None, max_length=64)
+
+
 class AlpacaAssetsQuery(BaseModel):
     status: Literal["active", "inactive"] = "active"
     asset_class: Literal["us_equity", "crypto"] = "us_equity"
@@ -815,6 +828,24 @@ class AutonomousModeStatusResponse(BaseModel):
     cycles_run: int = 0
 
 
+class NewsFeedSettingSourceResponse(BaseModel):
+    source: str
+    url: str
+    enabled: bool
+    weight: float = Field(ge=0.1, le=10)
+
+
+class NewsFeedSettingsUpdateRequest(BaseModel):
+    enabled_sources: list[str]
+    source_weights: dict[str, float]
+
+
+class NewsFeedSettingsResponse(BaseModel):
+    sources: list[NewsFeedSettingSourceResponse]
+    refresh_seconds: int = Field(ge=1)
+    updated_at: datetime | None = None
+
+
 class GoalTargetRequest(BaseModel):
     start_capital: float = Field(gt=0)
     target_capital: float = Field(gt=0)
@@ -941,6 +972,38 @@ class NewsAuditResponse(BaseModel):
 
 class NewsSourceWhitelistResponse(BaseModel):
     sources: list[str]
+
+
+class NewsHeadlineResponse(BaseModel):
+    source: str
+    title: str
+    url: str
+    published_at: datetime | None = None
+    summary: str
+    relevance: float
+
+
+class NewsHeadlinesResponse(BaseModel):
+    headlines: list[NewsHeadlineResponse]
+
+
+class NewsSourceStatusResponse(BaseModel):
+    source: str
+    url: str
+    status: str
+    headline_count: int
+    weight: float = 1.0
+    last_success_at: datetime | None = None
+    last_error: str | None = None
+
+
+class NewsDashboardResponse(BaseModel):
+    signal: NewsSignalResponse
+    headlines: list[NewsHeadlineResponse]
+    audit: list[NewsAuditEntryResponse]
+    sources: list[str]
+    source_status: list[NewsSourceStatusResponse]
+    stream_status: dict
 
 
 class ContextModifiersResponse(BaseModel):
