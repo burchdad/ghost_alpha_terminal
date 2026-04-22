@@ -201,6 +201,10 @@ class Settings(BaseSettings):
     smtp_use_starttls: bool = True
     smtp_use_ssl: bool = False
 
+    # Operator notification email (receives trade alerts / kill-switch changes)
+    notification_email_to: str = ""
+    notifications_enabled: bool = True
+
     # ---------------------------------------------------------------------------
     # Coinbase Advanced Trade API credentials
     # ---------------------------------------------------------------------------

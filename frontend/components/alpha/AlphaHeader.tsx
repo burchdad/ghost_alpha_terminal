@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NotificationBell from "./NotificationBell";
 
 type ExecutionMode = "SIMULATION" | "PAPER_TRADING" | "LIVE_TRADING" | null;
 
@@ -62,6 +63,7 @@ export default function AlphaHeader({
           >
             Open Deep Terminal ({focusSymbol})
           </Link>
+          <NotificationBell />
         </div>
       </div>
     </header>

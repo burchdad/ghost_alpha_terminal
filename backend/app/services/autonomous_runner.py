@@ -14,6 +14,7 @@ from app.services.portfolio_manager import portfolio_manager
 from app.services.regime_detector import regime_detector
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
+from app.services.notification_service import notification_service
 
 
 class AutonomousRunner:
@@ -196,6 +197,16 @@ class AutonomousRunner:
                 self._last_run_at = datetime.now(tz=timezone.utc)
                 self._cycles_run += 1
                 self._last_error = None
+                cycles_run_snapshot = self._cycles_run
+                symbols_count = len(self._symbols)
+            try:
+                notification_service.autonomous_cycle_complete(
+                    cycles_run=cycles_run_snapshot,
+                    trades_attempted=0,
+                    symbols_scanned=symbols_count,
+                )
+            except Exception:
+                pass
         except Exception as exc:
             with self._lock:
                 self._last_error = str(exc)

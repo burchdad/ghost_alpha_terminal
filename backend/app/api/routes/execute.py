@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter
 
 from app.api.deps.auth import HighTrustUser
+from app.core.config import settings
 from app.db.models import User
 from app.services.capital_allocator import AllocationInput, capital_allocator
 from app.services.context_intelligence import context_intelligence
@@ -18,6 +19,7 @@ from app.services.portfolio_risk_governor import portfolio_risk_governor
 from app.services.regime_detector import regime_detector
 from app.services.risk_engine import risk_engine
 from app.services.lightweight_metrics import lightweight_metrics
+from app.services.notification_service import notification_service
 
 router = APIRouter(prefix="/execute", tags=["execute"])
 
@@ -289,6 +291,19 @@ def execute_trade(payload: ExecuteTradeRequest, user: User = HighTrustUser) -> E
         lightweight_metrics.record_trade(payload.strategy)
     except Exception:
         # Logging must stay non-blocking for the execution path.
+        pass
+
+    try:
+        notification_service.trade_executed(
+            symbol=payload.symbol,
+            direction=payload.side,
+            quantity=bounded_qty,
+            price=payload.entry_price,
+            broker=getattr(payload, "broker", "default"),
+            mode=getattr(payload, "mode", "live"),
+            email_to=settings.notification_email_to or None,
+        )
+    except Exception:
         pass
 
     return ExecuteTradeResponse(

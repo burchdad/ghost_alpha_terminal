@@ -783,3 +783,51 @@ def _to_response(r) -> SwarmCycleResponse:  # type: ignore[return]
         outcome=DecisionOutcome(**r.outcome) if r.outcome else None,
         agent_attribution=[AgentAttribution(**item) for item in (r.agent_attribution or [])],
     )
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo simulation endpoint
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _BaseModel
+from datetime import datetime, timedelta, timezone as _tz
+from app.services.advanced import run_monte_carlo
+from app.services.historical_data_service import historical_data_service as _hds
+
+
+class MonteCarloRequest(_BaseModel):
+    symbol: str = "PORTFOLIO"
+    starting_capital: float = 10_000.0
+    horizon_days: int = 30
+    n_simulations: int = 1_000
+
+
+@router.post("/monte-carlo", summary="Run a Monte Carlo simulation for a given symbol")
+def monte_carlo_simulation(payload: MonteCarloRequest, user: "User" = CurrentUser) -> dict:  # type: ignore[name-defined]
+    _ = user
+    # Attempt to load real daily returns from historical data
+    daily_returns: list[float] = []
+    try:
+        end_dt = datetime.now(tz=_tz.utc)
+        start_dt = end_dt - timedelta(days=90)
+        df = _hds.load_historical_data(
+            symbol=payload.symbol,
+            timeframe="1d",
+            start_date=start_dt,
+            end_date=end_dt,
+        )
+        closes = df["close"].dropna().astype(float).tolist()
+        if len(closes) >= 5:
+            for i in range(1, len(closes)):
+                if closes[i - 1] > 0:
+                    daily_returns.append((closes[i] / closes[i - 1]) - 1.0)
+    except Exception:
+        pass  # Use synthetic fallback inside run_monte_carlo
+
+    return run_monte_carlo(
+        symbol=payload.symbol,
+        starting_capital=payload.starting_capital,
+        horizon_days=payload.horizon_days,
+        n_simulations=payload.n_simulations,
+        daily_returns=daily_returns or None,
+    )

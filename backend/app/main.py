@@ -20,6 +20,7 @@ from app.api.routes.backtest import router as backtest_router
 from app.api.routes.copilot_agent import router as copilot_agent_router
 from app.api.routes.control import router as control_router
 from app.api.routes.discord import router as discord_router
+from app.api.routes.notifications import router as notifications_router
 from app.api.routes.execute import router as execute_router
 from app.api.routes.forecast import router as forecast_router
 from app.api.routes.options import router as options_router
@@ -282,6 +283,7 @@ app.include_router(telemetry_router)
 app.include_router(discord_router)
 app.include_router(universe_router)
 app.include_router(schwab_router)
+app.include_router(notifications_router)
 
 
 @app.on_event("startup")

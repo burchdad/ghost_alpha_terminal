@@ -1619,3 +1619,26 @@ def _complete_schwab_oauth(*, request: Request, code: str, state: str) -> Redire
     redirect_base = (settings.frontend_base_url or "http://localhost:3000").rstrip("/")
     redirect_url = f"{redirect_base}{next_path}?schwab_oauth={'connected' if payload.get('access_token') else 'error'}"
     return RedirectResponse(url=redirect_url, status_code=307)
+
+
+# ---------------------------------------------------------------------------
+# Onboarding status endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/onboarding-status", summary="Check if operator has completed onboarding")
+def onboarding_status(user: User = CurrentUser) -> dict:
+    return {
+        "completed": bool(user.onboarding_completed),
+        "user_id": str(user.id),
+    }
+
+
+@router.post("/onboarding-complete", summary="Mark onboarding as completed")
+def onboarding_complete(user: User = CurrentUser) -> dict:
+    with get_session() as session:
+        db_user = session.get(User, str(user.id))
+        if db_user is None:
+            raise HTTPException(status_code=404, detail="User not found.")
+        db_user.onboarding_completed = True
+        session.flush()
+    return {"ok": True, "completed": True}

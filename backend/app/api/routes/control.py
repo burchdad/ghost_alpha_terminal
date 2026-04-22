@@ -41,6 +41,7 @@ from app.services.strategy_kill_switch_service import strategy_kill_switch_servi
 from app.services.strategy_lifecycle_transition_store import strategy_lifecycle_transition_store
 from app.services.system_mode_service import system_mode_service
 from app.services.swarm.execution_bridge import execution_bridge
+from app.services.notification_service import notification_service
 
 router = APIRouter(prefix="/control", tags=["control"])
 logger = logging.getLogger(__name__)
@@ -171,6 +172,13 @@ def get_control_status(user: User = CurrentUser) -> ControlStatusResponse:
 @router.post("/kill-switch", response_model=KillSwitchUpdateResponse)
 def update_kill_switch(payload: KillSwitchUpdateRequest, user: User = HighTrustUser) -> KillSwitchUpdateResponse:
     enabled = control_engine.set_kill_switch(payload.trading_enabled)
+    try:
+        notification_service.kill_switch_changed(
+            enabled=not enabled,  # set_kill_switch returns trading_enabled; kill_switch_enabled = not trading_enabled
+            changed_by=getattr(user, "email", "operator"),
+        )
+    except Exception:
+        pass
     return KillSwitchUpdateResponse(
         trading_enabled=enabled,
         system_status="ACTIVE" if enabled else "PAUSED",

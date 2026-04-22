@@ -21,6 +21,7 @@ import NewsFeedSettingsPanel from "../../components/alpha/NewsFeedSettingsPanel"
 import DiscordSignalPanel, { type DiscordSignalStatus } from "../../components/alpha/DiscordSignalPanel";
 import BrokerStatusMiniCard from "../../components/alpha/BrokerStatusMiniCard";
 import RuntimeSummaryStrip from "../../components/alpha/RuntimeSummaryStrip";
+import OnboardingWizard from "../../components/alpha/OnboardingWizard";
 import { apiFetch } from "../../lib/apiClient";
 import { ensureHighTrust } from "../../lib/highTrust";
 
@@ -685,6 +686,27 @@ export default function AlphaPage() {
       window.localStorage?.setItem("alpha_focus_symbol", symbol);
     }
   };
+
+  // Onboarding wizard — shown once on first login until dismissed or completed
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage?.getItem("ghost_onboarding_completed") !== "1";
+  });
+
+  // Re-check against backend on mount in case another device completed it
+  useEffect(() => {
+    if (!showOnboarding) return;
+    fetch(`${API_BASE}/auth/onboarding-status`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.completed) {
+          localStorage.setItem("ghost_onboarding_completed", "1");
+          setShowOnboarding(false);
+        }
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [control, setControl] = useState<ControlResponse | null>(null);
@@ -1631,6 +1653,9 @@ export default function AlphaPage() {
 
   return (
     <main className="min-h-screen p-4 md:p-6">
+      {showOnboarding && (
+        <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+      )}
       {runtimeToasts.length > 0 && (
         <div className="fixed right-4 top-4 z-50 flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2">
           {runtimeToasts.map((toast) => (
