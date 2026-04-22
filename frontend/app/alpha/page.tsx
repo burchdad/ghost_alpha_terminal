@@ -675,7 +675,16 @@ export default function AlphaPage() {
   const [scan, setScan] = useState<OrchestratorScan | null>(null);
   const [status, setStatus] = useState<OrchestratorStatus | null>(null);
   const [loading, setLoading] = useState(false);
-  const [focusSymbol, setFocusSymbol] = useState("AAPL");
+  const [focusSymbol, setFocusSymbolRaw] = useState<string>(() => {
+    if (typeof window === "undefined") return "AAPL";
+    return window.localStorage?.getItem("alpha_focus_symbol") ?? "AAPL";
+  });
+  const setFocusSymbol = (symbol: string) => {
+    setFocusSymbolRaw(symbol);
+    if (typeof window !== "undefined") {
+      window.localStorage?.setItem("alpha_focus_symbol", symbol);
+    }
+  };
 
   const [portfolio, setPortfolio] = useState<PortfolioResponse | null>(null);
   const [control, setControl] = useState<ControlResponse | null>(null);
@@ -770,6 +779,13 @@ export default function AlphaPage() {
       accepted,
     };
   }, [scan, portfolio, control, goal, newsSignal, contextSignal, decisionAudit]);
+
+  // Persist focus symbol to localStorage on every change
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage?.setItem("alpha_focus_symbol", focusSymbol);
+    }
+  }, [focusSymbol]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

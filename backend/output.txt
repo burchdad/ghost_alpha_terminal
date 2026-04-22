@@ -1,0 +1,455 @@
+============================= test session starts ==============================
+platform linux -- Python 3.12.1, pytest-9.0.3, pluggy-1.6.0 -- /home/codespace/.python/current/bin/python
+cachedir: .pytest_cache
+rootdir: /workspaces/ghost_alpha_terminal/backend
+plugins: anyio-4.11.0, mock-3.15.1
+collected 23 items                                                             
+
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_bare_ticker PASSED [  4%]
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_blocked_words_excluded PASSED [  8%]
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_dollar_prefix PASSED [ 13%]
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_hash_prefix PASSED [ 17%]
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_mixed PASSED [ 21%]
+tests/test_discord_signal_pipeline.py::TestSymbolExtraction::test_too_long_ticker_excluded PASSED [ 26%]
+tests/test_discord_signal_pipeline.py::TestOptionsRegex::test_full_call_with_strike_and_expiry PASSED [ 30%]
+tests/test_discord_signal_pipeline.py::TestOptionsRegex::test_multiple_signals PASSED [ 34%]
+tests/test_discord_signal_pipeline.py::TestOptionsRegex::test_no_match_on_plain_ticker PASSED [ 39%]
+tests/test_discord_signal_pipeline.py::TestOptionsRegex::test_put_no_strike PASSED [ 43%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_channel_filter_allows_matching FAILED [ 47%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_channel_filter_multi_channel FAILED [ 52%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_combined_guild_and_channel_filter FAILED [ 56%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_guild_filter_allows_matching FAILED [ 60%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_guild_filter_multi_guild FAILED [ 65%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_no_filters_accepts_all FAILED [ 69%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_old_events_excluded_by_window FAILED [ 73%]
+tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_options_signals_parsed_from_content FAILED [ 78%]
+tests/test_discord_signal_pipeline.py::TestWatchlistPinUnpin::test_inject_symbols_from_event_pins_with_discord_source FAILED [ 82%]
+tests/test_discord_signal_pipeline.py::TestWatchlistPinUnpin::test_pin_and_unpin PASSED [ 86%]
+tests/test_discord_signal_pipeline.py::TestWatchlistPinUnpin::test_pin_duplicate_is_idempotent PASSED [ 91%]
+tests/test_discord_signal_pipeline.py::TestCacheInvalidation::test_invalidate_cache_clears_snapshot PASSED [ 95%]
+tests/test_discord_signal_pipeline.py::TestCacheInvalidation::test_stale_cache_rebuilt_after_invalidate FAILED [100%]
+
+=================================== FAILURES ===================================
+__________ TestSnapshotFiltering.test_channel_filter_allows_matching ___________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_channel_filter_allows_matching>
+
+    def test_channel_filter_allows_matching(self):
+>       _insert_event("$NVDA calls", ["NVDA"], guild_id="G1", channel_id="CHAN_SIGNALS")
+
+tests/test_discord_signal_pipeline.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a46540d10>
+kwargs = {'channel_id': 'CHAN_SIGNALS', 'content': '$NVDA calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 15, 586483, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________ TestSnapshotFiltering.test_channel_filter_multi_channel ____________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_channel_filter_multi_channel>
+
+    def test_channel_filter_multi_channel(self):
+>       _insert_event("$MSFT calls", ["MSFT"], channel_id="CHAN_1")
+
+tests/test_discord_signal_pipeline.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640e8a0>
+kwargs = {'channel_id': 'CHAN_1', 'content': '$MSFT calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 15, 806020, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_________ TestSnapshotFiltering.test_combined_guild_and_channel_filter _________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_combined_guild_and_channel_filter>
+
+    def test_combined_guild_and_channel_filter(self):
+        # Must match BOTH guild and channel
+>       _insert_event("$META calls", ["META"], guild_id="SERVER_A", channel_id="CHAN_SIGNALS")
+
+tests/test_discord_signal_pipeline.py:232: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640d580>
+kwargs = {'channel_id': 'CHAN_SIGNALS', 'content': '$META calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 15, 883068, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________ TestSnapshotFiltering.test_guild_filter_allows_matching ____________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_guild_filter_allows_matching>
+
+    def test_guild_filter_allows_matching(self):
+>       _insert_event("$SPY calls", ["SPY"], guild_id="SERVER_A", channel_id="C1")
+
+tests/test_discord_signal_pipeline.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640c7a0>
+kwargs = {'channel_id': 'C1', 'content': '$SPY calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 15, 964127, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_____________ TestSnapshotFiltering.test_guild_filter_multi_guild ______________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_guild_filter_multi_guild>
+
+    def test_guild_filter_multi_guild(self):
+>       _insert_event("$SPY calls", ["SPY"], guild_id="SERVER_A")
+
+tests/test_discord_signal_pipeline.py:203: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640f530>
+kwargs = {'channel_id': 'CHAN_1', 'content': '$SPY calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 16, 44104, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+______________ TestSnapshotFiltering.test_no_filters_accepts_all _______________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_no_filters_accepts_all>
+
+    def test_no_filters_accepts_all(self):
+>       _insert_event("$AAPL calls", ["AAPL"], guild_id="G1", channel_id="C1")
+
+tests/test_discord_signal_pipeline.py:187: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640e540>
+kwargs = {'channel_id': 'C1', 'content': '$AAPL calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 16, 131431, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+___________ TestSnapshotFiltering.test_old_events_excluded_by_window ___________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_old_events_excluded_by_window>
+
+    def test_old_events_excluded_by_window(self):
+        # Insert event 48 hours ago — outside a 24h window
+>       _insert_event("$OLD calls", ["OLD"], minutes_ago=48 * 60)
+
+tests/test_discord_signal_pipeline.py:243: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640d190>
+kwargs = {'channel_id': 'CHAN_1', 'content': '$OLD calls', 'created_at': datetime.datetime(2026, 4, 20, 15, 53, 16, 223764, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+________ TestSnapshotFiltering.test_options_signals_parsed_from_content ________
+
+self = <test_discord_signal_pipeline.TestSnapshotFiltering testMethod=test_options_signals_parsed_from_content>
+
+    def test_options_signals_parsed_from_content(self):
+>       _insert_event("AAPL $200 5/16 calls", ["AAPL"])
+
+tests/test_discord_signal_pipeline.py:252: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a4640fa10>
+kwargs = {'channel_id': 'CHAN_1', 'content': 'AAPL $200 5/16 calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 16, 301116, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+_ TestWatchlistPinUnpin.test_inject_symbols_from_event_pins_with_discord_source _
+
+self = <test_discord_signal_pipeline.TestWatchlistPinUnpin testMethod=test_inject_symbols_from_event_pins_with_discord_source>
+
+    def test_inject_symbols_from_event_pins_with_discord_source(self):
+>       self.svc.inject_symbols_from_event(["RBLX", "U"], channel_id="CHAN_1")
+E       TypeError: DiscordSignalService.inject_symbols_from_event() got an unexpected keyword argument 'channel_id'
+
+tests/test_discord_signal_pipeline.py:286: TypeError
+_______ TestCacheInvalidation.test_stale_cache_rebuilt_after_invalidate ________
+
+self = <test_discord_signal_pipeline.TestCacheInvalidation testMethod=test_stale_cache_rebuilt_after_invalidate>
+
+    def test_stale_cache_rebuilt_after_invalidate(self):
+        svc = DiscordSignalService()
+        snap1 = svc.active_snapshot()
+        self.assertEqual(snap1.symbols, [])
+    
+>       _insert_event("$CRWD calls", ["CRWD"])
+
+tests/test_discord_signal_pipeline.py:315: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_discord_signal_pipeline.py:58: in _insert_event
+    row = DiscordInboundEvent(
+<string>:4: in __init__
+    ???
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:571: in _initialize_instance
+    with util.safe_reraise():
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/util/langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/state.py:569: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <app.db.models.DiscordInboundEvent object at 0x727a464e3a40>
+kwargs = {'channel_id': 'CHAN_1', 'content': '$CRWD calls', 'created_at': datetime.datetime(2026, 4, 22, 15, 48, 16, 418321, tzinfo=datetime.timezone.utc), 'event_type': 'MESSAGE_CREATE', ...}
+cls_ = <class 'app.db.models.DiscordInboundEvent'>, k = 'raw_payload'
+
+    def _declarative_constructor(self: Any, **kwargs: Any) -> None:
+        """A simple constructor that allows initialization from kwargs.
+    
+        Sets attributes on the constructed instance using the names and
+        values in ``kwargs``.
+    
+        Only keys that are present as
+        attributes of the instance's class are allowed. These could be,
+        for example, any mapped columns or relationships.
+        """
+        cls_ = type(self)
+        for k in kwargs:
+            if not hasattr(cls_, k):
+>               raise TypeError(
+                    "%r is an invalid keyword argument for %s" % (k, cls_.__name__)
+                )
+E               TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundEvent
+
+/usr/local/python/3.12.1/lib/python3.12/site-packages/sqlalchemy/orm/decl_base.py:2175: TypeError
+=========================== short test summary info ============================
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_channel_filter_allows_matching - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_channel_filter_multi_channel - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_combined_guild_and_channel_filter - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_guild_filter_allows_matching - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_guild_filter_multi_guild - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_no_filters_accepts_all - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_old_events_excluded_by_window - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestSnapshotFiltering::test_options_signals_parsed_from_content - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+FAILED tests/test_discord_signal_pipeline.py::TestWatchlistPinUnpin::test_inject_symbols_from_event_pins_with_discord_source - TypeError: DiscordSignalService.inject_symbols_from_event() got an unexpect...
+FAILED tests/test_discord_signal_pipeline.py::TestCacheInvalidation::test_stale_cache_rebuilt_after_invalidate - TypeError: 'raw_payload' is an invalid keyword argument for DiscordInboundE...
+======================== 10 failed, 13 passed in 4.18s =========================
