@@ -672,6 +672,13 @@ async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   }
 }
 
+function authFetch(input: string, init?: RequestInit) {
+  return apiFetch(input, {
+    apiBase: API_BASE,
+    ...init,
+  });
+}
+
 export default function AlphaPage() {
   const [scan, setScan] = useState<OrchestratorScan | null>(null);
   const [status, setStatus] = useState<OrchestratorStatus | null>(null);
@@ -696,7 +703,7 @@ export default function AlphaPage() {
   // Re-check against backend on mount in case another device completed it
   useEffect(() => {
     if (!showOnboarding) return;
-    fetch(`${API_BASE}/auth/onboarding-status`, { credentials: "include" })
+    authFetch(`${API_BASE}/auth/onboarding-status`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.completed) {
@@ -875,8 +882,8 @@ export default function AlphaPage() {
 
   async function refreshBrokerConnections() {
     const [brokerRes, policyRes] = await Promise.all([
-      fetch(`${API_BASE}/agents/brokers/connections`),
-      fetch(`${API_BASE}/agents/brokers/policy`),
+      authFetch(`${API_BASE}/agents/brokers/connections`),
+      authFetch(`${API_BASE}/agents/brokers/policy`),
     ]);
     const brokerData = await parseJsonOrNull<BrokerConnectionsResponse>(brokerRes);
     const policyData = await parseJsonOrNull<BrokerPolicySummary>(policyRes);
@@ -885,17 +892,17 @@ export default function AlphaPage() {
   }
 
   async function refreshLaunchMetrics() {
-    const metricsRes = await fetch(`${API_BASE}/metrics/lightweight?days=7`);
+    const metricsRes = await authFetch(`${API_BASE}/metrics/lightweight?days=7`);
     const metricsData = await parseJsonOrNull<LightweightMetricsResponse>(metricsRes);
     setLaunchMetrics(metricsData);
   }
 
   async function refreshRuntimeReadiness() {
     const [readinessRes, missionRes, truthRes, overrideRes] = await Promise.all([
-      fetch(`${API_BASE}/metrics/runtime-readiness`),
-      fetch(`${API_BASE}/metrics/mission-intelligence`),
-      fetch(`${API_BASE}/metrics/truth-dashboard?days=7`),
-      fetch(`${API_BASE}/control/strategy-kill-switch`),
+      authFetch(`${API_BASE}/metrics/runtime-readiness`),
+      authFetch(`${API_BASE}/metrics/mission-intelligence`),
+      authFetch(`${API_BASE}/metrics/truth-dashboard?days=7`),
+      authFetch(`${API_BASE}/control/strategy-kill-switch`),
     ]);
     const readiness = await parseJsonOrNull<RuntimeReadinessResponse>(readinessRes);
     const missionData = await parseJsonOrNull<MissionIntelligenceResponse>(missionRes);
@@ -908,7 +915,7 @@ export default function AlphaPage() {
   }
 
   async function refreshOpsSummary() {
-    const res = await fetch(`${API_BASE}/telemetry/ops-summary`);
+    const res = await authFetch(`${API_BASE}/telemetry/ops-summary`);
     const data = await parseJsonOrNull<OpsSummaryResponse>(res);
     setOpsSummary(data);
   }
@@ -970,7 +977,7 @@ export default function AlphaPage() {
       target_capital: String(targetCapital),
       timeframe_days: String(timeframeDays),
     });
-    const simRes = await fetch(`${API_BASE}/control/mission/simulate?${params.toString()}`);
+    const simRes = await authFetch(`${API_BASE}/control/mission/simulate?${params.toString()}`);
     const simData = await parseJsonOrNull<MissionScenarioResponse>(simRes);
     setMissionScenario(simData);
   }
@@ -1030,8 +1037,8 @@ export default function AlphaPage() {
 
   async function refreshScanState(triggerScan = false) {
     const [statusRes, latestRes] = await Promise.all([
-      fetch(`${API_BASE}/orchestrator/status`),
-      fetch(`${API_BASE}/orchestrator/scan/latest`),
+      authFetch(`${API_BASE}/orchestrator/status`),
+      authFetch(`${API_BASE}/orchestrator/scan/latest`),
     ]);
     const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
     const latestData = await parseJsonOrNull<OrchestratorScan>(latestRes);
@@ -1051,7 +1058,7 @@ export default function AlphaPage() {
       });
       const scanData = await parseJsonOrNull<OrchestratorScan>(scanRes);
       setScan(scanData);
-      const refreshed = await fetch(`${API_BASE}/orchestrator/status`);
+      const refreshed = await authFetch(`${API_BASE}/orchestrator/status`);
       const refreshedStatus = await parseJsonOrNull<OrchestratorStatus>(refreshed);
       setStatus(refreshedStatus);
     } finally {
@@ -1061,12 +1068,12 @@ export default function AlphaPage() {
 
   async function refreshRuntimeState(announceExecutions = false) {
     const [portfolioRes, controlRes, executionModeRes, goalRes, historyRes, missionRes] = await Promise.all([
-      fetch(`${API_BASE}/portfolio`),
-      fetch(`${API_BASE}/control`),
-      fetch(`${API_BASE}/agents/execution-mode`),
-      fetch(`${API_BASE}/agents/goal/status`),
-      fetch(`${API_BASE}/agents/execution-history?limit=10`),
-      fetch(`${API_BASE}/metrics/mission-intelligence`),
+      authFetch(`${API_BASE}/portfolio`),
+      authFetch(`${API_BASE}/control`),
+      authFetch(`${API_BASE}/agents/execution-mode`),
+      authFetch(`${API_BASE}/agents/goal/status`),
+      authFetch(`${API_BASE}/agents/execution-history?limit=10`),
+      authFetch(`${API_BASE}/metrics/mission-intelligence`),
     ]);
 
     const portfolioData = await parseJsonOrNull<PortfolioResponse>(portfolioRes);
@@ -1124,15 +1131,15 @@ export default function AlphaPage() {
   }
 
   async function refreshNewsFeedSettings() {
-    const response = await fetch(`${API_BASE}/control/news-feeds`, { credentials: "include" });
+    const response = await authFetch(`${API_BASE}/control/news-feeds`);
     const data = await parseJsonOrNull<NewsFeedSettingsResponse>(response);
     setNewsFeedSettings(data);
   }
 
   async function refreshDiscordSignals() {
     const [statusRes, watchRes] = await Promise.all([
-      fetch(`${API_BASE}/discord/signals/status`),
-      fetch(`${API_BASE}/discord/signals/watchlist`),
+      authFetch(`${API_BASE}/discord/signals/status`),
+      authFetch(`${API_BASE}/discord/signals/watchlist`),
     ]);
     const statusData = await parseJsonOrNull<DiscordSignalStatus>(statusRes);
     const watchData = await parseJsonOrNull<{ entries: typeof discordWatchlist }>(watchRes);
@@ -1166,9 +1173,9 @@ export default function AlphaPage() {
 
   async function refreshSymbolIntel(currentFocusSymbol: string, preferredAuditId: string | null = selectedAuditId) {
     const [contextRes, newsRes, auditRes] = await Promise.all([
-      fetch(`${API_BASE}/agents/context/${currentFocusSymbol}`),
-      fetch(`${API_BASE}/agents/news/${currentFocusSymbol}`),
-      fetch(`${API_BASE}/agents/audit/decisions?limit=25`),
+      authFetch(`${API_BASE}/agents/context/${currentFocusSymbol}`),
+      authFetch(`${API_BASE}/agents/news/${currentFocusSymbol}`),
+      authFetch(`${API_BASE}/agents/audit/decisions?limit=25`),
     ]);
 
     const contextData = await parseJsonOrNull<ContextSignalResponse>(contextRes);
@@ -1231,7 +1238,7 @@ export default function AlphaPage() {
       return;
     }
 
-    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${nextAuditId}`);
+    const replayRes = await authFetch(`${API_BASE}/agents/audit/replay/${nextAuditId}`);
     const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
     setDecisionReplay(replayData);
   }
@@ -1325,7 +1332,7 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auto_mode: enabled }),
     });
-    const statusRes = await fetch(`${API_BASE}/orchestrator/status`);
+    const statusRes = await authFetch(`${API_BASE}/orchestrator/status`);
     const statusData = await parseJsonOrNull<OrchestratorStatus>(statusRes);
     setStatus(statusData);
   }
@@ -1342,7 +1349,7 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ trading_enabled: enabled }),
     });
-    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlRes = await authFetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
     pushRuntimeToast(enabled ? "Trading re-enabled." : "Kill switch engaged.", enabled ? "success" : "warning");
@@ -1367,10 +1374,10 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auto_mode: enabled }),
     });
-    const orchestratorStatusRes = await fetch(`${API_BASE}/orchestrator/status`);
+    const orchestratorStatusRes = await authFetch(`${API_BASE}/orchestrator/status`);
     const orchestratorStatusData = await parseJsonOrNull<OrchestratorStatus>(orchestratorStatusRes);
     setStatus(orchestratorStatusData);
-    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlRes = await authFetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
     pushRuntimeToast(
@@ -1406,7 +1413,7 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mode }),
     });
-    const modeRes = await fetch(`${API_BASE}/agents/execution-mode`);
+    const modeRes = await authFetch(`${API_BASE}/agents/execution-mode`);
     const modeData = await parseJsonOrNull<ExecutionModeResponse>(modeRes);
     setExecutionMode(modeData?.mode ?? null);
     pushRuntimeToast(`Execution mode set to ${mode.replaceAll("_", " ").toLowerCase()}.`, "success");
@@ -1419,7 +1426,7 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const goalRes = await fetch(`${API_BASE}/agents/goal/status`);
+    const goalRes = await authFetch(`${API_BASE}/agents/goal/status`);
     const goalData = await parseJsonOrNull<GoalStatusResponse>(goalRes);
     setGoal(goalData);
   }
@@ -1437,7 +1444,7 @@ export default function AlphaPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlRes = await authFetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
     pushRuntimeToast("Risk limits updated.", "success");
@@ -1450,7 +1457,7 @@ export default function AlphaPage() {
       return;
     }
     if (enabled) {
-      await fetch(`${API_BASE}/control/options-sprint`, {
+      await authFetch(`${API_BASE}/control/options-sprint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1462,9 +1469,9 @@ export default function AlphaPage() {
         }),
       });
     } else {
-      await fetch(`${API_BASE}/control/options-sprint`, { method: "DELETE" });
+      await authFetch(`${API_BASE}/control/options-sprint`, { method: "DELETE" });
     }
-    const controlRes = await fetch(`${API_BASE}/control`);
+    const controlRes = await authFetch(`${API_BASE}/control`);
     const controlData = await parseJsonOrNull<ControlResponse>(controlRes);
     setControl(controlData);
     pushRuntimeToast(enabled ? "Options sprint profile activated." : "Options sprint profile disabled.", enabled ? "warning" : "success");
@@ -1521,7 +1528,7 @@ export default function AlphaPage() {
       return;
     }
 
-    const replayRes = await fetch(`${API_BASE}/agents/audit/replay/${auditId}`);
+    const replayRes = await authFetch(`${API_BASE}/agents/audit/replay/${auditId}`);
     const replayData = await parseJsonOrNull<DecisionReplayResponse>(replayRes);
     setDecisionReplay(replayData);
   }

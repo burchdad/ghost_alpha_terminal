@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -44,10 +45,11 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
 
   // Initial fetch of recent notifications
   useEffect(() => {
-    fetch(`${API_BASE}/notifications`, { credentials: "include" })
+    apiFetch(`${API_BASE}/notifications`, { apiBase: API_BASE })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.notifications) {
@@ -59,30 +61,50 @@ export default function NotificationBell() {
 
   // SSE stream
   useEffect(() => {
-    const es = new EventSource(`${API_BASE}/notifications/stream`, {
-      withCredentials: true,
-    } as EventSourceInit);
-    esRef.current = es;
+    let cancelled = false;
 
-    es.onmessage = (ev) => {
-      try {
-        const event: NotificationEvent = JSON.parse(ev.data);
-        setNotifications((prev) => {
-          const exists = prev.some((n) => n.id === event.id);
-          if (exists) return prev;
-          return [event, ...prev].slice(0, 100);
-        });
-      } catch {
-        // ignore malformed frames
-      }
+    const connect = () => {
+      const es = new EventSource(`${API_BASE}/notifications/stream`, {
+        withCredentials: true,
+      } as EventSourceInit);
+      esRef.current = es;
+
+      es.onmessage = (ev) => {
+        try {
+          const event: NotificationEvent = JSON.parse(ev.data);
+          setNotifications((prev) => {
+            const exists = prev.some((n) => n.id === event.id);
+            if (exists) return prev;
+            return [event, ...prev].slice(0, 100);
+          });
+        } catch {
+          // ignore malformed frames
+        }
+      };
+
+      es.onerror = async () => {
+        es.close();
+        if (cancelled) {
+          return;
+        }
+
+        const authRes = await apiFetch(`${API_BASE}/auth/me`, { apiBase: API_BASE });
+        if (authRes.status === 401) {
+          return;
+        }
+
+        reconnectTimeoutRef.current = window.setTimeout(connect, 5000);
+      };
     };
 
-    es.onerror = () => {
-      // EventSource will auto-reconnect; no action needed
-    };
+    connect();
 
     return () => {
-      es.close();
+      cancelled = true;
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+      }
+      esRef.current?.close();
     };
   }, []);
 
@@ -100,17 +122,17 @@ export default function NotificationBell() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const markAllRead = useCallback(async () => {
-    await fetch(`${API_BASE}/notifications/read-all`, {
+    await apiFetch(`${API_BASE}/notifications/read-all`, {
+      apiBase: API_BASE,
       method: "POST",
-      credentials: "include",
     }).catch(() => {});
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
   }, []);
 
   const markOneRead = useCallback(async (id: string) => {
-    await fetch(`${API_BASE}/notifications/${id}/read`, {
+    await apiFetch(`${API_BASE}/notifications/${id}/read`, {
+      apiBase: API_BASE,
       method: "POST",
-      credentials: "include",
     }).catch(() => {});
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))

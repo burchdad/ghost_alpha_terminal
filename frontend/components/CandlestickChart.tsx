@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { apiFetch } from "../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -89,8 +90,8 @@ export default function CandlestickChart({ symbol, days = 90, signalLabel = null
     setLoading(true);
     
     Promise.all([
-      fetch(`${API_BASE}/signal/history/${symbol}?days=${days}`),
-      fetch(`${API_BASE}/swarm/${symbol}`),
+      apiFetch(`${API_BASE}/signal/history/${symbol}?days=${days}`, { apiBase: API_BASE }),
+      apiFetch(`${API_BASE}/swarm/${symbol}`, { apiBase: API_BASE }),
     ])
       .then(async ([histRes, swarmRes]) => {
         const hist = histRes.ok ? await histRes.json() : { bars: [] };

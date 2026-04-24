@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -62,9 +63,9 @@ export default function OnboardingWizard({ onComplete }: Props) {
   const handleFinish = useCallback(async () => {
     setCompleting(true);
     try {
-      await fetch(`${API_BASE}/auth/onboarding-complete`, {
+      await apiFetch(`${API_BASE}/auth/onboarding-complete`, {
+        apiBase: API_BASE,
         method: "POST",
-        credentials: "include",
       });
       localStorage.setItem("ghost_onboarding_completed", "1");
     } catch {

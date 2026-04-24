@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { apiFetch } from "../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 const PAGE_SIZE = 10;
@@ -69,7 +70,8 @@ export default function BacktestPanel({ symbol }: { symbol: string }) {
         const end = new Date();
         const start = new Date();
         start.setDate(end.getDate() - p.lookbackDays);
-        const res = await fetch(`${API_BASE}/backtest`, {
+        const res = await apiFetch(`${API_BASE}/backtest`, {
+          apiBase: API_BASE,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

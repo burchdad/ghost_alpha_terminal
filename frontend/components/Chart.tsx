@@ -13,6 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { apiFetch } from "../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -53,7 +54,7 @@ export default function Chart({ symbol, forecastPrices }: Props) {
   useEffect(() => {
     if (!symbol) return;
     setLoading(true);
-    fetch(`${API_BASE}/signal/history/${symbol}?days=90`)
+    apiFetch(`${API_BASE}/signal/history/${symbol}?days=90`, { apiBase: API_BASE })
       .then((r) => r.ok ? r.json() : null)
       .then((data: { bars?: PriceBar[]; source?: string } | null) => {
         if (data?.bars?.length) {

@@ -16,6 +16,8 @@ const EXCLUDED_REFRESH_PATHS = new Set([
   "/auth/refresh",
 ]);
 
+const PROTECTED_ROUTE_PREFIXES = ["/alpha", "/terminal", "/dashboard", "/brokerages"];
+
 function toPath(input: string, apiBase: string): string {
   if (input.startsWith("http://") || input.startsWith("https://")) {
     try {
@@ -47,6 +49,28 @@ function shouldAttemptRefresh(path: string): boolean {
     return false;
   }
   return !EXCLUDED_REFRESH_PATHS.has(path);
+}
+
+function isProtectedClientRoute(pathname: string): boolean {
+  return PROTECTED_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function redirectToLoginIfNeeded(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!isProtectedClientRoute(window.location.pathname)) {
+    return;
+  }
+
+  if ((window as typeof window & { __ghostAuthRedirecting?: boolean }).__ghostAuthRedirecting) {
+    return;
+  }
+
+  (window as typeof window & { __ghostAuthRedirecting?: boolean }).__ghostAuthRedirecting = true;
+  const next = `${window.location.pathname}${window.location.search}` || "/dashboard";
+  window.location.assign(`/login?next=${encodeURIComponent(next)}`);
 }
 
 const CSRF_COOKIE_NAME = "ghost_csrf";
@@ -104,6 +128,9 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
 
   const path = toPath(input, apiBase);
   if (!shouldAttemptRefresh(path)) {
+    if (firstResponse.status === 401) {
+      redirectToLoginIfNeeded();
+    }
     return firstResponse;
   }
 
@@ -113,8 +140,14 @@ export async function apiFetch(input: string, options: ApiFetchOptions = {}): Pr
   }));
 
   if (!refreshResponse.ok) {
+    redirectToLoginIfNeeded();
     return firstResponse;
   }
 
-  return fetch(input, baseInit);
+  const retryResponse = await fetch(input, baseInit);
+  if (retryResponse.status === 401) {
+    redirectToLoginIfNeeded();
+  }
+
+  return retryResponse;
 }
