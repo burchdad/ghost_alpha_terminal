@@ -69,6 +69,7 @@ from app.services.news.coinbase_ws_service import coinbase_ws_service
 from app.services.news.news_intelligence import news_intelligence
 from app.services.opportunity_scanner import opportunity_scanner
 from app.services.portfolio_manager import portfolio_manager
+from app.services.autonomous_runner import autonomous_runner
 from app.services.swarm.execution_bridge import execution_bridge
 from app.services.swarm.swarm_manager import swarm_manager
 from app.services.swarm.weight_engine import dynamic_weight_engine
@@ -109,6 +110,18 @@ def get_execution_mode(user: User = CurrentUser) -> ExecutionModeResponse:
 )
 def update_execution_mode(payload: ExecutionModeUpdateRequest, user: User = HighTrustUser) -> ExecutionModeResponse:
     mode = execution_bridge.set_mode(payload.mode)
+
+    # If autonomous is enabled, switching into paper/live mode should immediately
+    # queue a cycle without requiring a separate manual run-once click.
+    if mode in {"PAPER_TRADING", "LIVE_TRADING"}:
+        try:
+            auto_status = autonomous_runner.status()
+            if bool(auto_status.get("enabled", False)):
+                autonomous_runner.trigger_run_once(user_id=str(user.id))
+        except Exception:
+            # Keep mode changes non-blocking if queueing fails.
+            pass
+
     return ExecutionModeResponse(mode=mode)
 
 

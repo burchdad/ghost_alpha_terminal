@@ -201,14 +201,19 @@ def get_autonomous_status(user: User = CurrentUser) -> AutonomousModeStatusRespo
 
 @router.post("/autonomous", response_model=AutonomousModeStatusResponse)
 def update_autonomous(payload: AutonomousModeUpdateRequest, user: User = HighTrustUser) -> AutonomousModeStatusResponse:
-    return AutonomousModeStatusResponse(
-        **autonomous_runner.configure(
-            enabled=payload.enabled,
-            interval_seconds=payload.interval_seconds,
-            symbols=payload.symbols,
-            user_id=str(user.id),
-        )
+    status = autonomous_runner.configure(
+        enabled=payload.enabled,
+        interval_seconds=payload.interval_seconds,
+        symbols=payload.symbols,
+        user_id=str(user.id),
     )
+
+    # Align with operator expectation: enabling autonomous while already in
+    # paper/live mode should queue a cycle immediately.
+    if payload.enabled and execution_bridge.get_mode() in {"PAPER_TRADING", "LIVE_TRADING"}:
+        status = autonomous_runner.trigger_run_once(user_id=str(user.id))
+
+    return AutonomousModeStatusResponse(**status)
 
 
 @router.post("/autonomous/run-once", response_model=AutonomousModeStatusResponse)

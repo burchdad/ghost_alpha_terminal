@@ -121,6 +121,28 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
         );
       }
 
+      if (request.method === "POST" && targetPath === "backtest") {
+        return NextResponse.json(
+          {
+            total_trades: 0,
+            win_rate: 0,
+            total_pnl: 0,
+            max_drawdown: 0,
+            sharpe_ratio: 0,
+            equity_curve: [],
+            trade_history: [],
+            message: "Backtest timed out; showing empty result.",
+          },
+          {
+            status: 200,
+            headers: {
+              "x-proxy-target": backendUrl,
+              "x-proxy-fallback": "backtest-timeout",
+            },
+          },
+        );
+      }
+
       return jsonError(
         504,
         "BACKEND_TIMEOUT",
@@ -164,6 +186,28 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
         headers: {
           "x-proxy-target": backendUrl,
           "x-proxy-fallback": "orchestrator-scan",
+        },
+      },
+    );
+  }
+
+  if (request.method === "POST" && targetPath === "backtest" && upstream.status >= 500) {
+    return NextResponse.json(
+      {
+        total_trades: 0,
+        win_rate: 0,
+        total_pnl: 0,
+        max_drawdown: 0,
+        sharpe_ratio: 0,
+        equity_curve: [],
+        trade_history: [],
+        message: `Backtest unavailable (${upstream.status}); showing empty result.`,
+      },
+      {
+        status: 200,
+        headers: {
+          "x-proxy-target": backendUrl,
+          "x-proxy-fallback": "backtest-upstream-error",
         },
       },
     );
