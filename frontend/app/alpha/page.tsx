@@ -1122,7 +1122,7 @@ export default function AlphaPage() {
   }
 
   async function refreshNewsFeedSettings() {
-    const response = await fetch(`${API_BASE}/control/news-feeds`);
+    const response = await fetch(`${API_BASE}/control/news-feeds`, { credentials: "include" });
     const data = await parseJsonOrNull<NewsFeedSettingsResponse>(response);
     setNewsFeedSettings(data);
   }
@@ -1469,17 +1469,21 @@ export default function AlphaPage() {
   }
 
   async function handleSaveNewsFeedSettings(payload: { enabled_sources: string[]; source_weights: Record<string, number> }) {
-    const ok = await ensureHighTrustOrNotify();
-    if (!ok) {
-      pushRuntimeToast("Security verification was cancelled.", "warning");
-      return;
-    }
-    await apiFetch(`${API_BASE}/control/news-feeds`, {
+    const res = await apiFetch(`${API_BASE}/control/news-feeds`, {
       apiBase: API_BASE,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    if (!res.ok) {
+      let detail = "Failed to save news feed settings.";
+      try {
+        const body = (await res.json()) as { detail?: string };
+        if (typeof body.detail === "string") detail = body.detail;
+      } catch { /* ignore */ }
+      pushRuntimeToast(detail, "error");
+      return;
+    }
     await refreshNewsFeedSettings();
     pushRuntimeToast("News feed settings updated.", "success");
   }

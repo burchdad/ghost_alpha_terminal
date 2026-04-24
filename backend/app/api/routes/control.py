@@ -246,7 +246,7 @@ def get_news_feed_settings(user: User = CurrentUser) -> NewsFeedSettingsResponse
 
 
 @router.post("/news-feeds", response_model=NewsFeedSettingsResponse)
-def update_news_feed_settings(payload: NewsFeedSettingsUpdateRequest, user: User = HighTrustUser) -> NewsFeedSettingsResponse:
+def update_news_feed_settings(payload: NewsFeedSettingsUpdateRequest, user: User = CurrentUser) -> NewsFeedSettingsResponse:
     valid_sources = {item["source"] for item in news_intelligence.public_feed_catalog()}
     requested_sources = [item.strip().upper() for item in payload.enabled_sources if item.strip()]
     invalid_sources = sorted({item for item in requested_sources if item not in valid_sources})
