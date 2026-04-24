@@ -22,6 +22,7 @@ export default function SwarmLeaderboard({ decisions }: Props) {
   const rows = useMemo<LeaderRow[]>(() => {
     const agentMap = new Map<string, {
       matches: number;
+      allMatches: number;
       directionalTotal: number;
       confidenceDeltaSum: number;
       total: number;
@@ -39,6 +40,7 @@ export default function SwarmLeaderboard({ decisions }: Props) {
       for (const sig of cycle.agent_signals) {
         const current = agentMap.get(sig.agent_name) ?? {
           matches: 0,
+          allMatches: 0,
           directionalTotal: 0,
           confidenceDeltaSum: 0,
           total: 0,
@@ -61,6 +63,9 @@ export default function SwarmLeaderboard({ decisions }: Props) {
         const matched = typeof attr?.correct === "boolean" ? attr.correct : sig.action === cycle.final_action;
 
         current.total += 1;
+        if (matched) {
+          current.allMatches += 1;
+        }
         if (directional) {
           current.directionalTotal += 1;
           if (matched) {
@@ -94,7 +99,7 @@ export default function SwarmLeaderboard({ decisions }: Props) {
 
         return {
           agent_name,
-          win_rate: raw.directionalTotal ? raw.matches / raw.directionalTotal : 0,
+          win_rate: raw.directionalTotal ? raw.matches / raw.directionalTotal : (raw.total ? raw.allMatches / raw.total : 0),
           confidence_accuracy: raw.total ? raw.confidenceDeltaSum / raw.total : 0,
           avg_pnl_contribution: raw.pnlContributionCount ? raw.pnlContributionSum / raw.pnlContributionCount : 0,
           by_regime,
@@ -106,6 +111,11 @@ export default function SwarmLeaderboard({ decisions }: Props) {
   return (
     <div className="panel rounded-xl p-4">
       <h3 className="mb-3 text-sm font-semibold text-terminal-accent">Agent Leaderboard</h3>
+      {decisions.length === 0 && (
+        <div className="mb-3 rounded border border-terminal-line bg-black/20 px-3 py-2 text-xs text-slate-400">
+          No swarm cycles yet. Run cycles to populate live leaderboard metrics.
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
           <thead className="text-slate-400">
@@ -137,7 +147,7 @@ export default function SwarmLeaderboard({ decisions }: Props) {
         </table>
       </div>
       <p className="mt-3 text-[11px] text-slate-400">
-        *Win rate here is cycle-level directional agreement with final swarm action; PnL win rate will refine once execution outcomes are linked back per cycle.
+        *Win rate prefers directional agreement; when no directional actions exist yet it falls back to overall agreement. PnL columns refine once outcomes are linked per cycle.
       </p>
     </div>
   );

@@ -75,6 +75,8 @@ export default function AgentWeightPanel() {
   const { regimeWeights, weightHistory, fetchWeights } = useSwarmStore();
   const [activeRegime, setActiveRegime] = useState<MarketRegime>("TRENDING");
   const [view, setView] = useState<"current" | "trend">("current");
+  const settledCycles = weightHistory?.total_settled_cycles ?? 0;
+  const isBaselineOnly = settledCycles === 0;
 
   useEffect(() => {
     void fetchWeights();
@@ -101,6 +103,9 @@ export default function AgentWeightPanel() {
           <h3 className="text-sm font-semibold text-white">Agent Weight Engine</h3>
           <p className="text-xs text-slate-400 mt-0.5">
             Dynamic influence per agent — updated on settled outcomes
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Settled cycles: {settledCycles}
           </p>
         </div>
         <div className="flex gap-1.5">
@@ -140,6 +145,12 @@ export default function AgentWeightPanel() {
       {/* Current weights — bar chart */}
       {view === "current" && (
         <>
+          {isBaselineOnly && (
+            <div className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              Baseline mode: weights remain near default until outcomes are attached to completed cycles.
+            </div>
+          )}
+
           {/* Weight pills */}
           <div className="flex gap-3 flex-wrap">
             {currentEntries.map((e) => (

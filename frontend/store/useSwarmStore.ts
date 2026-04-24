@@ -194,6 +194,7 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
         error: null,
         lastUpdated: new Date().toISOString(),
       }));
+      await get().fetchWeights();
       return updated;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : "Failed to update cycle outcome" });
