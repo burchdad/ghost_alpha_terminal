@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../../lib/apiClient";
 
 import AgentPanel from "../../components/AgentPanel";
 import BacktestPanel from "../../components/BacktestPanel";
@@ -243,6 +245,13 @@ async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
   }
 }
 
+function authFetch(input: string, init?: RequestInit) {
+  return apiFetch(input, {
+    apiBase: API_BASE,
+    ...init,
+  });
+}
+
 export default function TerminalPage() {
   const [symbol, setSymbol] = useState("AAPL");
   const [symbolFilter, setSymbolFilter] = useState("");
@@ -284,7 +293,7 @@ export default function TerminalPage() {
   useEffect(() => {
     async function hydrateWatchlist() {
       // Fetch dynamic universe as fallback base (runs in background, non-blocking).
-      fetch(`${API_BASE}/universe/symbols`)
+      authFetch(`${API_BASE}/universe/symbols`)
         .then((r) => r.ok ? r.json() : null)
         .then((data: { symbols?: string[] } | null) => {
           if (data?.symbols?.length) {
@@ -294,7 +303,7 @@ export default function TerminalPage() {
         .catch(() => { /* silent — static seed stays active */ });
 
       // Reuse orchestrator rankings for a broader, high-signal watchlist without re-adding orchestrator UI.
-      const latestRes = await fetch(`${API_BASE}/orchestrator/scan/latest`);
+  const latestRes = await authFetch(`${API_BASE}/orchestrator/scan/latest`);
       const latest = await parseJsonOrNull<OrchestratorScanLite>(latestRes);
       if (latest?.candidates?.length) {
         setOrchestratorWatchlist(latest.candidates.slice(0, 120).map((c) => c.symbol));
@@ -348,11 +357,11 @@ export default function TerminalPage() {
       swarmRes,
       perfRes,
     ] = await Promise.all([
-      fetch(`${API_BASE}/forecast/${symbol}`),
-      fetch(`${API_BASE}/options/${symbol}`),
-      fetch(`${API_BASE}/signal/${symbol}`),
-      fetch(`${API_BASE}/swarm/${symbol}`),
-      fetch(`${API_BASE}/performance/${symbol}`),
+      authFetch(`${API_BASE}/forecast/${symbol}`),
+      authFetch(`${API_BASE}/options/${symbol}`),
+      authFetch(`${API_BASE}/signal/${symbol}`),
+      authFetch(`${API_BASE}/swarm/${symbol}`),
+      authFetch(`${API_BASE}/performance/${symbol}`),
     ]);
 
     const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -394,8 +403,8 @@ export default function TerminalPage() {
       const warnings: string[] = [];
       try {
         const [oppRes, historyRes] = await Promise.all([
-          fetch(`${API_BASE}/agents/opportunities?limit=10`),
-          fetch(`${API_BASE}/agents/execution-history?limit=25`),
+          authFetch(`${API_BASE}/agents/opportunities?limit=10`),
+          authFetch(`${API_BASE}/agents/execution-history?limit=25`),
         ]);
 
         if (!oppRes.ok) warnings.push(`Opportunities ${oppRes.status}`);
@@ -463,6 +472,12 @@ export default function TerminalPage() {
             <p className="mt-1 text-xs text-slate-400">Expanded symbol universe with fast picker and live execution intelligence.</p>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px]">
+            <Link
+              href="/alpha"
+              className="rounded-full border border-terminal-accent/60 bg-terminal-accent/10 px-3 py-1 text-terminal-accent transition hover:bg-terminal-accent/20"
+            >
+              Back to Alpha Dashboard
+            </Link>
             <span className="rounded-full border border-terminal-line bg-terminal-panel/60 px-3 py-1 text-slate-300">
               {selectedBroker ? selectedBroker.toUpperCase() : "All Brokers"}
             </span>
