@@ -72,6 +72,15 @@ export default function SignupPage() {
     return fallback;
   }
 
+  function validatePassword(passwordValue: string): string | null {
+    if (passwordValue.length < 10) return "Password must be at least 10 characters";
+    if (!/[A-Z]/.test(passwordValue)) return "Password must include an uppercase letter";
+    if (!/[a-z]/.test(passwordValue)) return "Password must include a lowercase letter";
+    if (!/[0-9]/.test(passwordValue)) return "Password must include a number";
+    if (!/[^A-Za-z0-9]/.test(passwordValue)) return "Password must include a symbol";
+    return null;
+  }
+
   // Step 1: Submit account info and move to 2FA
   async function handleAccountInfoSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,8 +93,9 @@ export default function SignupPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters");
+    const passwordValidationError = validatePassword(password);
+    if (passwordValidationError) {
+      setError(passwordValidationError);
       setLoading(false);
       return;
     }
@@ -295,7 +305,7 @@ export default function SignupPage() {
 
               <div>
                 <label className="block text-xs uppercase tracking-wider text-slate-400 mb-2">
-                  Password (8+ characters)
+                  Password (10+ chars, upper, lower, number, symbol)
                 </label>
                 <input
                   type="password"
