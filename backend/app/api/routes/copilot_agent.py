@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.api.deps.auth import CurrentUser, HighTrustUser
 from app.core.config import settings
@@ -72,6 +72,10 @@ class CopilotTelemetrySummaryResponse(BaseModel):
     action_breakdown: dict[str, int]
     success_rate: float
     confirmation_rate: float
+
+
+class CopilotHistoryClearResponse(BaseModel):
+    cleared: int
 
 
 @dataclass
@@ -893,6 +897,15 @@ def copilot_chat(payload: CopilotChatRequest, user: User = HighTrustUser) -> Cop
         copilot_mode=mode_assigned,
         parser_used=parser_used,
     )
+
+
+@router.post("/history/clear", response_model=CopilotHistoryClearResponse)
+def clear_copilot_history(user: User = CurrentUser) -> CopilotHistoryClearResponse:
+    with get_session() as session:
+        result = session.execute(
+            delete(CopilotConversationMessage).where(CopilotConversationMessage.user_id == str(user.id))
+        )
+    return CopilotHistoryClearResponse(cleared=int(result.rowcount or 0))
 
 
 @router.get("/telemetry/summary", response_model=CopilotTelemetrySummaryResponse)

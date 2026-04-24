@@ -84,6 +84,8 @@ function shortMode(mode: CopilotState["execution_mode"]) {
 export default function DashboardCopilot() {
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
@@ -109,7 +111,7 @@ export default function DashboardCopilot() {
             role: item.role === "user" ? "user" : "assistant",
             text: item.text,
           }))
-          .slice(-30);
+          .slice(-12);
 
         if (historyMessages.length > 0) {
           setMessages(historyMessages as Msg[]);
@@ -213,6 +215,50 @@ export default function DashboardCopilot() {
     }
   }
 
+  async function clearHistory() {
+    setSending(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/copilot/history/clear`, {
+        apiBase: API_BASE,
+        method: "POST",
+      });
+
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { id: `e-${Date.now()}`, role: "assistant", text: "Could not clear chat history right now." },
+        ]);
+        return;
+      }
+
+      setPendingAction(null);
+      setHistoryOpen(false);
+      setMessages([
+        {
+          id: `m-${Date.now()}`,
+          role: "assistant",
+          text: "New chat started. Previous conversation was archived and cleared from this panel.",
+        },
+      ]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const suggestionPrompts = [
+    "Enable autonomous execution",
+    "Set daily risk to 2% and max drawdown to 10%",
+    "Only run live during market hours",
+    "I need an additional $5000 in 30 days",
+    "I need to cover a large expense this month",
+    "Activate options sprint",
+    "Preview iron condor on SPY",
+    "Execute covered call on AAPL",
+    "$250 weekly for 12 weeks",
+  ];
+
+  const visibleSuggestions = showAllSuggestions ? suggestionPrompts : suggestionPrompts.slice(0, 4);
+
   return (
     <div className="fixed bottom-2 right-2 z-[70] w-[min(420px,calc(100vw-1rem))] sm:bottom-4 sm:right-4 sm:w-[min(420px,calc(100vw-2rem))]">
       <div className="rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
@@ -230,39 +276,65 @@ export default function DashboardCopilot() {
 
         {open && (
           <div className="border-t border-slate-800 px-4 pb-4 pt-3">
-            <div className="mb-3 max-h-64 space-y-2 overflow-y-auto pr-1">
-              {loading ? <p className="text-xs text-slate-500">Loading copilot...</p> : null}
-              {messages.map((m) => (
-                <div key={m.id}>
-                  <div
-                    className={`rounded-lg px-3 py-2 text-xs ${
-                      m.role === "assistant"
-                        ? "border border-cyan-700/30 bg-cyan-900/20 text-cyan-100"
-                        : "border border-slate-700 bg-slate-800/70 text-slate-100"
-                    }`}
-                  >
-                    {m.text}
-                  </div>
-                  {m.guardrail && m.guardrail_options && m.guardrail_options.length > 0 && (
-                    <div className="mt-1.5 flex flex-col gap-1">
-                      {m.guardrail_options.map((opt) => (
-                        <button
-                          key={opt}
-                          type="button"
-                          disabled={sending}
-                          onClick={() => {
-                            void sendMessage(false, GUARDRAIL_OPTION_MESSAGES[opt] ?? opt);
-                          }}
-                          className="rounded border border-amber-600/50 bg-amber-900/20 px-3 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-800/30 disabled:opacity-50"
-                        >
-                          {GUARDRAIL_OPTION_LABELS[opt] ?? opt}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="mb-2 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((v) => !v)}
+                className="text-[11px] text-slate-400 hover:text-slate-200"
+              >
+                {historyOpen ? "Hide history" : "Show history"}
+              </button>
+              <button
+                type="button"
+                disabled={sending}
+                onClick={() => void clearHistory()}
+                className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-400 hover:border-slate-500 hover:text-slate-200 disabled:opacity-50"
+              >
+                New chat
+              </button>
             </div>
+
+            {historyOpen && (
+              <div className="mb-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                {loading ? <p className="text-xs text-slate-500">Loading copilot...</p> : null}
+                {messages.map((m) => (
+                  <div key={m.id}>
+                    <div
+                      className={`rounded-lg px-3 py-2 text-xs ${
+                        m.role === "assistant"
+                          ? "border border-cyan-700/30 bg-cyan-900/20 text-cyan-100"
+                          : "border border-slate-700 bg-slate-800/70 text-slate-100"
+                      }`}
+                    >
+                      {m.text}
+                    </div>
+                    {m.guardrail && m.guardrail_options && m.guardrail_options.length > 0 && (
+                      <div className="mt-1.5 flex flex-col gap-1">
+                        {m.guardrail_options.map((opt) => (
+                          <button
+                            key={opt}
+                            type="button"
+                            disabled={sending}
+                            onClick={() => {
+                              void sendMessage(false, GUARDRAIL_OPTION_MESSAGES[opt] ?? opt);
+                            }}
+                            className="rounded border border-amber-600/50 bg-amber-900/20 px-3 py-1.5 text-left text-[11px] text-amber-200 hover:bg-amber-800/30 disabled:opacity-50"
+                          >
+                            {GUARDRAIL_OPTION_LABELS[opt] ?? opt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!historyOpen && (
+              <div className="mb-3 rounded-md border border-slate-800 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-400">
+                {messages.length > 0 ? `History hidden (${messages.length} messages loaded).` : "No recent messages."}
+              </div>
+            )}
 
             <div className="flex gap-2">
               <input
@@ -325,28 +397,30 @@ export default function DashboardCopilot() {
               </div>
             )}
 
-            {!onboardingMode && <div className="mt-3 flex flex-wrap gap-2">
-              {[
-                "Enable autonomous execution",
-                "Set daily risk to 2% and max drawdown to 10%",
-                "Only run live during market hours",
-                "I need an additional $5000 in 30 days",
-                "I need to cover a large expense this month",
-                "Activate options sprint",
-                "Preview iron condor on SPY",
-                "Execute covered call on AAPL",
-                "$250 weekly for 12 weeks",
-              ].map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => setInput(prompt)}
-                  className="rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>}
+            {!onboardingMode && (
+              <div className="mt-3">
+                <div className="mb-1 text-[10px] uppercase tracking-wider text-slate-500">Quick actions</div>
+                <div className="flex flex-wrap gap-2">
+                  {visibleSuggestions.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => setInput(prompt)}
+                      className="rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSuggestions((v) => !v)}
+                    className="rounded border border-slate-700 px-2 py-1 text-[10px] text-cyan-300 hover:border-cyan-500/60"
+                  >
+                    {showAllSuggestions ? "Less" : "More"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
