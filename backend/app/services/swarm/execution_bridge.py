@@ -147,36 +147,9 @@ class ExecutionBridge:
             }
 
         # Map side and enforce mode-broker consistency checks
+        # Note: Alpaca endpoint (paper vs live) is determined by execution_mode at the
+        # adapter level, not by the ALPACA_PAPER env var — so no blocking guard needed here.
         side = "buy" if action == "BUY" else "sell"
-        if routed_broker == "alpaca" and self._mode == "LIVE_TRADING" and settings.alpaca_paper:
-            return {
-                **base,
-                "reason": "LIVE_TRADING selected but ALPACA_PAPER=true. Disable paper mode to place live orders.",
-                "explainability": build_explainability(
-                    reasoning="Environment is paper-configured; live orders are blocked by policy.",
-                    confidence=confidence,
-                    risk_level="HIGH",
-                    expected_value=0.0,
-                    accepted=False,
-                    safeguards=["mode_config_guard"],
-                    inputs={"symbol": symbol, "mode": self._mode},
-                ),
-            }
-
-        if routed_broker == "alpaca" and self._mode == "PAPER_TRADING" and not settings.alpaca_paper:
-            return {
-                **base,
-                "reason": "PAPER_TRADING selected but ALPACA_PAPER=false. Enable paper mode before trading.",
-                "explainability": build_explainability(
-                    reasoning="Paper mode requested while broker is configured for live endpoint.",
-                    confidence=confidence,
-                    risk_level="HIGH",
-                    expected_value=0.0,
-                    accepted=False,
-                    safeguards=["mode_config_guard"],
-                    inputs={"symbol": symbol, "mode": self._mode},
-                ),
-            }
 
         if routed_broker == "coinbase" and self._mode != "LIVE_TRADING":
             return {

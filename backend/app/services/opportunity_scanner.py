@@ -612,12 +612,6 @@ class OpportunityScanner:
         if not settings.alpaca_api_key or not settings.alpaca_secret_key:
             return broker, False, "Alpaca credentials are missing."
 
-        if mode == "LIVE_TRADING" and settings.alpaca_paper:
-            return broker, False, "LIVE_TRADING with Alpaca requires ALPACA_PAPER=false."
-
-        if mode == "PAPER_TRADING" and not settings.alpaca_paper:
-            return broker, False, "PAPER_TRADING with Alpaca requires ALPACA_PAPER=true."
-
         return broker, True, None
 
     @staticmethod

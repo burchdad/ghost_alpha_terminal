@@ -36,6 +36,14 @@ class AlpacaBrokerAdapter(BrokerAdapter):
                 error="Missing ALPACA_API_KEY or ALPACA_SECRET_KEY",
             )
 
+        # Execution mode drives endpoint selection; ALPACA_PAPER env var is only a fallback.
+        if request.execution_mode == "PAPER_TRADING":
+            paper_override: bool | None = True
+        elif request.execution_mode == "LIVE_TRADING":
+            paper_override = False
+        else:
+            paper_override = None  # respect ALPACA_PAPER env var
+
         payload: dict[str, str] = {
             "symbol": request.symbol,
             "qty": str(request.qty),
@@ -49,7 +57,7 @@ class AlpacaBrokerAdapter(BrokerAdapter):
             payload["limit_price"] = str(request.limit_price)
 
         try:
-            response = alpaca_client.post("/v2/orders", body=payload, symbol=request.symbol)
+            response = alpaca_client.post("/v2/orders", body=payload, symbol=request.symbol, paper_override=paper_override)
             return BrokerOrderResult(
                 broker=self.name,
                 submitted=True,

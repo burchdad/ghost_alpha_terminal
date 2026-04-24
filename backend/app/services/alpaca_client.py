@@ -89,9 +89,18 @@ class AlpacaClient:
         body: dict,
         *,
         symbol: str | None = None,
+        paper_override: bool | None = None,
     ) -> dict:
-        """POST request to Alpaca. Raises httpx.HTTPStatusError on 4xx/5xx."""
-        url = f"{self._base_url}{endpoint}"
+        """POST request to Alpaca. Raises httpx.HTTPStatusError on 4xx/5xx.
+
+        paper_override: when provided, selects paper (True) or live (False)
+        endpoint explicitly, ignoring the ALPACA_PAPER env var.
+        """
+        if paper_override is None:
+            base = self._base_url
+        else:
+            base = _PAPER_BASE if paper_override else _LIVE_BASE
+        url = f"{base}{endpoint}"
         with httpx.Client(timeout=10) as client:
             resp = client.post(url, headers=self._headers(), json=body)
         self._record(resp, endpoint, "POST", symbol)

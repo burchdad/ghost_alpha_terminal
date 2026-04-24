@@ -294,6 +294,10 @@ class BrokerRouter:
             asset_class=request.asset_class,
             user_id=request.user_id,
         )
+        # Stamp the execution mode on the request so adapters can use it for
+        # endpoint selection (e.g. Alpaca paper vs live) without relying on env vars.
+        if mode is not None and request.execution_mode is None:
+            request.execution_mode = mode
         adapter = self._adapters[broker_name]
         return adapter.submit_order(request)
 

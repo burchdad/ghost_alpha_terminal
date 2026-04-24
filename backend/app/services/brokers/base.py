@@ -37,6 +37,8 @@ class BrokerOrderRequest:
     time_in_force: Literal["day", "gtc"] = "day"
     limit_price: float | None = None
     client_order_id: str | None = None
+    # Execution mode from the user-selected UI control (drives endpoint selection).
+    execution_mode: str | None = None
 
 
 @dataclass
