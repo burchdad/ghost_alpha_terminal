@@ -57,13 +57,14 @@ export default function BacktestPanel({ symbol }: { symbol: string }) {
   const [draft, setDraft] = useState<Params>(DEFAULT_PARAMS);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [showParams, setShowParams] = useState(false);
 
   const runBacktest = useCallback(
     async (p: Params) => {
       setLoading(true);
-      setResult(null);
+      setError(null);
       try {
         const end = new Date();
         const start = new Date();
@@ -81,11 +82,15 @@ export default function BacktestPanel({ symbol }: { symbol: string }) {
             max_hold_periods: p.maxHoldPeriods,
           }),
         });
-        if (res.ok) {
-          const data = (await res.json()) as BacktestResult;
-          setResult(data);
-          setPage(0);
+        if (!res.ok) {
+          setError(`Backtest unavailable (${res.status}). Try again in a moment.`);
+          return;
         }
+        const data = (await res.json()) as BacktestResult;
+        setResult(data);
+        setPage(0);
+      } catch {
+        setError("Backtest request failed. Check backend connectivity and retry.");
       } finally {
         setLoading(false);
       }
@@ -212,6 +217,21 @@ export default function BacktestPanel({ symbol }: { symbol: string }) {
       )}
 
       {loading && <div className="py-10 text-center text-xs text-slate-400">Running backtest simulation…</div>}
+
+      {!loading && error && (
+        <div className="mb-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => void runBacktest(params)}
+              className="rounded border border-amber-500/50 px-2 py-1 hover:bg-amber-500/20"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
       {!loading && result && (
         <>

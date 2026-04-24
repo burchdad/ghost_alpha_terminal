@@ -13,7 +13,6 @@ import OptionsPanel from "../../components/OptionsPanel";
 import PerformancePanel from "../../components/PerformancePanel";
 import SignalPanel from "../../components/SignalPanel";
 import SwarmVisualizationPanel from "../../components/swarm/SwarmVisualizationPanel";
-import { apiFetch } from "../../lib/apiClient";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
@@ -258,6 +257,8 @@ export default function TerminalPage() {
   const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryEntry[] | null>(null);
   const [orchestratorWatchlist, setOrchestratorWatchlist] = useState<string[]>([]);
   const [universeFallback, setUniverseFallback] = useState<string[]>([]);
+  const [dataHealth, setDataHealth] = useState<string[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
 
   const watchlist = useMemo(() => {
     const ranked = opportunities?.opportunities ?? [];
@@ -297,15 +298,10 @@ export default function TerminalPage() {
       const latest = await parseJsonOrNull<OrchestratorScanLite>(latestRes);
       if (latest?.candidates?.length) {
         setOrchestratorWatchlist(latest.candidates.slice(0, 120).map((c) => c.symbol));
-        return;
+      } else {
+        // Keep startup resilient during scan outages by skipping active scan requests.
+        setOrchestratorWatchlist([]);
       }
-
-      const scanRes = await apiFetch(`${API_BASE}/orchestrator/scan?limit=15`, {
-        apiBase: API_BASE,
-        method: "POST",
-      });
-      const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
-      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 80).map((c) => c.symbol));
     }
 
     hydrateWatchlist().catch((error: unknown) => {
@@ -343,22 +339,20 @@ export default function TerminalPage() {
   }, [selectedBroker, symbol]);
 
   const fetchAll = useCallback(async () => {
+    setRefreshing(true);
+    const warnings: string[] = [];
     const [
       fRes,
       oRes,
       sRes,
       swarmRes,
       perfRes,
-      oppRes,
-      historyRes,
     ] = await Promise.all([
       fetch(`${API_BASE}/forecast/${symbol}`),
       fetch(`${API_BASE}/options/${symbol}`),
       fetch(`${API_BASE}/signal/${symbol}`),
       fetch(`${API_BASE}/swarm/${symbol}`),
       fetch(`${API_BASE}/performance/${symbol}`),
-      fetch(`${API_BASE}/agents/opportunities?limit=10`),
-      fetch(`${API_BASE}/agents/execution-history?limit=25`),
     ]);
 
     const fData = await parseJsonOrNull<ForecastResponse>(fRes);
@@ -366,23 +360,98 @@ export default function TerminalPage() {
     const sData = await parseJsonOrNull<SignalResponse>(sRes);
     const swarmData = await parseJsonOrNull<SwarmResponse>(swarmRes);
     const perfData = await parseJsonOrNull<PerformanceResponse>(perfRes);
-    const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
-    const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+
+    if (!fRes.ok) warnings.push(`Forecast ${fRes.status}`);
+    if (!oRes.ok) warnings.push(`Options ${oRes.status}`);
+    if (!sRes.ok) warnings.push(`Signal ${sRes.status}`);
+    if (!swarmRes.ok) warnings.push(`Swarm ${swarmRes.status}`);
+    if (!perfRes.ok) warnings.push(`Performance ${perfRes.status}`);
 
     setForecast(fData);
     setOptions(oData);
     setSignal(sData);
     setSwarm(swarmData);
     setPerformance(perfData);
-    setOpportunities(oppData);
-    setExecutionHistory(historyData?.executions ?? []);
+    setDataHealth((prev) => {
+      const nonSymbolWarnings = prev.filter((item) => item.startsWith("Opportunities") || item.startsWith("History"));
+      return [...nonSymbolWarnings, ...warnings];
+    });
+    setRefreshing(false);
   }, [symbol]);
 
   useEffect(() => {
     fetchAll().catch((error: unknown) => {
       console.error("Failed to fetch terminal data", error);
+      setRefreshing(false);
+      setDataHealth((prev) => [...prev.filter((item) => item.startsWith("Opportunities") || item.startsWith("History")), "Terminal fetch failed"]);
     });
   }, [fetchAll]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchGlobalPanels() {
+      const warnings: string[] = [];
+      try {
+        const [oppRes, historyRes] = await Promise.all([
+          fetch(`${API_BASE}/agents/opportunities?limit=10`),
+          fetch(`${API_BASE}/agents/execution-history?limit=25`),
+        ]);
+
+        if (!oppRes.ok) warnings.push(`Opportunities ${oppRes.status}`);
+        if (!historyRes.ok) warnings.push(`History ${historyRes.status}`);
+
+        const oppData = await parseJsonOrNull<OpportunitiesResponse>(oppRes);
+        const historyData = await parseJsonOrNull<ExecutionHistoryResponse>(historyRes);
+
+        if (!cancelled) {
+          if (oppData) {
+            setOpportunities(oppData);
+          }
+          if (historyData) {
+            setExecutionHistory(historyData.executions ?? []);
+          }
+          setDataHealth((prev) => {
+            const symbolWarnings = prev.filter(
+              (item) =>
+                item.startsWith("Forecast")
+                || item.startsWith("Options")
+                || item.startsWith("Signal")
+                || item.startsWith("Swarm")
+                || item.startsWith("Performance")
+                || item === "Terminal fetch failed",
+            );
+            return [...symbolWarnings, ...warnings];
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setDataHealth((prev) => {
+            const symbolWarnings = prev.filter(
+              (item) =>
+                item.startsWith("Forecast")
+                || item.startsWith("Options")
+                || item.startsWith("Signal")
+                || item.startsWith("Swarm")
+                || item.startsWith("Performance")
+                || item === "Terminal fetch failed",
+            );
+            return [...symbolWarnings, "Opportunities/History fetch failed"];
+          });
+        }
+      }
+    }
+
+    void fetchGlobalPanels();
+    const interval = setInterval(() => {
+      void fetchGlobalPanels();
+    }, 90000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <main className="min-h-screen px-5 pt-5 pb-8 md:px-8 md:pt-6">
@@ -403,6 +472,9 @@ export default function TerminalPage() {
             <span className="rounded-full border border-terminal-line bg-terminal-panel/60 px-3 py-1 text-slate-300">
               {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
             </span>
+            <span className={`rounded-full border px-3 py-1 ${refreshing ? "border-amber-500/60 bg-amber-500/10 text-amber-200" : "border-terminal-line bg-terminal-panel/60 text-slate-300"}`}>
+              {refreshing ? "Refreshing" : "Live"}
+            </span>
           </div>
         </div>
       </header>
@@ -410,6 +482,21 @@ export default function TerminalPage() {
       {selectedBroker && (
         <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
           Broker-aware deep mode active: {selectedBroker.toUpperCase()}. Market/strategy panes remain full-system, while execution context follows broker selection from Alpha.
+        </div>
+      )}
+
+      {dataHealth.length > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>Data stream warnings: {dataHealth.join(" · ")}</span>
+            <button
+              type="button"
+              onClick={() => void fetchAll()}
+              className="rounded border border-amber-500/50 px-2 py-1 text-[11px] hover:bg-amber-500/20"
+            >
+              Retry Symbol Feeds
+            </button>
+          </div>
         </div>
       )}
 

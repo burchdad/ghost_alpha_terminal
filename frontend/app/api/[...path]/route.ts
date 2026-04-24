@@ -61,6 +61,66 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
     });
   } catch (err) {
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      if (request.method === "POST" && targetPath === "orchestrator/scan") {
+        const nowIso = new Date().toISOString();
+        return NextResponse.json(
+          {
+            candidates: [],
+            market_narrative: "Scan timed out; using fallback response.",
+            regime_summary: {},
+            sector_leaders: [],
+            scanned_at: nowIso,
+            scan_count: 0,
+            total_scanned: 0,
+            passed_prefilter: 0,
+            auto_mode: false,
+          },
+          {
+            status: 200,
+            headers: {
+              "x-proxy-target": backendUrl,
+              "x-proxy-fallback": "orchestrator-scan-timeout",
+            },
+          },
+        );
+      }
+
+      if (request.method === "GET" && targetPath === "agents/opportunities") {
+        return NextResponse.json(
+          {
+            scanned: 0,
+            passed_prefilter: 0,
+            opportunities: [],
+            capital_allocation_recommendations: [],
+            goal: null,
+            message: "Opportunities timed out; showing cached/empty response.",
+          },
+          {
+            status: 200,
+            headers: {
+              "x-proxy-target": backendUrl,
+              "x-proxy-fallback": "opportunities-timeout",
+            },
+          },
+        );
+      }
+
+      if (request.method === "GET" && targetPath === "agents/execution-history") {
+        return NextResponse.json(
+          {
+            executions: [],
+            message: "Execution history timed out; showing empty response.",
+          },
+          {
+            status: 200,
+            headers: {
+              "x-proxy-target": backendUrl,
+              "x-proxy-fallback": "execution-history-timeout",
+            },
+          },
+        );
+      }
+
       return jsonError(
         504,
         "BACKEND_TIMEOUT",
