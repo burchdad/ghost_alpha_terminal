@@ -472,6 +472,37 @@ def _rule_parse_action(message: str, state: dict) -> ParsedAction | None:
     return None
 
 
+def _rule_answer_question(message: str, state: dict) -> str | None:
+    text = message.lower()
+
+    # Operational broker-balance Q&A path (non-action informational replies).
+    balance_keywords = any(token in text for token in ["balance", "$", "60", "100", "minimum", "min"])
+    trading_keywords = any(token in text for token in ["start trading", "trade", "go live", "live trading", "coinbase"])
+    threshold_keywords = any(token in text for token in ["need", "enough", "before we start", "at least", "minimum", "100"])
+
+    if balance_keywords and trading_keywords and threshold_keywords:
+        mode = str(state.get("execution_mode", "SIMULATION") or "SIMULATION")
+        autonomous = bool(state.get("autonomous_enabled", False))
+        balance = float(state.get("account_balance", 0.0) or 0.0)
+
+        mode_msg = (
+            "Live Coinbase routing only runs in LIVE_TRADING mode."
+            if mode != "LIVE_TRADING"
+            else "Execution mode is already LIVE_TRADING."
+        )
+        auto_msg = "Autonomous execution is enabled." if autonomous else "Autonomous execution is currently off."
+
+        return (
+            "You do not need to be at exactly $100 to start. There is no hard $100 platform gate in this copilot flow. "
+            "A $60 balance can trade if the specific order size is above Coinbase product minimums and fees/slippage, "
+            "and risk controls accept the allocation. "
+            f"Current tracked balance is ${balance:,.2f}. {mode_msg} {auto_msg} "
+            "If you want, I can switch to LIVE_TRADING and run one autonomous cycle once your Coinbase route is ready."
+        )
+
+    return None
+
+
 def _apply_confirmation_contract(parsed: ParsedAction, state_before: dict) -> ParsedAction:
     if parsed.action == "set_execution_mode" and str(parsed.params.get("mode")) == "LIVE_TRADING":
         parsed.requires_confirmation = True
@@ -527,6 +558,10 @@ def _parse_action(message: str, state: dict, *, mode_assigned: str, user_id: str
     parsed = _rule_parse_action(message, state)
     if parsed is not None:
         parsed = _apply_confirmation_contract(parsed, state)
+
+    if parsed is None and not assistant_hint:
+        assistant_hint = _rule_answer_question(message, state)
+
     return parsed, parser_used, assistant_hint, latency_ms
 
 
