@@ -99,6 +99,20 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
     );
   }
 
+  // When the upstream returns a 5xx with a non-JSON body (e.g. a Railway /
+  // nginx HTML error page), pass a structured JSON error so the client can
+  // display a meaningful message instead of hitting its fallback string.
+  if (upstream.status >= 500) {
+    const ct = (upstream.headers.get("content-type") ?? "").toLowerCase();
+    if (!ct.includes("application/json")) {
+      return jsonError(
+        upstream.status,
+        "BACKEND_ERROR",
+        `Backend returned ${upstream.status}. Check Railway logs for details.`,
+      );
+    }
+  }
+
   return new NextResponse(upstream.body, {
     status: upstream.status,
     headers: responseHeaders,

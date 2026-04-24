@@ -483,30 +483,31 @@ def initiate_2fa(payload: Initiate2FARequest) -> dict:
     now = datetime.now(tz=timezone.utc)
     expires_at = now + timedelta(minutes=settings.otp_code_ttl_minutes)
 
+    secret: str
+    code: str | None = None
+    qr_code_url: str | None = None
+    phone: str | None = None
+
+    # Validate method-specific inputs and prepare secrets before opening a DB
+    # session, so external API calls (Twilio / SendGrid) don't hold a connection.
+    if method == "totp":
+        secret = twofa_service.generate_totp_secret()
+        qr_code_url = twofa_service.build_otpauth_uri(email=email, secret=secret)
+    elif method == "sms":
+        phone = _normalize_phone_number(payload.phoneNumber)
+        if not phone:
+            raise HTTPException(status_code=400, detail="Valid E.164 phone number is required for SMS 2FA")
+        secret = phone
+    else:
+        secret = email
+        code = _generate_verification_code()
+
     with get_session() as session:
         existing = session.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if existing is not None:
             raise HTTPException(status_code=409, detail="Email already registered")
 
         session.query(User2FASetup).filter(User2FASetup.email == email).delete()
-        secret: str
-        code: str | None = None
-        qr_code_url: str | None = None
-
-        if method == "totp":
-            secret = twofa_service.generate_totp_secret()
-            qr_code_url = twofa_service.build_otpauth_uri(email=email, secret=secret)
-        elif method == "sms":
-            phone = _normalize_phone_number(payload.phoneNumber)
-            if not phone:
-                raise HTTPException(status_code=400, detail="Valid E.164 phone number is required for SMS 2FA")
-            secret = phone
-            # Twilio Verify manages the code — we don't generate or store one
-            twofa_service.send_sms_verify(phone_number=phone)
-        else:
-            secret = email
-            code = _generate_verification_code()
-            twofa_service.send_email_code(to_email=email, code=code)
 
         record = User2FASetup(
             email=email,
@@ -521,6 +522,13 @@ def initiate_2fa(payload: Initiate2FARequest) -> dict:
         )
         session.add(record)
         session.flush()
+
+    # Send the verification code after the DB record is committed so a
+    # delivery failure doesn't leave an orphaned setup row.
+    if method == "sms":
+        twofa_service.send_sms_verify(phone_number=phone)  # type: ignore[arg-type]
+    elif method == "email":
+        twofa_service.send_email_code(to_email=email, code=code)  # type: ignore[arg-type]
 
     return {
         "success": True,

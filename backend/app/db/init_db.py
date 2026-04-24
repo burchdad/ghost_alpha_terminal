@@ -1,10 +1,25 @@
 from __future__ import annotations
 
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy import inspect, text
 
 from app.db.base import Base, engine
 from app.db import models  # noqa: F401
+
+
+def _is_duplicate_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "already exists" in message or "duplicate column" in message
+
+
+def _add_column_if_missing(*, conn, table_name: str, column_name: str, column_type: str, existing_columns: set[str]) -> None:
+    if column_name in existing_columns:
+        return
+    try:
+        conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+    except (OperationalError, ProgrammingError) as exc:
+        if not _is_duplicate_column_error(exc):
+            raise
 
 
 def _apply_lightweight_migrations() -> None:
@@ -13,8 +28,13 @@ def _apply_lightweight_migrations() -> None:
     with engine.begin() as conn:
         if "broker_oauth_connections" in tables:
             broker_columns = {col["name"] for col in inspector.get_columns("broker_oauth_connections")}
-            if "user_id" not in broker_columns:
-                conn.execute(text("ALTER TABLE broker_oauth_connections ADD COLUMN user_id VARCHAR(36)"))
+            _add_column_if_missing(
+                conn=conn,
+                table_name="broker_oauth_connections",
+                column_name="user_id",
+                column_type="VARCHAR(36)",
+                existing_columns=broker_columns,
+            )
 
         if "users" in tables:
             user_columns = {col["name"] for col in inspector.get_columns("users")}
@@ -28,19 +48,40 @@ def _apply_lightweight_migrations() -> None:
                 "terms_of_use_accepted": "BOOLEAN DEFAULT FALSE",
                 "risk_disclosure_accepted": "BOOLEAN DEFAULT FALSE",
                 "agreements_accepted_at": "TIMESTAMP",
+                "onboarding_completed": "BOOLEAN DEFAULT FALSE",
             }
             for column_name, column_type in user_column_specs.items():
-                if column_name not in user_columns:
-                    conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
+                _add_column_if_missing(
+                    conn=conn,
+                    table_name="users",
+                    column_name=column_name,
+                    column_type=column_type,
+                    existing_columns=user_columns,
+                )
 
         if "user_2fa_setup" in tables:
             setup_columns = {col["name"] for col in inspector.get_columns("user_2fa_setup")}
-            if "verification_code_hash" not in setup_columns:
-                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN verification_code_hash VARCHAR(128)"))
-            if "failed_attempts" not in setup_columns:
-                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
-            if "locked_until" not in setup_columns:
-                conn.execute(text("ALTER TABLE user_2fa_setup ADD COLUMN locked_until TIMESTAMP"))
+            _add_column_if_missing(
+                conn=conn,
+                table_name="user_2fa_setup",
+                column_name="verification_code_hash",
+                column_type="VARCHAR(128)",
+                existing_columns=setup_columns,
+            )
+            _add_column_if_missing(
+                conn=conn,
+                table_name="user_2fa_setup",
+                column_name="failed_attempts",
+                column_type="INTEGER DEFAULT 0",
+                existing_columns=setup_columns,
+            )
+            _add_column_if_missing(
+                conn=conn,
+                table_name="user_2fa_setup",
+                column_name="locked_until",
+                column_type="TIMESTAMP",
+                existing_columns=setup_columns,
+            )
 
         if "user_sessions" in tables:
             session_columns = {col["name"] for col in inspector.get_columns("user_sessions")}
@@ -60,24 +101,39 @@ def _apply_lightweight_migrations() -> None:
                 "access_expires_at": "TIMESTAMP",
             }
             for column_name, column_type in session_column_specs.items():
-                if column_name not in session_columns:
-                    conn.execute(text(f"ALTER TABLE user_sessions ADD COLUMN {column_name} {column_type}"))
+                _add_column_if_missing(
+                    conn=conn,
+                    table_name="user_sessions",
+                    column_name=column_name,
+                    column_type=column_type,
+                    existing_columns=session_columns,
+                )
 
         if "password_reset_tokens" in tables:
             reset_columns = {col["name"] for col in inspector.get_columns("password_reset_tokens")}
-            if "failed_attempts" not in reset_columns:
-                conn.execute(text("ALTER TABLE password_reset_tokens ADD COLUMN failed_attempts INTEGER DEFAULT 0"))
-            if "max_attempts" not in reset_columns:
-                conn.execute(text("ALTER TABLE password_reset_tokens ADD COLUMN max_attempts INTEGER DEFAULT 5"))
+            _add_column_if_missing(
+                conn=conn,
+                table_name="password_reset_tokens",
+                column_name="failed_attempts",
+                column_type="INTEGER DEFAULT 0",
+                existing_columns=reset_columns,
+            )
+            _add_column_if_missing(
+                conn=conn,
+                table_name="password_reset_tokens",
+                column_name="max_attempts",
+                column_type="INTEGER DEFAULT 5",
+                existing_columns=reset_columns,
+            )
 
 
 def initialize_database() -> None:
     try:
         Base.metadata.create_all(bind=engine)
         _apply_lightweight_migrations()
-    except OperationalError as exc:
+    except (OperationalError, ProgrammingError) as exc:
         # SQLite + multi-worker startup can race on CREATE TABLE.
-        # Ignore "already exists" so startup can continue.
-        if "already exists" in str(exc).lower():
+        # Ignore duplicate-object errors here so startup can continue.
+        if _is_duplicate_column_error(exc):
             return
         raise
