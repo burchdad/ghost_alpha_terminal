@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import ControlPanel from "../../components/ControlPanel";
-import ContextPanel from "../../components/ContextPanel";
 import DecisionAuditPanel from "../../components/DecisionAuditPanel";
 import DecisionReplayPanel from "../../components/DecisionReplayPanel";
 import GoalPanel from "../../components/GoalPanel";
@@ -746,7 +745,6 @@ export default function AlphaPage() {
   const [overrideBusyStrategy, setOverrideBusyStrategy] = useState<string | null>(null);
   const [pendingClearOverrideStrategy, setPendingClearOverrideStrategy] = useState<string | null>(null);
   const [leftSidebarTab, setLeftSidebarTab] = useState<"brokers" | "news" | "discord">("brokers");
-  const [rightSidebarTab, setRightSidebarTab] = useState<"context" | "controls">("context");
   const [scenarioTarget, setScenarioTarget] = useState<number>(205000);
   const [scenarioDays, setScenarioDays] = useState<number>(3);
   const [missionScenario, setMissionScenario] = useState<MissionScenarioResponse | null>(null);
@@ -1943,69 +1941,25 @@ export default function AlphaPage() {
         </div>
 
         <aside className="flex flex-col gap-3">
-          {/* Tab strip */}
-          <div className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/70">
-            <div className="flex">
-              {(
-                [
-                  { id: "context", label: "Context" },
-                  { id: "controls", label: "Controls" },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setRightSidebarTab(tab.id)}
-                  className={`flex-1 py-2.5 text-xs font-medium transition ${
-                    rightSidebarTab === tab.id
-                      ? "border-b-2 border-terminal-accent text-terminal-accent"
-                      : "border-b-2 border-transparent text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+          <ControlPanel
+            control={control}
+            executionMode={executionMode}
+            onToggleKillSwitch={handleToggleKillSwitch}
+            onToggleAutonomous={handleToggleAutonomous}
+            onRunAutonomousOnce={handleRunAutonomousOnce}
+            onSetExecutionMode={handleSetExecutionMode}
+            onUpdateLimits={handleUpdateLimits}
+            onSetOptionsSprint={handleSetOptionsSprint}
+          />
+          {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && missionIntel?.parity_watchdog.status !== "GREEN" && (
+            <div className={`rounded-xl border px-3 py-3 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+              <div className="font-semibold">Parity Watchdog ({missionIntel?.parity_watchdog.status})</div>
+              <ul className="mt-1 space-y-1">
+                {missionIntel?.parity_watchdog.issues.slice(0, 4).map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
             </div>
-          </div>
-
-          {rightSidebarTab === "context" && (
-            <>
-              <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
-                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Live Context</h3>
-                <div className="mt-2">
-                  <BrokerStatusMiniCard broker={selectedBroker} />
-                </div>
-              </section>
-              <ContextPanel context={contextSignal} />
-            </>
-          )}
-
-          {rightSidebarTab === "controls" && (
-            <>
-              <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
-                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Controls</h3>
-                <ControlPanel
-                  control={control}
-                  executionMode={executionMode}
-                  onToggleKillSwitch={handleToggleKillSwitch}
-                  onToggleAutonomous={handleToggleAutonomous}
-                  onRunAutonomousOnce={handleRunAutonomousOnce}
-                  onSetExecutionMode={handleSetExecutionMode}
-                  onUpdateLimits={handleUpdateLimits}
-                  onSetOptionsSprint={handleSetOptionsSprint}
-                />
-              </section>
-              {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && missionIntel?.parity_watchdog.status !== "GREEN" && (
-                <div className={`rounded-xl border px-3 py-3 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
-                  <div className="font-semibold">Parity Watchdog ({missionIntel?.parity_watchdog.status})</div>
-                  <ul className="mt-1 space-y-1">
-                    {missionIntel?.parity_watchdog.issues.slice(0, 4).map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
           )}
         </aside>
       </section>
