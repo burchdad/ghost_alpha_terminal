@@ -121,6 +121,28 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
         );
       }
 
+      if (request.method === "GET" && targetPath.startsWith("performance/")) {
+        const symbol = targetPath.split("/").pop()?.toUpperCase() || "UNKNOWN";
+        return NextResponse.json(
+          {
+            symbol,
+            best_agent: "insufficient_history",
+            agent_leaderboard: [],
+            top_strategies: [],
+            by_regime: {},
+            generated_at: new Date().toISOString(),
+            message: "Performance timed out; showing empty response.",
+          },
+          {
+            status: 200,
+            headers: {
+              "x-proxy-target": backendUrl,
+              "x-proxy-fallback": "performance-timeout",
+            },
+          },
+        );
+      }
+
       if (request.method === "POST" && targetPath === "backtest") {
         return NextResponse.json(
           {
