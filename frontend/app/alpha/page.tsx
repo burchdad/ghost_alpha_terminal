@@ -738,6 +738,8 @@ export default function AlphaPage() {
   const [overrideStrategyInput, setOverrideStrategyInput] = useState<string>("");
   const [overrideBusyStrategy, setOverrideBusyStrategy] = useState<string | null>(null);
   const [pendingClearOverrideStrategy, setPendingClearOverrideStrategy] = useState<string | null>(null);
+  const [leftSidebarTab, setLeftSidebarTab] = useState<"brokers" | "news" | "discord">("brokers");
+  const [rightSidebarTab, setRightSidebarTab] = useState<"context" | "controls">("context");
   const [scenarioTarget, setScenarioTarget] = useState<number>(205000);
   const [scenarioDays, setScenarioDays] = useState<number>(3);
   const [missionScenario, setMissionScenario] = useState<MissionScenarioResponse | null>(null);
@@ -1656,7 +1658,7 @@ export default function AlphaPage() {
   }, [portfolio, selectedBrokerProvider]);
 
   return (
-    <main className="min-h-screen p-4 md:p-6">
+    <main className="min-h-screen px-5 pt-5 pb-8 md:px-8 md:pt-6">
       {showOnboarding && (
         <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
       )}
@@ -1701,73 +1703,122 @@ export default function AlphaPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)_360px]">
-        <aside className="space-y-3">
-          <BrokerRail
-            brokers={brokerConnections}
-            selectedBrokerProvider={selectedBrokerProvider}
-            onSelectBroker={setSelectedBrokerProvider}
-            onOpenDetails={setBrokerDetailsProvider}
-          />
-
-          <BrokerPolicyPanel policy={brokerPolicy} selectedBrokerProvider={selectedBrokerProvider} />
-
-          <NewsFeedSettingsPanel settings={newsFeedSettings} onSave={handleSaveNewsFeedSettings} />
-          <DiscordSignalPanel
-            status={discordSignalStatus}
-            watchlist={discordWatchlist}
-            onPin={handlePinDiscordSymbol}
-            onUnpin={handleUnpinDiscordSymbol}
-            onRefresh={refreshDiscordSignals}
-          />
-
-          {activeBroker && (
-            <div className="rounded-xl border border-terminal-line bg-terminal-panel/70 p-3 text-xs">
-              <div className="mb-2 flex items-center justify-between">
-                <h3 className="font-semibold text-terminal-accent">{activeBroker.label} Details</h3>
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)_340px]">
+        <aside className="flex flex-col gap-3">
+          {/* Navigation sidebar */}
+          <nav className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/70">
+            <div className="border-b border-terminal-line px-4 py-3">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-terminal-accent">Ghost Alpha</div>
+              <div className="text-sm font-semibold text-slate-100">Operations</div>
+            </div>
+            <div className="p-2">
+              <div className="mb-1 px-2 pt-2 text-[9px] font-semibold uppercase tracking-widest text-slate-500">Operator</div>
+              {(
+                [
+                  { id: "brokers", abbr: "BR", label: "Brokers" },
+                  { id: "news", abbr: "NF", label: "News Feeds" },
+                  { id: "discord", abbr: "SG", label: "Signals" },
+                ] as const
+              ).map((item) => (
                 <button
-                  ref={brokerModalCloseButtonRef}
+                  key={item.id}
                   type="button"
-                  onClick={() => setBrokerDetailsProvider(null)}
-                  className="rounded border border-terminal-line px-2 py-1 text-[10px] text-slate-300"
+                  onClick={() => setLeftSidebarTab(item.id)}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-xs transition ${
+                    leftSidebarTab === item.id
+                      ? "bg-terminal-accent/10 text-terminal-accent"
+                      : "text-slate-300 hover:bg-white/5 hover:text-slate-100"
+                  }`}
                 >
-                  Close
-                </button>
-              </div>
-              <div className="space-y-1 text-[11px] text-slate-300">
-                <div>Status: {activeBroker.status_label}</div>
-                <div>Permissions: {activeBroker.permissions}</div>
-                <div>Auth: {activeBroker.auth_type.replace("_", " ")}</div>
-                <div>Mode: {activeBroker.mode ?? "N/A"}</div>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {activeBroker.connect_path && activeBroker.connectable && !activeBroker.connected && (
-                  <button
-                    type="button"
-                    disabled={connectingProvider === activeBroker.provider}
-                    onClick={() => void handleConnectBroker(activeBroker.provider, activeBroker.connect_path)}
-                    className="rounded border border-terminal-accent bg-terminal-accent/10 px-2 py-1 text-[11px] text-terminal-accent"
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[9px] font-bold ${
+                      leftSidebarTab === item.id
+                        ? "bg-terminal-accent/20 text-terminal-accent"
+                        : "bg-terminal-line text-slate-400"
+                    }`}
                   >
-                    {connectingProvider === activeBroker.provider ? "Securing..." : "Connect"}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  disabled={!activeBroker.connected || !activeBroker.disconnect_supported || disconnectingProvider === activeBroker.provider}
-                  onClick={() => handleDisconnectBroker(activeBroker.provider, activeBroker.disconnect_path)}
-                  className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 disabled:opacity-40"
-                >
-                  {disconnectingProvider === activeBroker.provider ? "Disconnecting..." : "Disconnect"}
+                    {item.abbr}
+                  </span>
+                  {item.label}
                 </button>
-              </div>
-              {activeBroker.last_error ? <div className="mt-2 text-[11px] text-red-300">Last error: {activeBroker.last_error}</div> : null}
+              ))}
+              {launchMetrics && (
+                <>
+                  <div className="mb-1 mt-3 px-2 text-[9px] font-semibold uppercase tracking-widest text-slate-500">System</div>
+                  <div className="rounded-lg px-2 py-1.5 text-[10px] text-slate-400">
+                    <div>{launchMetrics.window_days}d · {launchMetrics.scans_run} scans</div>
+                    <div>{launchMetrics.trades_triggered} trades · top: {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}</div>
+                  </div>
+                </>
+              )}
             </div>
-          )}
+          </nav>
 
-          {launchMetrics && (
-            <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3 text-[11px] text-slate-300">
-              Last {launchMetrics.window_days}d: {launchMetrics.scans_run} scans · {launchMetrics.trades_triggered} trades · top {launchMetrics.top_strategies[0]?.strategy ?? "N/A"}
-            </div>
+          {/* Panel content — only the selected tab renders */}
+          {leftSidebarTab === "brokers" && (
+            <>
+              <BrokerRail
+                brokers={brokerConnections}
+                selectedBrokerProvider={selectedBrokerProvider}
+                onSelectBroker={setSelectedBrokerProvider}
+                onOpenDetails={setBrokerDetailsProvider}
+              />
+              <BrokerPolicyPanel policy={brokerPolicy} selectedBrokerProvider={selectedBrokerProvider} />
+              {activeBroker && (
+                <div className="rounded-xl border border-terminal-line bg-terminal-panel/70 p-3 text-xs">
+                  <div className="mb-2 flex items-center justify-between">
+                    <h3 className="font-semibold text-terminal-accent">{activeBroker.label} Details</h3>
+                    <button
+                      ref={brokerModalCloseButtonRef}
+                      type="button"
+                      onClick={() => setBrokerDetailsProvider(null)}
+                      className="rounded border border-terminal-line px-2 py-1 text-[10px] text-slate-300"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="space-y-1 text-[11px] text-slate-300">
+                    <div>Status: {activeBroker.status_label}</div>
+                    <div>Permissions: {activeBroker.permissions}</div>
+                    <div>Auth: {activeBroker.auth_type.replace("_", " ")}</div>
+                    <div>Mode: {activeBroker.mode ?? "N/A"}</div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {activeBroker.connect_path && activeBroker.connectable && !activeBroker.connected && (
+                      <button
+                        type="button"
+                        disabled={connectingProvider === activeBroker.provider}
+                        onClick={() => void handleConnectBroker(activeBroker.provider, activeBroker.connect_path)}
+                        className="rounded border border-terminal-accent bg-terminal-accent/10 px-2 py-1 text-[11px] text-terminal-accent"
+                      >
+                        {connectingProvider === activeBroker.provider ? "Securing..." : "Connect"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!activeBroker.connected || !activeBroker.disconnect_supported || disconnectingProvider === activeBroker.provider}
+                      onClick={() => handleDisconnectBroker(activeBroker.provider, activeBroker.disconnect_path)}
+                      className="rounded border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] text-red-300 disabled:opacity-40"
+                    >
+                      {disconnectingProvider === activeBroker.provider ? "Disconnecting..." : "Disconnect"}
+                    </button>
+                  </div>
+                  {activeBroker.last_error ? <div className="mt-2 text-[11px] text-red-300">Last error: {activeBroker.last_error}</div> : null}
+                </div>
+              )}
+            </>
+          )}
+          {leftSidebarTab === "news" && (
+            <NewsFeedSettingsPanel settings={newsFeedSettings} onSave={handleSaveNewsFeedSettings} />
+          )}
+          {leftSidebarTab === "discord" && (
+            <DiscordSignalPanel
+              status={discordSignalStatus}
+              watchlist={discordWatchlist}
+              onPin={handlePinDiscordSymbol}
+              onUnpin={handleUnpinDiscordSymbol}
+              onRefresh={refreshDiscordSignals}
+            />
           )}
         </aside>
 
@@ -1884,39 +1935,70 @@ export default function AlphaPage() {
           </details>
         </div>
 
-        <aside className="space-y-4">
-          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Live Context</h3>
-            <div className="mt-2">
-              <BrokerStatusMiniCard broker={selectedBroker} />
+        <aside className="flex flex-col gap-3">
+          {/* Tab strip */}
+          <div className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/70">
+            <div className="flex">
+              {(
+                [
+                  { id: "context", label: "Context" },
+                  { id: "controls", label: "Controls" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setRightSidebarTab(tab.id)}
+                  className={`flex-1 py-2.5 text-xs font-medium transition ${
+                    rightSidebarTab === tab.id
+                      ? "border-b-2 border-terminal-accent text-terminal-accent"
+                      : "border-b-2 border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-          </section>
+          </div>
 
-          <ContextPanel context={contextSignal} />
+          {rightSidebarTab === "context" && (
+            <>
+              <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Live Context</h3>
+                <div className="mt-2">
+                  <BrokerStatusMiniCard broker={selectedBroker} />
+                </div>
+              </section>
+              <ContextPanel context={contextSignal} />
+            </>
+          )}
 
-          <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
-            <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Controls</h3>
-            <ControlPanel
-              control={control}
-              executionMode={executionMode}
-              onToggleKillSwitch={handleToggleKillSwitch}
-              onToggleAutonomous={handleToggleAutonomous}
-              onRunAutonomousOnce={handleRunAutonomousOnce}
-              onSetExecutionMode={handleSetExecutionMode}
-              onUpdateLimits={handleUpdateLimits}
-              onSetOptionsSprint={handleSetOptionsSprint}
-            />
-          </section>
-
-          {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && missionIntel?.parity_watchdog.status !== "GREEN" && (
-            <div className={`rounded-xl border px-3 py-3 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
-              <div className="font-semibold">Parity Watchdog ({missionIntel?.parity_watchdog.status})</div>
-              <ul className="mt-1 space-y-1">
-                {missionIntel?.parity_watchdog.issues.slice(0, 4).map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            </div>
+          {rightSidebarTab === "controls" && (
+            <>
+              <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">Controls</h3>
+                <ControlPanel
+                  control={control}
+                  executionMode={executionMode}
+                  onToggleKillSwitch={handleToggleKillSwitch}
+                  onToggleAutonomous={handleToggleAutonomous}
+                  onRunAutonomousOnce={handleRunAutonomousOnce}
+                  onSetExecutionMode={handleSetExecutionMode}
+                  onUpdateLimits={handleUpdateLimits}
+                  onSetOptionsSprint={handleSetOptionsSprint}
+                />
+              </section>
+              {(missionIntel?.parity_watchdog.issues?.length ?? 0) > 0 && missionIntel?.parity_watchdog.status !== "GREEN" && (
+                <div className={`rounded-xl border px-3 py-3 text-xs ${missionIntel?.parity_watchdog.status === "RED" ? "border-red-500/40 bg-red-500/10 text-red-200" : "border-amber-500/40 bg-amber-500/10 text-amber-200"}`}>
+                  <div className="font-semibold">Parity Watchdog ({missionIntel?.parity_watchdog.status})</div>
+                  <ul className="mt-1 space-y-1">
+                    {missionIntel?.parity_watchdog.issues.slice(0, 4).map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </aside>
       </section>

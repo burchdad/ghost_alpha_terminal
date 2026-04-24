@@ -29,42 +29,44 @@ export default function AlphaHeader({
   terminalHref,
 }: Props) {
   return (
-    <header className="mb-4 rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
+    <header className="mb-6 border-b border-terminal-line pb-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold md:text-2xl">Market Intelligence Dashboard</h1>
-          <p className="text-xs text-slate-400">Mission-control discovery, risk, and execution context in one operator cockpit.</p>
+          <div className="mb-0.5 text-[10px] font-bold uppercase tracking-widest text-terminal-accent">Ghost Alpha</div>
+          <h1 className="text-xl font-semibold text-slate-100 md:text-2xl">Alpha Operations</h1>
+          <p className="mt-1 text-xs text-slate-500">Your daily execution engine. Discovery, risk, and operator control.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[11px] text-cyan-200">
-            Mode: {formatMode(executionMode)}
-          </span>
-          <span className={`rounded border px-2 py-1 text-[11px] ${runtimePhase.tone}`}>
-            Phase: {runtimePhase.label}
-          </span>
-          {selectedBrokerLabel ? (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-200">
-              Broker: {selectedBrokerLabel}
-            </span>
-          ) : (
-            <span className="rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-[11px] text-slate-300">
-              Broker: All Brokers
-            </span>
-          )}
           <Link
             href={`/news?symbol=${encodeURIComponent(focusSymbol)}`}
-            className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
+            className="rounded-lg border border-terminal-line px-3 py-1.5 text-xs text-slate-300 transition hover:border-terminal-accent/50 hover:text-terminal-accent"
           >
-            Open News Dashboard
+            News
           </Link>
           <Link
             href={terminalHref}
-            className="rounded border border-terminal-line px-3 py-1.5 text-xs text-slate-300 hover:border-terminal-accent/50"
+            className="rounded-lg border border-terminal-accent/40 bg-terminal-accent/10 px-3 py-1.5 text-xs text-terminal-accent transition hover:bg-terminal-accent/20"
           >
-            Open Deep Terminal ({focusSymbol})
+            Terminal · {focusSymbol}
           </Link>
           <NotificationBell />
         </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-0.5 text-[11px] text-cyan-300">
+          {formatMode(executionMode)}
+        </span>
+        <span className={`rounded-full border px-2.5 py-0.5 text-[11px] ${runtimePhase.tone} border-current/20 bg-current/5`}>
+          {runtimePhase.label}
+        </span>
+        <span className="rounded-full border border-slate-600/40 bg-slate-600/10 px-2.5 py-0.5 text-[11px] text-slate-300">
+          Focus: {focusSymbol}
+        </span>
+        {selectedBrokerLabel && (
+          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[11px] text-amber-300">
+            {selectedBrokerLabel}
+          </span>
+        )}
       </div>
     </header>
   );
