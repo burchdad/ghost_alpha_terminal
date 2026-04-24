@@ -246,6 +246,8 @@ async function parseJsonOrNull<T>(res: Response): Promise<T | null> {
 
 export default function TerminalPage() {
   const [symbol, setSymbol] = useState("AAPL");
+  const [symbolFilter, setSymbolFilter] = useState("");
+  const [rightSidebarTab, setRightSidebarTab] = useState<"insights" | "history">("insights");
   const [selectedBroker, setSelectedBroker] = useState<string | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
   const [options, setOptions] = useState<OptionsResponse | null>(null);
@@ -259,12 +261,24 @@ export default function TerminalPage() {
 
   const watchlist = useMemo(() => {
     const ranked = opportunities?.opportunities ?? [];
-    const topOpportunities = ranked.slice(0, 25).map((item) => item.symbol);
+    const topOpportunities = ranked.slice(0, 60).map((item) => item.symbol);
     const fallback = universeFallback.length > 0
       ? universeFallback
-      : ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "IWM"];
-    return Array.from(new Set([symbol, ...orchestratorWatchlist, ...topOpportunities, ...fallback])).slice(0, 50);
+      : [
+        "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "IWM",
+        "AMD", "NFLX", "AVGO", "PLTR", "SMCI", "TSM", "INTC", "MU", "CRM", "ORCL",
+        "JPM", "BAC", "XLF", "XLE", "GLD", "SLV", "TLT", "BTCUSD", "ETHUSD", "COIN",
+      ];
+    return Array.from(new Set([symbol, ...orchestratorWatchlist, ...topOpportunities, ...fallback])).slice(0, 180);
   }, [opportunities, symbol, orchestratorWatchlist, universeFallback]);
+
+  const filteredWatchlist = useMemo(() => {
+    const query = symbolFilter.trim().toUpperCase();
+    if (!query) {
+      return watchlist;
+    }
+    return watchlist.filter((item) => item.includes(query));
+  }, [watchlist, symbolFilter]);
 
   useEffect(() => {
     async function hydrateWatchlist() {
@@ -273,7 +287,7 @@ export default function TerminalPage() {
         .then((r) => r.ok ? r.json() : null)
         .then((data: { symbols?: string[] } | null) => {
           if (data?.symbols?.length) {
-            setUniverseFallback(data.symbols.slice(0, 100));
+            setUniverseFallback(data.symbols.slice(0, 300));
           }
         })
         .catch(() => { /* silent — static seed stays active */ });
@@ -282,7 +296,7 @@ export default function TerminalPage() {
       const latestRes = await fetch(`${API_BASE}/orchestrator/scan/latest`);
       const latest = await parseJsonOrNull<OrchestratorScanLite>(latestRes);
       if (latest?.candidates?.length) {
-        setOrchestratorWatchlist(latest.candidates.slice(0, 50).map((c) => c.symbol));
+        setOrchestratorWatchlist(latest.candidates.slice(0, 120).map((c) => c.symbol));
         return;
       }
 
@@ -291,7 +305,7 @@ export default function TerminalPage() {
         method: "POST",
       });
       const scan = await parseJsonOrNull<OrchestratorScanLite>(scanRes);
-      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 30).map((c) => c.symbol));
+      setOrchestratorWatchlist((scan?.candidates ?? []).slice(0, 80).map((c) => c.symbol));
     }
 
     hydrateWatchlist().catch((error: unknown) => {
@@ -371,13 +385,27 @@ export default function TerminalPage() {
   }, [fetchAll]);
 
   return (
-    <main className="min-h-screen p-4 md:p-6">
-      <div className="mb-4 flex items-center justify-between rounded-xl border border-terminal-line bg-terminal-panel/70 px-4 py-3">
-        <h1 className="text-lg font-semibold md:text-2xl">DEEP TERMINAL</h1>
-        <span className="text-xs text-slate-300">
-          {selectedBroker ? `${selectedBroker.toUpperCase()} · ` : ""}{symbol} · {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
-        </span>
-      </div>
+    <main className="min-h-screen px-5 pt-5 pb-8 md:px-8 md:pt-6">
+      <header className="mb-6 border-b border-terminal-line pb-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[9px] font-bold uppercase tracking-widest text-terminal-accent">Ghost Alpha</div>
+            <h1 className="text-lg font-semibold text-slate-100 md:text-2xl">Deep Terminal</h1>
+            <p className="mt-1 text-xs text-slate-400">Expanded symbol universe with fast picker and live execution intelligence.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="rounded-full border border-terminal-line bg-terminal-panel/60 px-3 py-1 text-slate-300">
+              {selectedBroker ? selectedBroker.toUpperCase() : "All Brokers"}
+            </span>
+            <span className="rounded-full border border-terminal-line bg-terminal-panel/60 px-3 py-1 text-terminal-accent">
+              {symbol}
+            </span>
+            <span className="rounded-full border border-terminal-line bg-terminal-panel/60 px-3 py-1 text-slate-300">
+              {swarm?.regime ?? "..."} ({Math.round((swarm?.regime_confidence ?? 0) * 100)}%)
+            </span>
+          </div>
+        </div>
+      </header>
 
       {selectedBroker && (
         <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
@@ -385,23 +413,67 @@ export default function TerminalPage() {
         </div>
       )}
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_1fr_320px]">
-        <aside className="panel rounded-xl p-4">
-          <h2 className="mb-3 text-sm font-semibold text-terminal-accent">Watchlist</h2>
-          <div className="space-y-2">
-            {watchlist.map((item) => (
-              <button
-                key={item}
-                onClick={() => setSymbol(item)}
-                className={`w-full rounded border px-3 py-2 text-left text-sm transition ${
-                  symbol === item
-                    ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
-                    : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
-                }`}
-              >
-                {item}
-              </button>
-            ))}
+      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[240px_minmax(0,1fr)_340px]">
+        <aside className="flex flex-col gap-3">
+          <div className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/70">
+            <div className="border-b border-terminal-line px-4 py-3">
+              <div className="text-[9px] font-semibold uppercase tracking-widest text-slate-500">Symbol Controls</div>
+              <div className="text-sm font-semibold text-terminal-accent">Watchlist</div>
+              <div className="mt-1 text-[11px] text-slate-400">{watchlist.length} symbols available</div>
+            </div>
+            <div className="space-y-3 p-3">
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500" htmlFor="symbol-filter">
+                  Filter
+                </label>
+                <input
+                  id="symbol-filter"
+                  value={symbolFilter}
+                  onChange={(event) => setSymbolFilter(event.target.value.toUpperCase())}
+                  placeholder="Search symbol"
+                  className="w-full rounded border border-terminal-line bg-black/20 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-terminal-accent"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500" htmlFor="symbol-select">
+                  Dropdown Picker
+                </label>
+                <select
+                  id="symbol-select"
+                  value={symbol}
+                  onChange={(event) => setSymbol(event.target.value)}
+                  className="w-full rounded border border-terminal-line bg-black/20 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-terminal-accent"
+                >
+                  {filteredWatchlist.slice(0, 200).map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Quick Picks</div>
+            <div className="max-h-[64vh] space-y-2 overflow-y-auto pr-1">
+              {filteredWatchlist.length === 0 && (
+                <div className="rounded border border-terminal-line bg-black/20 px-2 py-2 text-xs text-slate-400">No symbols match the current filter.</div>
+              )}
+              {filteredWatchlist.slice(0, 120).map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setSymbol(item)}
+                  className={`w-full rounded border px-3 py-2 text-left text-sm transition ${
+                    symbol === item
+                      ? "border-terminal-accent bg-terminal-accent/15 text-terminal-accent"
+                      : "border-terminal-line bg-black/20 text-slate-300 hover:border-terminal-accent/50"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
           </div>
         </aside>
 
@@ -431,19 +503,50 @@ export default function TerminalPage() {
           <OpportunityFeedPanel data={opportunities} />
         </div>
 
-        <aside className="space-y-4">
-          <ForecastPanel forecast={forecast} />
-          <SignalPanel signal={signal} />
-          <div className="panel rounded-xl p-4 text-sm text-slate-300">
-            <h3 className="mb-3 text-sm font-semibold text-terminal-accent">AI Insights</h3>
-            <p>
-              Regime: {forecast?.volatility ?? "..."} volatility. Directional bias: {forecast?.direction ?? "..."}.
-              Strategy engine prefers {signal?.signal ?? "..."}, while swarm consensus is {" "}
-              {swarm?.consensus?.top_strategy ?? "..."}. Suggested size {swarm?.position_size ?? 0} with {" "}
-              {swarm?.risk_level ?? "MEDIUM"} risk.
-            </p>
+        <aside className="flex flex-col gap-3">
+          <div className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/70">
+            <div className="flex">
+              {(
+                [
+                  { id: "insights", label: "Insights" },
+                  { id: "history", label: "History" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setRightSidebarTab(tab.id)}
+                  className={`flex-1 py-2.5 text-xs font-medium transition ${
+                    rightSidebarTab === tab.id
+                      ? "border-b-2 border-terminal-accent text-terminal-accent"
+                      : "border-b-2 border-transparent text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <ExecutionHistoryPanel history={executionHistory} />
+
+          {rightSidebarTab === "insights" && (
+            <>
+              <ForecastPanel forecast={forecast} />
+              <SignalPanel signal={signal} />
+              <div className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-4 text-sm text-slate-300">
+                <h3 className="mb-3 text-sm font-semibold text-terminal-accent">AI Insights</h3>
+                <p>
+                  Regime: {forecast?.volatility ?? "..."} volatility. Directional bias: {forecast?.direction ?? "..."}.
+                  Strategy engine prefers {signal?.signal ?? "..."}, while swarm consensus is {" "}
+                  {swarm?.consensus?.top_strategy ?? "..."}. Suggested size {swarm?.position_size ?? 0} with {" "}
+                  {swarm?.risk_level ?? "MEDIUM"} risk.
+                </p>
+              </div>
+            </>
+          )}
+
+          {rightSidebarTab === "history" && (
+            <ExecutionHistoryPanel history={executionHistory} />
+          )}
         </aside>
       </section>
     </main>
