@@ -10,6 +10,56 @@ from app.services.alpaca_client import alpaca_client
 
 
 class LivePortfolioService:
+    def _to_float(self, value: object, default: float = 0.0) -> float:
+        if value is None:
+            return default
+
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        if isinstance(value, str):
+            text = value.strip().replace(",", "")
+            if not text:
+                return default
+            try:
+                return float(text)
+            except ValueError:
+                return default
+
+        if isinstance(value, dict):
+            for key in (
+                "value",
+                "amount",
+                "cash",
+                "cash_available",
+                "stock_buying_power",
+                "option_buying_power",
+                "equity",
+                "total_equity",
+            ):
+                if key in value:
+                    return self._to_float(value.get(key), default)
+
+            if len(value) == 1:
+                return self._to_float(next(iter(value.values())), default)
+
+        return default
+
+    def _extract_tradier_balances_block(self, payload: object) -> dict:
+        if not isinstance(payload, dict):
+            return {}
+
+        balances = payload.get("balances", {})
+        if not isinstance(balances, dict):
+            return {}
+
+        for nested_key in ("balance", "account"):
+            nested = balances.get(nested_key)
+            if isinstance(nested, dict):
+                return nested
+
+        return balances
+
     def snapshot(self) -> dict | None:
         # Prefer Tradier as the source of truth when configured (it is the primary execution broker).
         tradier_snapshot = self._tradier_primary_snapshot()
@@ -159,12 +209,22 @@ class LivePortfolioService:
                 }
             )
 
-        balance = float(balances.get("total_equity") or balances.get("cash") or 0.0)
-        buying_power = float(
-            balances.get("margin", {}).get("stock_buying_power")
-            or balances.get("cash_available")
+        margin_block = balances.get("margin", {}) if isinstance(balances, dict) else {}
+        if not isinstance(margin_block, dict):
+            margin_block = {}
+
+        balance = self._to_float(
+            balances.get("total_equity")
+            or balances.get("equity")
             or balances.get("cash")
-            or 0.0
+            or balances.get("cash_available"),
+            0.0,
+        )
+        buying_power = self._to_float(
+            margin_block.get("stock_buying_power")
+            or balances.get("cash_available")
+            or balances.get("cash"),
+            0.0,
         )
 
         return {
@@ -187,17 +247,28 @@ class LivePortfolioService:
 
         try:
             payload = _tc.get(f"/accounts/{_s.tradier_effective_account_number}/balances")
-            bal = payload.get("balances", {}) if isinstance(payload, dict) else {}
+            bal = self._extract_tradier_balances_block(payload)
             if not bal:
                 return None
             # Normalise margin block for convenient access
             margin = bal.get("margin", {}) or {}
+            if not isinstance(margin, dict):
+                margin = {}
             return {
-                "total_equity": float(bal.get("total_equity") or bal.get("cash") or 0.0),
-                "cash": float(bal.get("cash") or 0.0),
-                "cash_available": float(bal.get("cash_available") or margin.get("stock_buying_power") or 0.0),
+                "total_equity": self._to_float(
+                    bal.get("total_equity")
+                    or bal.get("equity")
+                    or bal.get("cash")
+                    or bal.get("cash_available"),
+                    0.0,
+                ),
+                "cash": self._to_float(bal.get("cash"), 0.0),
+                "cash_available": self._to_float(
+                    bal.get("cash_available") or margin.get("stock_buying_power") or bal.get("cash"),
+                    0.0,
+                ),
                 "margin": margin,
-                "option_buying_power": float(margin.get("option_buying_power") or 0.0),
+                "option_buying_power": self._to_float(margin.get("option_buying_power"), 0.0),
                 "raw": bal,
             }
         except Exception:
@@ -295,6 +366,14 @@ class LivePortfolioService:
                 "last_error": None,
             }
         except Exception as exc:
+            if isinstance(exc, httpx.HTTPStatusError):
+                status = exc.response.status_code
+                if status == 401:
+                    message = f"Unauthorized (401): verify Alpaca {mode} API key/secret for this mode."
+                else:
+                    message = f"Alpaca {mode.title()} account request failed (HTTP {status})."
+            else:
+                message = str(exc)
             return {
                 "broker": "alpaca",
                 "account_label": f"Alpaca {mode.title()}",
@@ -303,7 +382,7 @@ class LivePortfolioService:
                 "account_balance": None,
                 "buying_power": None,
                 "currency": "USD",
-                "last_error": str(exc),
+                "last_error": message,
             }
 
     def _coinbase_snapshot(self) -> dict | None:
@@ -395,12 +474,23 @@ class LivePortfolioService:
                 resp = client.get(endpoint, headers=headers)
             resp.raise_for_status()
             payload = resp.json() if resp.content else {}
-            balances = payload.get("balances", {}) if isinstance(payload, dict) else {}
+            balances = self._extract_tradier_balances_block(payload)
             margin_block = balances.get("margin") if isinstance(balances, dict) else {}
             if not isinstance(margin_block, dict):
                 margin_block = {}
-            total_equity = float(balances.get("total_equity") or balances.get("cash") or 0.0)
-            buying_power = float(margin_block.get("stock_buying_power") or balances.get("cash_available") or 0.0)
+            total_equity = self._to_float(
+                balances.get("total_equity")
+                or balances.get("equity")
+                or balances.get("cash")
+                or balances.get("cash_available"),
+                0.0,
+            )
+            buying_power = self._to_float(
+                margin_block.get("stock_buying_power")
+                or balances.get("cash_available")
+                or balances.get("cash"),
+                0.0,
+            )
             return {
                 "broker": "tradier",
                 "account_label": f"Tradier {mode.title()}",
