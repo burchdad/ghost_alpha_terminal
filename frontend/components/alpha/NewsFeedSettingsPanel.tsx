@@ -49,48 +49,48 @@ export default function NewsFeedSettingsPanel({ settings, onSave }: Props) {
   }
 
   return (
-    <section className="rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
+    <section className="overflow-hidden rounded-xl border border-terminal-line bg-terminal-panel/60 p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-terminal-accent">News Feed Settings</h3>
         <span className="text-[10px] text-slate-500">Refresh {settings.refresh_seconds}s</span>
       </div>
 
-      <div className="space-y-2">
+      <div className="max-h-[420px] space-y-2 overflow-y-auto pr-0.5">
         {draftSources.map((item, index) => (
           <div key={item.source} className="rounded border border-terminal-line bg-black/20 p-2 text-[11px] text-slate-300">
-            <div className="flex items-start justify-between gap-2">
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={item.enabled}
-                  onChange={(event) => {
-                    const next = [...draftSources];
-                    next[index] = { ...item, enabled: event.target.checked };
-                    setDraftSources(next);
-                  }}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="block font-semibold text-slate-100">{item.source.replaceAll("_", " ")}</span>
-                  <span className="block truncate text-[10px] text-slate-500">{item.url}</span>
-                </span>
-              </label>
-              <label className="flex items-center gap-2 text-[10px] text-slate-500">
-                Weight
-                <input
-                  type="number"
-                  min={0.1}
-                  max={10}
-                  step={0.1}
-                  value={item.weight}
-                  onChange={(event) => {
-                    const next = [...draftSources];
-                    next[index] = { ...item, weight: Number(event.target.value) };
-                    setDraftSources(next);
-                  }}
-                  className="w-16 rounded border border-terminal-line bg-black/40 px-2 py-1 text-right text-[11px] text-slate-200"
-                />
-              </label>
+            {/* Checkbox + name row */}
+            <label className="flex min-w-0 items-start gap-2">
+              <input
+                type="checkbox"
+                checked={item.enabled}
+                onChange={(event) => {
+                  const next = [...draftSources];
+                  next[index] = { ...item, enabled: event.target.checked };
+                  setDraftSources(next);
+                }}
+                className="mt-0.5 shrink-0"
+              />
+              <span className="min-w-0">
+                <span className="block truncate font-semibold text-slate-100">{item.source.replaceAll("_", " ")}</span>
+                <span className="block truncate text-[10px] text-slate-500">{item.url}</span>
+              </span>
+            </label>
+            {/* Weight row — below the name so it never overflows */}
+            <div className="mt-1.5 flex items-center justify-end gap-2 text-[10px] text-slate-500">
+              <span>Weight</span>
+              <input
+                type="number"
+                min={0.1}
+                max={10}
+                step={0.1}
+                value={item.weight}
+                onChange={(event) => {
+                  const next = [...draftSources];
+                  next[index] = { ...item, weight: Number(event.target.value) };
+                  setDraftSources(next);
+                }}
+                className="w-14 rounded border border-terminal-line bg-black/40 px-1.5 py-0.5 text-right text-[11px] text-slate-200"
+              />
             </div>
           </div>
         ))}
