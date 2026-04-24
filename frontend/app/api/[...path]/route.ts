@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const UPSTREAM_TIMEOUT_MS = 15000;
+
 function resolveBackendUrl(): string | null {
   const rawInput = process.env.BACKEND_URL?.trim();
   if (!rawInput) {
@@ -55,8 +57,16 @@ async function proxy(request: NextRequest, params: { path: string[] }) {
       cache: "no-store",
       // Keep upstream redirect responses intact for browser-driven OAuth flows.
       redirect: "manual",
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
   } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      return jsonError(
+        504,
+        "BACKEND_TIMEOUT",
+        `Backend request timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s at ${backendUrl}.`,
+      );
+    }
     return jsonError(
       502,
       "BACKEND_UNREACHABLE",
