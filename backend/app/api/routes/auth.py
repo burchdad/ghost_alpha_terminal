@@ -489,7 +489,7 @@ def initiate_2fa(payload: Initiate2FARequest) -> dict:
     phone: str | None = None
 
     # Validate method-specific inputs and prepare secrets before opening a DB
-    # session, so external API calls (Twilio / SendGrid) don't hold a connection.
+    # session, so external API calls (Twilio / Resend) don't hold a connection.
     if method == "totp":
         secret = twofa_service.generate_totp_secret()
         qr_code_url = twofa_service.build_otpauth_uri(email=email, secret=secret)
@@ -1472,7 +1472,7 @@ def provider_status() -> dict:
     Useful for diagnosing misconfigured credentials without exposing values."""
     twilio_creds_ok = _is_configured_env(settings.twilio_account_sid) and _is_configured_env(settings.twilio_auth_token)
     verify_ok = twilio_creds_ok and _is_configured_env(settings.twilio_verify_service_sid)
-    sendgrid_ok = _is_configured_env(settings.sendgrid_api_key) and _is_configured_env(settings.sendgrid_from)
+    resend_ok = _is_configured_env(settings.resend_api_key) and _is_configured_env(settings.resend_from)
     smtp_ok = _is_configured_env(settings.smtp_host) and _is_configured_env(settings.smtp_from_email)
 
     return {
@@ -1480,9 +1480,9 @@ def provider_status() -> dict:
         "sms_twilio_verify": verify_ok,
         "twilio_account_sid_prefix": (settings.twilio_account_sid or "")[:6] + "…" if settings.twilio_account_sid else "(not set)",
         "twilio_verify_service_sid_prefix": (settings.twilio_verify_service_sid or "")[:6] + "…" if settings.twilio_verify_service_sid else "(not set)",
-        "email_sendgrid": sendgrid_ok,
+        "email_resend": resend_ok,
         "email_smtp": smtp_ok,
-        "sendgrid_from": settings.sendgrid_from or "(not set)",
+        "resend_from": settings.resend_from or "(not set)",
         "smtp_host": settings.smtp_host or "(not set)",
     }
 

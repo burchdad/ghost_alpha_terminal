@@ -188,11 +188,11 @@ class Settings(BaseSettings):
     # bot-mode polling; the webhook path does not require this)
     discord_bot_token: str = ""
 
-    # SendGrid (preferred when API key is set)
-    sendgrid_api_key: str = ""
-    sendgrid_from: str = ""
+    # Resend (preferred when API key is set)
+    resend_api_key: str = ""
+    resend_from: str = ""
 
-    # SMTP email (fallback when SendGrid is not configured)
+    # SMTP email (fallback when Resend is not configured)
     smtp_host: str = ""
     smtp_port: int = 587
     smtp_username: str = ""

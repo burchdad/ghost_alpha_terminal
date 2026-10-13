@@ -5,7 +5,7 @@ Centralised hub for all operator-facing notifications.
 
 Delivery channels:
   1. In-process SSE event bus  (frontend notification bell, real-time)
-  2. Email via SendGrid / SMTP (reuses twofa_service infrastructure)
+  2. Email via Resend / SMTP (reuses twofa_service infrastructure)
   3. Discord webhook            (reuses discord_notifier)
 
 Notification events:
@@ -295,11 +295,11 @@ class NotificationService:
         try:
             from app.services.twofa_service import twofa_service
             twofa_service.send_email_code  # existence check
-            # Use the SendGrid/SMTP send path directly
+            # Use the Resend/SMTP send path directly
             from app.services import twofa_service as _mod
             svc = _mod.twofa_service
-            if settings.sendgrid_api_key:
-                svc._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            if settings.resend_api_key:
+                svc._send_via_resend(to_email=to_email, subject=subject, body=body)
             elif settings.smtp_host:
                 svc._send_via_smtp(to_email=to_email, subject=subject, body=body)
         except Exception as exc:

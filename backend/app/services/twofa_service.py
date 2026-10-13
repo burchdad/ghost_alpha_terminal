@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import smtplib
 import ssl
+
+import httpx
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
@@ -18,14 +20,6 @@ try:
     from twilio.rest import Client as TwilioClient
 except Exception:  # pragma: no cover
     TwilioClient = None
-
-try:
-    import sendgrid
-    from sendgrid.helpers.mail import Mail
-except Exception:  # pragma: no cover
-    sendgrid = None
-    Mail = None
-
 
 class TwoFAService:
     def _is_configured(self, value: str | None) -> bool:
@@ -93,13 +87,13 @@ class TwoFAService:
         subject = "Your Ghost Alpha Terminal verification code"
         body = f"Your verification code is {code}. This code expires in {settings.otp_code_ttl_minutes} minutes."
 
-        # Prefer SendGrid when API key is configured
-        if self._is_configured(settings.sendgrid_api_key):
+        # Prefer Resend when API key is configured
+        if self._is_configured(settings.resend_api_key):
             try:
-                self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+                self._send_via_resend(to_email=to_email, subject=subject, body=body)
                 return
-            except HTTPException as sendgrid_exc:
-                # If SendGrid fails but SMTP is available, fall back automatically.
+            except HTTPException as resend_exc:
+                # If Resend fails but SMTP is available, fall back automatically.
                 if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
                     try:
                         self._send_via_smtp(to_email=to_email, subject=subject, body=body)
@@ -108,11 +102,11 @@ class TwoFAService:
                         raise HTTPException(
                             status_code=502,
                             detail=(
-                                f"SendGrid failed: {sendgrid_exc.detail}; "
+                                f"Resend failed: {resend_exc.detail}; "
                                 f"SMTP fallback failed: {smtp_exc.detail}"
                             ),
                         ) from smtp_exc
-                raise sendgrid_exc
+                raise resend_exc
         elif self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
         else:
@@ -140,8 +134,8 @@ class TwoFAService:
         body = "\n".join(details)
 
         try:
-            if self._is_configured(settings.sendgrid_api_key):
-                self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+            if self._is_configured(settings.resend_api_key):
+                self._send_via_resend(to_email=to_email, subject=subject, body=body)
             elif self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
                 self._send_via_smtp(to_email=to_email, subject=subject, body=body)
         except Exception:
@@ -157,8 +151,8 @@ class TwoFAService:
             "If you did not request this, you can safely ignore this email."
         )
 
-        if self._is_configured(settings.sendgrid_api_key):
-            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+        if self._is_configured(settings.resend_api_key):
+            self._send_via_resend(to_email=to_email, subject=subject, body=body)
             return
         if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
@@ -186,36 +180,46 @@ class TwoFAService:
             "If this was not you, deny immediately and rotate credentials."
         )
 
-        if self._is_configured(settings.sendgrid_api_key):
-            self._send_via_sendgrid(to_email=to_email, subject=subject, body=body)
+        if self._is_configured(settings.resend_api_key):
+            self._send_via_resend(to_email=to_email, subject=subject, body=body)
             return
         if self._is_configured(settings.smtp_host) and self._is_configured(settings.smtp_from_email):
             self._send_via_smtp(to_email=to_email, subject=subject, body=body)
             return
         raise HTTPException(status_code=503, detail="Email provider is not configured")
 
-    def _send_via_sendgrid(self, *, to_email: str, subject: str, body: str) -> None:
-        if sendgrid is None or Mail is None:
-            raise HTTPException(status_code=500, detail="SendGrid dependency is not installed")
-        api_key = str(settings.sendgrid_api_key or "").strip()
+    def _send_via_resend(self, *, to_email: str, subject: str, body: str) -> None:
+        api_key = str(settings.resend_api_key or "").strip()
         if not self._is_configured(api_key):
-            raise HTTPException(status_code=503, detail="SendGrid API key is not configured")
-        from_email = settings.sendgrid_from or settings.smtp_from_email
+            raise HTTPException(status_code=503, detail="Resend API key is not configured")
+        from_email = str(settings.resend_from or settings.smtp_from_email or "").strip()
         if not self._is_configured(from_email):
-            raise HTTPException(status_code=503, detail="SendGrid sender address is not configured")
+            raise HTTPException(status_code=503, detail="Resend sender address is not configured")
         try:
-            message = Mail(
-                from_email=from_email,
-                to_emails=to_email,
-                subject=subject,
-                plain_text_content=body,
+            response = httpx.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "from": from_email,
+                    "to": [to_email],
+                    "subject": subject,
+                    "text": body,
+                },
+                timeout=15.0,
+                follow_redirects=False,
             )
-            sg = sendgrid.SendGridAPIClient(api_key=api_key)
-            response = sg.send(message)
-            if response.status_code >= 400:
-                raise RuntimeError(f"SendGrid returned HTTP {response.status_code}")
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not result["id"].strip():
+                raise ValueError("Resend did not acknowledge the email")
+        except httpx.HTTPStatusError as exc:
+            # Never expose provider response bodies, email contents, or credentials.
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to send email via Resend (HTTP {exc.response.status_code})",
+            ) from exc
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Failed to send email via SendGrid: {exc}") from exc
+            raise HTTPException(status_code=502, detail="Failed to send email via Resend") from exc
 
     def _send_via_smtp(self, *, to_email: str, subject: str, body: str) -> None:
         msg = EmailMessage()

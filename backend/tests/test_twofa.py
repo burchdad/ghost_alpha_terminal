@@ -2,7 +2,7 @@
 Tests for 2FA service and auth endpoints.
 
 Coverage:
-  - TwoFAService unit tests (TOTP, SMS, email/SendGrid, email/SMTP)
+  - TwoFAService unit tests (TOTP, SMS, email/Resend, email/SMTP)
   - /auth/initiate-2fa  (totp, sms, email)
   - /auth/verify-2fa-setup (totp, sms, email, expired, wrong code)
   - /auth/resend-2fa-code
@@ -19,6 +19,8 @@ import base64
 import json
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
+
+import httpx
 from sqlalchemy import select
 from ecdsa import NIST256p, SigningKey, util as ecdsa_util
 
@@ -183,30 +185,28 @@ class TestTwoFAServiceEmail(unittest.TestCase):
         self.svc = twofa_service
 
     @patch("app.services.twofa_service.settings")
-    @patch("app.services.twofa_service.sendgrid")
-    @patch("app.services.twofa_service.Mail")
-    def test_send_email_code_via_sendgrid(self, mock_mail_cls, mock_sg_module, mock_settings):
-        mock_settings.sendgrid_api_key = "SG.test"
-        mock_settings.sendgrid_from = "noreply@ghost.com"
+    @patch("app.services.twofa_service.httpx.post")
+    def test_send_email_code_via_resend(self, mock_post, mock_settings):
+        mock_settings.resend_api_key = "re_test"
+        mock_settings.resend_from = "noreply@ghost.com"
         mock_settings.smtp_host = ""
         mock_settings.smtp_from_email = ""
         mock_settings.otp_code_ttl_minutes = 10
 
-        mock_sg_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 202
-        mock_sg_instance.send.return_value = mock_response
-        mock_sg_module.SendGridAPIClient.return_value = mock_sg_instance
+        mock_post.return_value = httpx.Response(
+            200, json={"id": "email-test-id"}, request=httpx.Request("POST", "https://api.resend.com/emails")
+        )
 
         self.svc.send_email_code(to_email="user@example.com", code="654321")
 
-        mock_sg_module.SendGridAPIClient.assert_called_once_with(api_key="SG.test")
-        mock_sg_instance.send.assert_called_once()
+        mock_post.assert_called_once()
+        self.assertEqual(mock_post.call_args.kwargs["headers"], {"Authorization": "Bearer re_test"})
+        self.assertEqual(mock_post.call_args.kwargs["json"]["to"], ["user@example.com"])
 
     @patch("app.services.twofa_service.settings")
     @patch("app.services.twofa_service.smtplib.SMTP")
     def test_send_email_code_via_smtp_fallback(self, mock_smtp_cls, mock_settings):
-        mock_settings.sendgrid_api_key = ""
+        mock_settings.resend_api_key = ""
         mock_settings.smtp_host = "smtp.example.com"
         mock_settings.smtp_port = 587
         mock_settings.smtp_username = "user"
@@ -224,12 +224,11 @@ class TestTwoFAServiceEmail(unittest.TestCase):
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
 
     @patch("app.services.twofa_service.settings")
-    @patch("app.services.twofa_service.sendgrid")
-    @patch("app.services.twofa_service.Mail")
+    @patch("app.services.twofa_service.httpx.post")
     @patch("app.services.twofa_service.smtplib.SMTP")
-    def test_send_email_sendgrid_401_falls_back_to_smtp(self, mock_smtp_cls, mock_mail_cls, mock_sg_module, mock_settings):
-        mock_settings.sendgrid_api_key = "SG.invalid"
-        mock_settings.sendgrid_from = "noreply@ghost.com"
+    def test_send_email_resend_401_falls_back_to_smtp(self, mock_smtp_cls, mock_post, mock_settings):
+        mock_settings.resend_api_key = "re_invalid"
+        mock_settings.resend_from = "noreply@ghost.com"
         mock_settings.smtp_host = "smtp.example.com"
         mock_settings.smtp_port = 587
         mock_settings.smtp_username = "user"
@@ -239,11 +238,9 @@ class TestTwoFAServiceEmail(unittest.TestCase):
         mock_settings.smtp_use_starttls = False
         mock_settings.otp_code_ttl_minutes = 10
 
-        mock_sg_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_sg_instance.send.return_value = mock_response
-        mock_sg_module.SendGridAPIClient.return_value = mock_sg_instance
+        mock_post.return_value = httpx.Response(
+            401, json={"message": "unauthorized"}, request=httpx.Request("POST", "https://api.resend.com/emails")
+        )
 
         mock_server = MagicMock()
         mock_smtp_cls.return_value.__enter__ = lambda s: mock_server
@@ -251,16 +248,15 @@ class TestTwoFAServiceEmail(unittest.TestCase):
 
         self.svc.send_email_code(to_email="user@example.com", code="111222")
 
-        mock_sg_instance.send.assert_called_once()
+        mock_post.assert_called_once()
         mock_smtp_cls.assert_called_once_with("smtp.example.com", 587)
 
     @patch("app.services.twofa_service.settings")
-    @patch("app.services.twofa_service.sendgrid")
-    @patch("app.services.twofa_service.Mail")
+    @patch("app.services.twofa_service.httpx.post")
     @patch("app.services.twofa_service.smtplib.SMTP")
-    def test_send_email_reports_both_sendgrid_and_smtp_errors(self, mock_smtp_cls, mock_mail_cls, mock_sg_module, mock_settings):
-        mock_settings.sendgrid_api_key = "SG.invalid"
-        mock_settings.sendgrid_from = "noreply@ghost.com"
+    def test_send_email_reports_both_resend_and_smtp_errors(self, mock_smtp_cls, mock_post, mock_settings):
+        mock_settings.resend_api_key = "re_invalid"
+        mock_settings.resend_from = "noreply@ghost.com"
         mock_settings.smtp_host = "smtp.example.com"
         mock_settings.smtp_port = 587
         mock_settings.smtp_username = "user"
@@ -270,11 +266,9 @@ class TestTwoFAServiceEmail(unittest.TestCase):
         mock_settings.smtp_use_starttls = False
         mock_settings.otp_code_ttl_minutes = 10
 
-        mock_sg_instance = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_sg_instance.send.return_value = mock_response
-        mock_sg_module.SendGridAPIClient.return_value = mock_sg_instance
+        mock_post.return_value = httpx.Response(
+            401, json={"message": "unauthorized"}, request=httpx.Request("POST", "https://api.resend.com/emails")
+        )
 
         smtp_server = MagicMock()
         smtp_server.send_message.side_effect = RuntimeError("smtp auth failed")
@@ -286,12 +280,12 @@ class TestTwoFAServiceEmail(unittest.TestCase):
             self.svc.send_email_code(to_email="user@example.com", code="333444")
         self.assertEqual(ctx.exception.status_code, 502)
         detail = str(ctx.exception.detail)
-        self.assertIn("SendGrid failed:", detail)
+        self.assertIn("Resend failed:", detail)
         self.assertIn("SMTP fallback failed:", detail)
 
     @patch("app.services.twofa_service.settings")
     def test_send_email_raises_503_when_not_configured(self, mock_settings):
-        mock_settings.sendgrid_api_key = ""
+        mock_settings.resend_api_key = ""
         mock_settings.smtp_host = ""
         mock_settings.smtp_from_email = ""
         from fastapi import HTTPException
